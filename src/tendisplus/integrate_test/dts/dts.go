@@ -92,18 +92,18 @@ func main() {
 	log.Info(stdoutDTS.String())
 	log.Info(stderrDTS.String())
 
-	time.Sleep(time.Second * 30)
+	time.Sleep(time.Second * 40)
 
-	util.ComapreData(s.Addr(), t.Addr(), 1)
+	util.CompareData(s.Addr(), t.Addr(), 1)
 
 	util.ConfigSet(s, "noexpire", "false")
 	time.Sleep(time.Second * 5)
-	util.ComapreData(t.Addr(), s.Addr(), 1)
+	util.CompareData(t.Addr(), s.Addr(), 1)
 
 	time.Sleep(10 * time.Second)
-	util.ComapreData(m.Addr(), t.Addr(), 1)
+	util.CompareData(m.Addr(), t.Addr(), 1)
 
-	util.ComapreData(m.Addr(), s.Addr(), 1)
+	util.CompareData(m.Addr(), s.Addr(), 1)
 
 	log.Infof("dts.go passed.")
 

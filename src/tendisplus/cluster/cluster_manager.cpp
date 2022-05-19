@@ -964,7 +964,9 @@ void ClusterState::clusterBroadcastMessage(ClusterMsg& msg) {
 void ClusterState::clusterUpdateSlotsConfigWith(
   CNodePtr sender,
   uint64_t senderConfigEpoch,
-  const std::bitset<CLUSTER_SLOTS>& slots) {
+  const std::bitset<CLUSTER_SLOTS>& slots,
+  bool isReplGroup,
+  uint64_t senderOffset) {
   std::array<uint16_t, CLUSTER_SLOTS> dirty_slots;
   CNodePtr newmaster = nullptr;
   uint32_t dirty_slots_count = 0;
@@ -1044,7 +1046,8 @@ void ClusterState::clusterUpdateSlotsConfigWith(
     if (!inMigrateTask &&
         ((slaveFullSyncDone || !masterNotFail) ||
          isMyselfMaster())) {
-      s = clusterSetMaster(newmaster);
+      s = clusterSetMaster(newmaster, false,
+                           isReplGroup, senderOffset);
       if (!s.ok()) {
         LOG(ERROR) << "set newmaster :" << newmaster->getNodeName()
                    << "fail:" << s.toString();
@@ -1796,7 +1799,8 @@ bool ClusterState::clusterSetNodeAsMasterNoLock(CNodePtr node) {
 
 /* NOTE(wayenchen) if set ignoreRepl as true, setMaster will not replicate
  * data*/
-Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
+Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl,
+                                      bool isReplGroup, uint64_t senderOffset) {
   const auto guard = MakeGuard([&] {
     // set replicate state as false, let cron fix if exist replication error
     unsetReplicateState();
@@ -1837,7 +1841,8 @@ Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
     LOG(INFO) << "clusterSetMaster incrSync:" << incrSync;
 
     s = _server->getReplManager()->replicationSetMaster(
-      node->getNodeIp(), node->getPort(), false, incrSync);
+      node->getNodeIp(), node->getPort(),
+      false, incrSync, isReplGroup, senderOffset);
     if (!s.ok()) {
       LOG(ERROR) << "relication set master fail:" << s.toString();
       return s;
@@ -2945,6 +2950,8 @@ Status ClusterState::clusterFailoverReplaceYourMaster(void) {
     return s;
   }
   LOG(INFO) << "replication unsetMaster success";
+  LOG(INFO) << "replication get offset:"
+            << _server->getReplManager()->replicationGetOffset();
 
   s = clusterFailoverReplaceYourMasterMeta();
   if (!s.ok()) {
@@ -2957,6 +2964,7 @@ Status ClusterState::clusterFailoverReplaceYourMaster(void) {
    *    accordingly and detect that we switched to master role. */
   /* Set the replication offset. */
   uint64_t offset = _server->getReplManager()->replicationGetOffset();
+  LOG(INFO) << "replication broadcase pong offset:" << offset;
   clusterBroadcastPong(CLUSTER_BROADCAST_ALL, offset);
 
   /* If there was a manual failover in progress, clear the state. */
@@ -5574,9 +5582,27 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
     }
 
     /* Check for role switch: slave -> master or master -> slave. */
+    auto checkOriginMasterNodeName = [](const CNodePtr& sender,
+                                        const CNodePtr& node) -> bool {
+      if (sender->getMaster() && node->getMaster()) {
+        auto senderMasterName = sender->getMaster()->getNodeName();
+        auto nodeMasterName = node->getMaster()->getNodeName();
+        LOG(INFO) << "sender origin master name:" << senderMasterName
+                  << ", node origin master name:" << nodeMasterName;
+        return senderMasterName == nodeMasterName;
+      }
+      return false;
+    };
+
+    bool isReplGroup = false;
+    uint64_t sender_offset{0};
     if (sender) {
       if (msg.isMaster()) {
         /* Node is a master. */
+        if (checkOriginMasterNodeName(sender, _myself)) {
+          isReplGroup = true;
+        }
+        sender_offset = msg.getHeader()->_offset;
         if (clusterSetNodeAsMaster(sender))
           setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
       } else {
@@ -5631,7 +5657,11 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
      *    the set of slots it claims changed, scan the slots to see if we
      *    need to update our configuration. */
     if (sender && sender->nodeIsMaster() && dirty_slots) {
-      clusterUpdateSlotsConfigWith(sender, senderConfigEpoch, hdr->_slots);
+      clusterUpdateSlotsConfigWith(sender,
+                                   senderConfigEpoch,
+                                   hdr->_slots,
+                                   isReplGroup,
+                                   sender_offset);
       setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
     }
 

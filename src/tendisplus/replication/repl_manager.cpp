@@ -1177,7 +1177,9 @@ Status ReplManager::changeReplSourceInDBLock(uint32_t storeId,
 Status ReplManager::replicationSetMaster(std::string ip,
                                          uint32_t port,
                                          bool checkEmpty,
-                                         bool incrSync) {
+                                         bool incrSync,
+                                         bool isReplGroup,
+                                         uint64_t senderOffset) {
   std::vector<uint32_t> storeVec;
   auto guard = MakeGuard([this, &storeVec] {
     std::lock_guard<std::mutex> lk(_mutex);
@@ -1215,6 +1217,18 @@ Status ReplManager::replicationSetMaster(std::string ip,
   }
 
   INVARIANT_D(expdbList.size() == _svr->getKVStoreCount());
+
+  // when new master and _myself is in repl group,
+  // and new master offset(senderOffset) is greater or equal to _myself
+  // then, we can optimize fullsync to incrsync. it's safe an correct
+  auto myselfOffset = replicationGetOffset();
+  LOG(INFO) << "isReplGroup:" << isReplGroup
+              << ", senderOffer[" << senderOffset
+              << "], myselfOffset[" << myselfOffset
+              << "], incrSync:" << incrSync;
+  if (isReplGroup && (senderOffset >= myselfOffset)) {
+    incrSync = true;
+  }
 
   for (uint32_t i = 0; i < _svr->getKVStoreCount(); ++i) {
     Status s = changeReplSourceInDBLock(

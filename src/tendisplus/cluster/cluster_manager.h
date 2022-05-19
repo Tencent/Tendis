@@ -578,7 +578,8 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
 
   bool clusterSetNodeAsMaster(CNodePtr node);
   bool clusterSetNodeAsMasterNoLock(CNodePtr node);
-  Status clusterSetMaster(CNodePtr node, bool ignoreRepl = false);
+  Status clusterSetMaster(CNodePtr node, bool ignoreRepl = false,
+                          bool isReplgroup = false, uint64_t senderOffset = 0);
   Status clusterSetMasterNoLock(CNodePtr node);
 
   Status clusterSetForMaster(CNodePtr node, CNodePtr node2);
@@ -640,7 +641,9 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
 
   void clusterUpdateSlotsConfigWith(CNodePtr sender,
                                     uint64_t senderConfigEpoch,
-                                    const std::bitset<CLUSTER_SLOTS>& slots);
+                                    const std::bitset<CLUSTER_SLOTS>& slots,
+                                    bool isReplGroup = false,
+                                    uint64_t senderOffset = 0);
   void clusterHandleConfigEpochCollision(CNodePtr sender);
 
   void clusterBroadcastPong(int target, uint64_t offset);

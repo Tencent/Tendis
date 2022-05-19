@@ -155,19 +155,19 @@ func main() {
 
 	time.Sleep(30 * time.Second)
 
-	util.ComapreData(s.Addr(), fmt.Sprintf("127.0.0.1:%d", targetPort), 1)
+	util.CompareData(s.Addr(), fmt.Sprintf("127.0.0.1:%d", targetPort), 1)
 
-	util.ComapreData(m.Addr(), fmt.Sprintf("127.0.0.1:%d", targetPort), 1)
+	util.CompareData(m.Addr(), fmt.Sprintf("127.0.0.1:%d", targetPort), 1)
 
 	util.ConfigSet(m, "noexpire", "false")
 	util.ConfigSet(s, "noexpire", "false")
 	time.Sleep(time.Second * 20)
 
-	util.ComapreData(m.Addr(), fmt.Sprintf("127.0.0.1:%d", targetPort), 1)
+	util.CompareData(m.Addr(), fmt.Sprintf("127.0.0.1:%d", targetPort), 1)
 
-	util.ComapreData(m.Addr(), s.Addr(), 1)
+	util.CompareData(m.Addr(), s.Addr(), 1)
 
-	util.ComapreData(s.Addr(), fmt.Sprintf("127.0.0.1:%d", targetPort), 1)
+	util.CompareData(s.Addr(), fmt.Sprintf("127.0.0.1:%d", targetPort), 1)
 
 	log.Infof("dts_sync.go passed.")
 }

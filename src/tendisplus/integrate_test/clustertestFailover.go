@@ -15,6 +15,12 @@ import (
     "time"
 )
 
+var (
+	mport = flag.Int("masterport", 41001, "master port")
+	sport = flag.Int("slaveport", 41102, "slave port")
+	tport = flag.Int("targetport", 41203, "target port")
+)
+
 func getDbsize(m *util.RedisServer) (int) {
     cli := createClient(m)
     r, err := cli.Cmd("dbsize").Int()
@@ -64,6 +70,189 @@ func checkFullsyncSuccTimes(m *util.RedisServer, num int) {
         log.Fatalf("checkFullsyncSuccTimes failed num:%d info:%s", num, r);
     }
     log.Infof("check FullsyncSuccTimes end Path:%s fullsync_succ_times:%d", m.Path, num)
+}
+
+func testClusterManualFailoverIncrSync() {
+	cfg := make(map[string]string)
+	cfg["aof-enabled"] = "yes"
+	cfg["kvStoreCount"] = "2"
+	cfg["noexpire"] = "false"
+	cfg["generallog"] = "true"
+	cfg["requirepass"] = "tendis+test"
+	cfg["cluster-enabled"] = "yes"
+	cfg["masterauth"] = "tendis+test"
+
+    var servers, predixy, _ = startCluster("127.0.0.1", *mport, 3)
+
+	master := (*servers)[0]
+	// defer shutdownServer(master, *shutdown, *clear)
+	slave1 := (*servers)[3]
+	// defer shutdownServer(slave1, *shutdown, *clear)
+	slave2 := util.StartSingleServer("s_", *sport, &cfg)
+	defer shutdownServer(slave2, *shutdown, *clear)
+
+    // add another slave node
+	cluster_meet(&master, slave2)
+	time.Sleep(5 * time.Second)
+	cluster_slaveof(&master, slave2)
+
+	// check cluster online state
+	if !cluster_check_state(&master) {
+		log.Fatal("cluster state error, online failed")
+	}
+	log.Debug("cluster state ok, online now!")
+	time.Sleep(10 * time.Second)
+
+    // add data in goroutine for a while
+    log.Info("start add data in coroutine")
+    var channel chan int = make(chan int)
+    go addDataInCoroutine(&predixy.RedisServer, 1000000, "tag", channel)
+
+	// check master sync_full and partial_sync times
+	if !cluster_check_sync_full(&master, 4) {
+		log.Fatal("cluster check sync_full error")
+	}
+	log.Debug("cluster check sync_full ok")
+
+	if !cluster_check_sync_partial_ok(&master, 4) {
+		log.Fatalf("cluster check sync_partial_ok error")
+	}
+	log.Debug("cluster check sync_partial_ok ok")
+
+	// slave1 MANUAL FAILOVER
+	cluster_manual_failover(&slave1)
+
+	time.Sleep(15 * time.Second)
+	// check master sync_full and partial_sync times again
+	if !cluster_check_sync_full(&slave1, 0) {
+		log.Fatal("cluster check sync_full error")
+	}
+	log.Debug("after manual failover cluster check sync_full ok")
+
+	if !cluster_check_sync_partial_ok(&slave1, 4) {
+		log.Fatalf("cluster check sync_partial_ok error")
+	}
+	log.Debug("after manual failover cluster check sync_partial_ok ok")
+	
+    // wait add data end by channel write
+    <- channel
+    log.Info("add data in coroutine end")
+
+	time.Sleep(15 * time.Second)
+
+	// compare instance data
+	util.CompareClusterDataWithAuth(slave1.Addr(), *auth, master.Addr(), *auth, 2, true)
+    util.CompareClusterDataWithAuth(slave1.Addr(), *auth, slave2.Addr(), *auth, 2, true)
+    stopCluster(servers, 3, predixy)
+    log.Debug("test manualFailover incr-sync ok!")
+}
+
+func testClusterShutdownFailoverIncrSync() {
+    cfg := make(map[string]string)
+	cfg["aof-enabled"] = "yes"
+	cfg["kvStoreCount"] = "2"
+	cfg["noexpire"] = "false"
+	cfg["generallog"] = "true"
+	cfg["requirepass"] = "tendis+test"
+	cfg["cluster-enabled"] = "yes"
+	cfg["masterauth"] = "tendis+test"
+
+    var servers, predixy, _ = startCluster("127.0.0.1", *mport, 3)
+
+	master := (*servers)[0]
+	// defer shutdownServer(master, *shutdown, *clear)
+	slave1 := (*servers)[3]
+	// defer shutdownServer(slave1, *shutdown, *clear)
+	slave2 := util.StartSingleServer("s_", *sport, &cfg)
+	defer shutdownServer(slave2, *shutdown, *clear)
+
+    arbiter1 := util.StartSingleServer("m_", *mport, &cfg)
+    defer shutdownServer(arbiter1, *shutdown, *clear)
+    arbiter2 := util.StartSingleServer("m_", *mport, &cfg)
+    defer shutdownServer(arbiter2, *shutdown, *clear)
+
+	cluster_meet(&master, &slave1)
+	cluster_meet(&master, slave2)
+    cluster_meet(&master, arbiter1)
+    cluster_meet(&master, arbiter2)
+    cluster_set_node_arbiter(arbiter1)
+    cluster_set_node_arbiter(arbiter2)
+    time.Sleep(5 * time.Second)
+	cluster_slaveof(&master, slave2)
+
+	time.Sleep(5 * time.Second)
+    if !cluster_check_state(&master) {
+		log.Fatal("cluster state error, online failed")
+	}
+	log.Debug("cluster state ok, online now!")
+
+    // add data in goroutine for a while
+    log.Info("start add data in coroutine")
+    var channel chan int = make(chan int)
+    go addDataInCoroutine(&predixy.RedisServer, 1000000, "tag", channel)
+
+    time.Sleep(5 * time.Second)
+
+    // check master sync_full and partial_sync times
+	if !cluster_check_sync_full(&master, 4) {
+		log.Fatal("cluster check sync_full error")
+	}
+	log.Debug("cluster check sync_full ok")
+
+	if !cluster_check_sync_partial_ok(&master, 4) {
+		log.Fatalf("cluster check sync_partial_ok error")
+	}
+	log.Debug("cluster check sync_partial_ok ok")
+
+    log.Debugf("shutdown master node[%s]", master.Addr())
+    shutdownServer(&master, *shutdown, *clear)
+
+    for cluster_check_state(&slave1) {
+        time.Sleep(1000 * time.Millisecond)
+    }
+    log.Debug("cluster get master failed, offline")
+    
+    for !cluster_check_state(&slave1) {
+        time.Sleep(1000 * time.Millisecond)
+    }
+    log.Debug("cluster vote new master, online again!")
+
+    var new_master *util.RedisServer
+    if (cluster_check_is_master(&slave1)) {
+        new_master = &slave1
+    }
+    if (cluster_check_is_master(slave2)) {
+        new_master = slave2
+    }
+    log.Infof("vote new master[%s]", new_master.Addr())
+
+    time.Sleep(15 * time.Second)
+    // check master sync_full and partial_sync times again
+	if !cluster_check_sync_full(new_master, 0) {
+		log.Fatal("cluster check sync_full error")
+	}
+	log.Debug("after manual failover cluster check sync_full ok")
+
+	if !cluster_check_sync_partial_ok(new_master, 2) {
+		log.Fatalf("cluster check sync_partial_ok error")
+	}
+	log.Debug("after manual failover cluster check sync_partial_ok ok")
+	
+
+    // wait add data end by channel write
+    <- channel
+    log.Info("add data in coroutine end")
+    time.Sleep(15 * time.Second)
+
+	// compare instance data
+    util.CompareClusterDataWithAuth(slave1.Addr(), *auth, slave2.Addr(), *auth, 2, true)
+
+    shutdownPredixy(predixy, *shutdown, *clear)
+    shutdownServer(&(*servers)[1], *shutdown, *clear)
+    shutdownServer(&(*servers)[2], *shutdown, *clear)
+    shutdownServer(&(*servers)[4], *shutdown, *clear)
+    shutdownServer(&(*servers)[5], *shutdown, *clear)
+    log.Debugf("test shutdownFailover incr-sync ok!")
 }
 
 func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int,
@@ -219,5 +408,7 @@ func main(){
     flag.Parse()
     testCluster(*clusterIp, 45200, 3, false)
     testCluster(*clusterIp, 45300, 3, true)
+    testClusterManualFailoverIncrSync()
+    testClusterShutdownFailoverIncrSync()
     log.Infof("clustertestFilover.go passed.")
 }

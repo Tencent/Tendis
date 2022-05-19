@@ -412,6 +412,23 @@ func (s *Predixy) Setup(valgrind bool, cfgArgs *map[string]string) error {
 	return err
 }
 
+func StartSingleServer(dir string, port int, cfg *map[string]string) *RedisServer {
+	m := new(RedisServer)
+	m.WithBinPath("tendisplus")
+	m.Ip = "127.0.0.1"
+	node_port := FindAvailablePort(port)
+	log.Infof("FindAvailablePort:%d", node_port)
+	pwd := GetCurrentDirectory()
+
+	m.Init("127.0.0.1", node_port, pwd, dir)
+
+	if err := m.Setup(false, cfg); err != nil {
+		log.Fatalf("setup master failed:%v", err)
+	}
+
+	return m
+}
+
 func ShutdownServer(m *RedisServer) {
 	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
 	if err != nil {
@@ -654,12 +671,26 @@ func GetCurrentDirectory() string {
 	return strings.Replace(dir, "\\", "/", -1)
 }
 
-func ComapreData(addr1 string, addr2 string, storeNum int) {
+func CompareData(addr1 string, addr2 string, storeNum int) {
+	CompareDataWithAuth(addr1, "", addr2, "", storeNum)
+}
+
+func CompareDataWithAuth(addr1 string, passwd1 string, addr2 string, passwd2 string, storeNum int) {
+	CompareClusterDataWithAuth(addr1, passwd1, addr2, passwd2, storeNum, false)
+}
+
+func CompareClusterDataWithAuth(addr1 string, passwd1 string, addr2 string, passwd2 string, storeNum int, readonly bool) {
 	var stdoutComp bytes.Buffer
 	var stderrComp bytes.Buffer
 
 	// compare slave and target node
-	cmdComp := exec.Command("compare_instances", "-addr1", addr1, "-addr2", addr2, "-storeNum", strconv.FormatInt(int64(storeNum), 10))
+	cmdComp := exec.Command("compare_instances", 
+							"-addr1", addr1, 
+							"-addr2", addr2, 
+							"-password1", passwd1, 
+							"-password2", passwd2,
+							"-storeNum", strconv.FormatInt(int64(storeNum), 10),
+							fmt.Sprintf("-readonly=%s", strconv.FormatBool(readonly)))
 	cmdComp.Stdout = &stdoutComp
 	cmdComp.Stderr = &stderrComp
 	err := cmdComp.Run()
