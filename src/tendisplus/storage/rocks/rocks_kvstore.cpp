@@ -834,6 +834,9 @@ void RocksPesTxn::ensureTxn() {
   // due to server-layer's keylock, RC-level can satisfy our
   // requirements. so here set_snapshot = false
   txnOpts.set_snapshot = false;
+#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 17)
+  txnOpts.skip_concurrency_control = _store->getCfg()->skipConcurrencyControl;
+#endif
 
   auto db = _store->getUnderlayerPesDB();
   if (!db) {
@@ -1332,6 +1335,21 @@ rocksdb::Options RocksKVStore::options() {
     options.write_buffer_size /= 2;
   }
 
+#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 18)
+  // TODO(jingjunli):
+  // configurable: blob_compression_type blob_garbage_collection_age_cutoff
+  // maybe not nesscessary
+  options.enable_blob_files = _cfg->rocksEnableBlobFiles;
+  options.min_blob_size = _cfg->rocksMinBlobSize;
+  options.blob_file_size = _cfg->rocksBlobFileSize;
+  options.enable_blob_garbage_collection =
+    _cfg->rocksEnableBlobGarbageCollection;
+
+  // These param is NOT SUPPORTED ANYMORE in RocksDB
+  options.max_background_compactions = -1;
+  options.max_background_flushes = -1;
+#endif
+
   options.table_factory.reset(
     rocksdb::NewBlockBasedTableFactory(table_options));
 
@@ -1347,6 +1365,20 @@ rocksdb::Options RocksKVStore::options() {
   options.listeners.push_back(listener);
 
   return options;
+}
+
+rocksdb::Options RocksKVStore::defaultColumnOptions() {
+  return options();
+}
+
+// Binlog Column different from default
+rocksdb::Options RocksKVStore::binlogColumnOptions() {
+  auto columOpts = defaultColumnOptions();
+  for (int i = 0; i < ROCKSDB_NUM_LEVELS; ++i) {
+    columOpts.compression_per_level[i] =
+      rocksGetCompressType(_cfg->rocksCompressType);
+  }
+  return columOpts;
 }
 
 bool RocksKVStore::isRunning() const {
@@ -1977,7 +2009,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
       return {ErrorCodes::ERR_INTERNAL, ex.what()};
     }
 
-    rocksdb::Options defaultColumnFamilyOpts = options();
+    rocksdb::Options defaultColumnFamilyOpts = defaultColumnOptions();
     // enable CompactOnDeletionCollectorFactory:
 #if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 11)
     defaultColumnFamilyOpts.table_properties_collector_factories.emplace_back(
@@ -2005,7 +2037,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
     _cfDescs.push_back(rocksdb::ColumnFamilyDescriptor(
       rocksdb::kDefaultColumnFamilyName, defaultColumnFamilyOpts));
     if (!_cfg->binlogUsingDefaultCF) {
-      rocksdb::Options binlogColumnFamilyOpts = options();
+      rocksdb::Options binlogColumnFamilyOpts = binlogColumnOptions();
       _cfDescs.push_back(
         rocksdb::ColumnFamilyDescriptor("binlog_cf", binlogColumnFamilyOpts));
     }

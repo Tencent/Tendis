@@ -472,6 +472,18 @@ ServerParams::ServerParams() {
                                   rocksFlushLogAtTrxCommit);
   REGISTER_VARS_DIFF_NAME("rocks.wal_dir", rocksWALDir);
 
+#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 17)
+  REGISTER_VARS_DIFF_NAME("rocks.skip_concurrency_control",
+                          skipConcurrencyControl);
+#endif
+#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 18)
+  REGISTER_VARS_DIFF_NAME("rocks.enable_blob_files", rocksEnableBlobFiles);
+  REGISTER_VARS_DIFF_NAME("rocks.min_blob_size", rocksMinBlobSize);
+  REGISTER_VARS_DIFF_NAME("rocks.blob_file_size", rocksBlobFileSize);
+  REGISTER_VARS_DIFF_NAME("rocks.enable_blob_garbage_collection",
+                          rocksEnableBlobGarbageCollection);
+#endif
+
   REGISTER_VARS_FULL("rocks.compress_type",
                      rocksCompressType,
                      compressTypeParamCheck,
