@@ -2,3 +2,5 @@
 */.DS_Store
 build
 .idea
+.vs
+.vscode

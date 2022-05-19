@@ -198,7 +198,7 @@ class server {
 TEST(BlockingTcpClient, Common) {
   auto ioCtx = std::make_shared<asio::io_context>();
   auto ioCtx1 = std::make_shared<asio::io_context>();
-  uint32_t port = 54001;
+  uint32_t port = 14001;
   /*
   BlockingTcpClient cli(ioCtx, 128);
   Status s = cli.connect("127.0.0.1", port, std::chrono::seconds(1));
@@ -392,7 +392,7 @@ void rateLimit(uint64_t ratelimit,
 TEST(BlockingTcpClient, RateLimit) {
   auto ioCtx = std::make_shared<asio::io_context>();
   auto ioCtx1 = std::make_shared<asio::io_context>();
-  uint32_t port = 54011;
+  uint32_t port = 14011;
 
   server2 svr(*ioCtx, port);
 

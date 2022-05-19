@@ -827,6 +827,23 @@ TEST(ClusterMsg, CommonUpdate) {
   }
 }
 
+TEST(ClusterMsg, bitsetEncodeSize) {
+  SlotsBitmap taskmap;
+  taskmap.set(16383);
+  string s = bitsetStrEncode(taskmap);
+  ASSERT_EQ(s, " 16383 ");
+
+  taskmap.set(0);
+  s = bitsetStrEncode(taskmap);
+  ASSERT_EQ(s, " 0 16383 ");
+
+  taskmap.set(100);
+  taskmap.set(101);
+  taskmap.set(102);
+  s = bitsetStrEncode(taskmap);
+  ASSERT_EQ(s, " 0 100-102 16383 ");
+}
+
 TEST(ClusterState, clusterReplyMultiBulkSlotsV2) {
   uint32_t startPort = 15300;
   auto server = makeClusterNode("node", startPort, 10);
@@ -3047,13 +3064,20 @@ TEST(Cluster, ChangeMaster) {
 TEST(Cluster, FixReplication) {
   uint32_t nodeNum = 3;
   uint32_t startPort = 17800;
+  bool withSlave = true;
+  uint32_t storeCnt = 10;
 
-  const auto guard = MakeGuard([&nodeNum] {
-    destroyCluster(nodeNum);
+  const auto guard = MakeGuard([&nodeNum, &withSlave] {
+    if (withSlave) {
+      destroyCluster(nodeNum * 2);
+    } else {
+      destroyCluster(nodeNum);
+    }
+    destroyEnv("node" + to_string(7));
     std::this_thread::sleep_for(std::chrono::seconds(5));
   });
 
-  auto servers = makeCluster(startPort, nodeNum, 10, true);
+  auto servers = makeCluster(startPort, nodeNum, storeCnt, withSlave);
   // 3 master and 3 slave *, make one master fail
   auto& node1 = servers[0];
   auto& node2 = servers[3];
@@ -3128,13 +3152,20 @@ TEST(Cluster, FixReplication) {
 TEST(Cluster, ManualfailoverCheck) {
   uint32_t nodeNum = 3;
   uint32_t startPort = 17900;
+  bool withSlave = true;
+  uint32_t storeCnt = 10;
 
-  const auto guard = MakeGuard([&nodeNum] {
-    destroyCluster(nodeNum);
+  const auto guard = MakeGuard([&nodeNum, &withSlave] {
+    if (withSlave) {
+      destroyCluster(nodeNum * 2);
+    } else {
+      destroyCluster(nodeNum);
+    }
+    destroyEnv("node" + to_string(7));
     std::this_thread::sleep_for(std::chrono::seconds(5));
   });
 
-  auto servers = makeCluster(startPort, nodeNum, 10, true);
+  auto servers = makeCluster(startPort, nodeNum, storeCnt, withSlave);
   // 3 master and 3 slave *, make one master fail
   auto& master = servers[0];
   // add one slave
@@ -3442,23 +3473,6 @@ TEST(Cluster, CrossSlot) {
   servers.clear();
 }
 
-TEST(ClusterMsg, bitsetEncodeSize) {
-  SlotsBitmap taskmap;
-  taskmap.set(16383);
-  string s = bitsetStrEncode(taskmap);
-  ASSERT_EQ(s, " 16383 ");
-
-  taskmap.set(0);
-  s = bitsetStrEncode(taskmap);
-  ASSERT_EQ(s, " 0 16383 ");
-
-  taskmap.set(100);
-  taskmap.set(101);
-  taskmap.set(102);
-  s = bitsetStrEncode(taskmap);
-  ASSERT_EQ(s, " 0 100-102 16383 ");
-}
-
 TEST(Cluster, singleNode) {
   uint32_t nodeNum = 4;
   uint32_t startPort = 18200;
@@ -3688,13 +3702,19 @@ TEST(Cluster, bindZeroAddr) {
 TEST(Cluster, failoverConfilct) {
   uint32_t nodeNum = 3;
   uint32_t startPort = 18500;
+  bool withSlave = true;
+  uint32_t storeCnt = 10;
 
-  const auto guard = MakeGuard([&nodeNum] {
-    destroyCluster(nodeNum);
+  const auto guard = MakeGuard([&nodeNum, &withSlave] {
+    if (withSlave) {
+      destroyCluster(nodeNum * 2);
+    } else {
+      destroyCluster(nodeNum);
+    }
     std::this_thread::sleep_for(std::chrono::seconds(5));
   });
 
-  auto servers = makeCluster(startPort, nodeNum, 10, true);
+  auto servers = makeCluster(startPort, nodeNum, storeCnt, withSlave);
   // 3 master and 3 slave *, make one master fail
   auto node1 = servers[0];
   auto node2 = servers[3];
@@ -3704,8 +3724,6 @@ TEST(Cluster, failoverConfilct) {
   WorkLoad work1(node1, sess1);
   work1.init();
   std::this_thread::sleep_for(3s);
-
-  // EXPECT_EQ(node7->getReplManager()->isSlaveFullSyncDone(), true);
 
   auto ctx2 = std::make_shared<asio::io_context>();
   auto sess2 = makeSession(node2, ctx2);
