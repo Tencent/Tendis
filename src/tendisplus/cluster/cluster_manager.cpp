@@ -1988,6 +1988,7 @@ std::string ClusterState::clusterGenStateDescription() {
               << "cluster_slots_assigend:" << slots_assigned << "\r\n"
               << "cluster_slots_ok:" << slots_ok << "\r\n"
               << "cluster_slots_pfail:" << slots_pfail << "\r\n"
+              << "cluster_slots_fail:" << slots_fail << "\r\n"
               << "cluster_known_nodes:" << _nodes.size() << "\r\n"
               << "cluster_size:" << _size << "\r\n"
               << "cluster_current_epoch:" << _currentEpoch << "\r\n"
