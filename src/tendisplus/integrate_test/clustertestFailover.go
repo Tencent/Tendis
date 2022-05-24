@@ -208,12 +208,12 @@ func testClusterShutdownFailoverIncrSync() {
     shutdownServer(&master, *shutdown, *clear)
 
     for cluster_check_state(&slave1) {
-        time.Sleep(1000 * time.Millisecond)
+        time.Sleep(10 * time.Millisecond)
     }
     log.Debug("cluster get master failed, offline")
     
     for !cluster_check_state(&slave1) {
-        time.Sleep(1000 * time.Millisecond)
+        time.Sleep(10 * time.Millisecond)
     }
     log.Debug("cluster vote new master, online again!")
 
