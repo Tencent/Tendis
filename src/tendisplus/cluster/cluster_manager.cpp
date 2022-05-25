@@ -5039,7 +5039,7 @@ void ClusterSession::drainReqNet() {
   }
   // here we use >= than >, so the last element will always be 0,
   // it's convinent for c-style string search
-  if (readlen + (size_t)_queryBufPos >= _queryBuf.size()) {
+  if (readlen + static_cast<size_t>_queryBufPos >= _queryBuf.size()) {
     // the fill should be as fast as memset in 02 mode, refer to here
     // NOLINT(whitespace/line_length)
     // https://stackoverflow.com/questions/8848575/fastest-way-to-reset-every-value-of-stdvectorint-to-0)
@@ -5076,7 +5076,7 @@ void ClusterSession::drainReqCallback(const std::error_code& ec,
   _queryBuf[_queryBufPos] = 0;
 
   /* Total length obtained? Process this packet. */
-  if (_queryBufPos >= 8 && (size_t)_queryBufPos == _pkgSize) {
+  if (_queryBufPos >= 8 && static_cast<size_t>_queryBufPos == _pkgSize) {
     setState(State::Process);
     schedule();
   } else {
