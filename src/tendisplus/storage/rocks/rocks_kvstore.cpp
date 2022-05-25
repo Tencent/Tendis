@@ -1344,10 +1344,6 @@ rocksdb::Options RocksKVStore::options() {
   options.blob_file_size = _cfg->rocksBlobFileSize;
   options.enable_blob_garbage_collection =
     _cfg->rocksEnableBlobGarbageCollection;
-
-  // These param is NOT SUPPORTED ANYMORE in RocksDB
-  options.max_background_compactions = -1;
-  options.max_background_flushes = -1;
 #endif
 
   options.table_factory.reset(
