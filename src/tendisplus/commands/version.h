@@ -6,7 +6,7 @@
 #define SRC_TENDISPLUS_COMMANDS_VERSION_H_
 
 #include <string>
-#define TENDISPLUS_VERSION_PRE "2.5.0-rocksdb-v"
+#define TENDISPLUS_VERSION_PRE "2.4.3-rocksdb-v"
 
 std::string getTendisPlusVersion();
 
