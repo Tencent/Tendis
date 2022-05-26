@@ -51,7 +51,7 @@ func cluster_manual_failover(m *util.RedisServer) {
     }
 }
 
-func cluster_extra_field(reply string, prefix string, delimiter string) string {
+func cluster_extract_field(reply string, prefix string, delimiter string) string {
     rest := strings.Split(reply, prefix)
     tmp := strings.Split(rest[1], delimiter)
 
@@ -67,7 +67,7 @@ func cluster_check_state(m *util.RedisServer) bool {
         log.Fatalf("cluster info failed:%v", err)
     }
 
-    state := cluster_extra_field(reply, "cluster_state:", "\r\n")
+    state := cluster_extract_field(reply, "cluster_state:", "\r\n")
     log.Infof("check cluster state, state[%s]", state)
 
     return state == "ok"
@@ -82,10 +82,46 @@ func cluster_check_is_master(m *util.RedisServer) bool {
         log.Fatalf("info replication failed:%v", err)
     }
 
-    role := cluster_extra_field(reply, "role:", "\r\n")
+    role := cluster_extract_field(reply, "role:", "\r\n")
     log.Infof("check node role, role[%s]", role)
 
     return role == "master"
+}
+
+func cluster_check_repl_offset(m *util.RedisServer, s *util.RedisServer) bool {
+    scli := createClient(s)
+    defer scli.Close()
+
+    // first get slave_repl_offset, 
+    // in order to avoid master ~= slave -> master == slave
+    // because extract field time gap
+    reply, err := scli.Cmd("info", "replication").Str()
+    if err != nil {
+        log.Fatalf("info replication failed:%v", err)
+    }
+    slave_repl_offset := cluster_extract_field(reply, "slave_repl_offset:", "\r\n")
+
+    // wait for 1 second, in ordrer to avoid benchmark error casue offset increase late for a while
+    time.Sleep(1 * time.Second)
+
+    mcli := createClient(m)
+    defer mcli.Close()
+
+    reply, err = mcli.Cmd("info", "replication").Str()
+    if err != nil {
+        log.Fatalf("info replication failed:%v", err)
+    }
+    master_repl_offset := cluster_extract_field(reply, "master_repl_offset:", "\r\n")
+    
+    if master_repl_offset == slave_repl_offset {
+        log.Infof("check master_repl_offset[%s] == slave_repl_offset[%s]", 
+                master_repl_offset, slave_repl_offset)
+        return true
+    } else {
+        log.Infof("check master_repl_offset[%s] != slave_repl_offset[%s]", 
+                master_repl_offset, slave_repl_offset)
+        return false
+    }
 }
 
 func cluster_check_sync_full(m *util.RedisServer, times int) bool {
@@ -97,7 +133,7 @@ func cluster_check_sync_full(m *util.RedisServer, times int) bool {
         log.Fatalf("info stats failed:%v", err)
     }
 
-    data := cluster_extra_field(reply, "sync_full:", "\r\n")
+    data := cluster_extract_field(reply, "sync_full:", "\r\n")
     sync_full, _ := strconv.Atoi(data)
     log.Infof("check node[%s] sync_full[%d] <==> times[%d]", 
             m.Addr(), sync_full, times)
@@ -117,7 +153,7 @@ func cluster_check_sync_partial_ok(m *util.RedisServer, times int) bool {
         log.Fatalf("info stats failed:%v", err)
     }
 
-    data := cluster_extra_field(reply, "sync_partial_ok:", "\r\n")
+    data := cluster_extract_field(reply, "sync_partial_ok:", "\r\n")
     sync_partial_ok, _ := strconv.Atoi(data)
     log.Infof("check node[%s] sync_partial_ok[%d] <==> times[%d]", 
             m.Addr(), sync_partial_ok, times)

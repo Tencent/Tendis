@@ -106,7 +106,7 @@ func testClusterManualFailoverIncrSync() {
     // add data in goroutine for a while
     log.Info("start add data in coroutine")
     var channel chan int = make(chan int)
-    go addDataInCoroutine(&predixy.RedisServer, 1000000, "tag", channel)
+    go addDataInCoroutine(&predixy.RedisServer, 500000, "tag", channel)
 
 	// check master sync_full and partial_sync times
 	if !cluster_check_sync_full(&master, 4) {
@@ -138,7 +138,14 @@ func testClusterManualFailoverIncrSync() {
     <- channel
     log.Info("add data in coroutine end")
 
-	time.Sleep(15 * time.Second)
+	for {
+        if (cluster_check_repl_offset(&slave1, &master)) {
+            break;
+        } else {
+            log.Info("cluster check repl offset not equal, wait")
+            time.Sleep(1 * time.Second)
+        }
+    } 
 
 	// compare instance data
 	util.CompareClusterDataWithAuth(slave1.Addr(), *auth, master.Addr(), *auth, 2, true)
@@ -189,7 +196,7 @@ func testClusterShutdownFailoverIncrSync() {
     // add data in goroutine for a while
     log.Info("start add data in coroutine")
     var channel chan int = make(chan int)
-    go addDataInCoroutine(&predixy.RedisServer, 1000000, "tag", channel)
+    go addDataInCoroutine(&predixy.RedisServer, 500000, "tag", channel)
 
     time.Sleep(5 * time.Second)
 
@@ -231,18 +238,26 @@ func testClusterShutdownFailoverIncrSync() {
 	if !cluster_check_sync_full(new_master, 0) {
 		log.Fatal("cluster check sync_full error")
 	}
-	log.Debug("after manual failover cluster check sync_full ok")
+	log.Debug("after shutdown failover cluster check sync_full ok")
 
 	if !cluster_check_sync_partial_ok(new_master, 2) {
 		log.Fatalf("cluster check sync_partial_ok error")
 	}
-	log.Debug("after manual failover cluster check sync_partial_ok ok")
+	log.Debug("after shutdown failover cluster check sync_partial_ok ok")
 	
 
     // wait add data end by channel write
     <- channel
     log.Info("add data in coroutine end")
-    time.Sleep(15 * time.Second)
+
+    for {
+        if (cluster_check_repl_offset(&slave1, slave2)) {
+            break;                    
+        } else {
+            log.Info("cluster check repl offset not equal, wait")
+            time.Sleep(1 * time.Second)                                    
+        }     
+    }
 
 	// compare instance data
     util.CompareClusterDataWithAuth(slave1.Addr(), *auth, slave2.Addr(), *auth, 2, true)
