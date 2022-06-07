@@ -284,7 +284,7 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->rocksStrictCapacityLimit, false);
   EXPECT_EQ(cfg->getRocksdbOptions().size(), 0);
   EXPECT_EQ(cfg->level0Compress, false);
-  EXPECT_EQ(cfg->level0Compress, false);
+  EXPECT_EQ(cfg->level1Compress, false);
 
   EXPECT_EQ(cfg->binlogSendBatch, 256);
   EXPECT_EQ(cfg->binlogSendBytes, 16 * 1024 * 1024);

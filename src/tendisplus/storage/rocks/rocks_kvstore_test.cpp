@@ -284,7 +284,7 @@ TEST(RocksKVStore, BinlogRightMost) {
 
   // default values
   EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().max_write_buffer_number,
-            2);
+            4);
   EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().create_if_missing,
             true);
 #if ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 13
