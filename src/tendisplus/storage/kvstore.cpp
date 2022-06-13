@@ -278,7 +278,7 @@ Expected<ReplLogV2> RepllogCursorV2::nextV2() {
     return std::move(v.value());
   }
 
-  return {ErrorCodes::ERR_EXHAUST, ""};
+  return {ErrorCodes::ERR_EXHAUST, "cursor iterated all over"};
 }
 
 BasicDataCursor::BasicDataCursor(std::unique_ptr<Cursor> cursor)
