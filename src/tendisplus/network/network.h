@@ -184,6 +184,7 @@ class NetSession : public Session {
     DrainReqNet,
     DrainReqBuf,
     Process,
+    Stop,
   };
   bool isEnded() {
     std::lock_guard<std::mutex> lk(_mutex);
@@ -205,6 +206,9 @@ class NetSession : public Session {
   virtual void drainRspCallback(const std::error_code& ec,
                                 size_t actualLen);
   virtual void drainRspWithoutLock();
+
+  // parse req and process req
+  virtual void parseAndProcessReq();
 
   // handle msg parsed from drainReqCallback
   virtual void processReq();

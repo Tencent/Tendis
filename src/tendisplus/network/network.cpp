@@ -324,6 +324,8 @@ Status NetworkAsio::startThread() {
       std::string threadName = _name + "-rw-" + std::to_string(i);
       threadName.resize(15);
       INVARIANT_D(!pthread_setname_np(pthread_self(), threadName.c_str()));
+      LOG(INFO) << "add netIoThread, i:" << i
+        << ", threadId:" << std::this_thread::get_id();
       while (_isRunning.load(std::memory_order_relaxed)) {
         // if no workguard, the run() returns immediately if no
         // tasks
@@ -340,6 +342,7 @@ Status NetworkAsio::startThread() {
     _rwThreads.emplace_back(std::move(thd));
   }
   _sessions.resize(_netIoThreadNum);
+  /*
   if (_sendDelay) {
     _timers.reserve(_netIoThreadNum);
     for (size_t i = 0; i < _netIoThreadNum; i++) {
@@ -348,6 +351,7 @@ Status NetworkAsio::startThread() {
       LOG(INFO) << "NetworkAsio::start timer:" << i;
     }
   }
+  */
   return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -590,16 +594,21 @@ Status NetSession::setResponse(const std::string& s) {
     }
   }
 
+  /*
   uint32_t netSendBatchSize = _server->getParams()->netSendBatchSize;
+  */
   if (_isSendRunning) {
     std::copy(s.begin(), s.end(), std::back_inserter(_sendBufferBack));
   } else {
     std::copy(s.begin(), s.end(), std::back_inserter(_sendBuffer));
+    /*
     if (netSendBatchSize <= 0 || !_sendDelay ||
         (netSendBatchSize > 0 && _sendDelay &&
           _sendBuffer.size() > netSendBatchSize)) {
       drainRspWithoutLock();
     }
+    */
+    drainRspWithoutLock();
   }
   return {ErrorCodes::ERR_OK, ""};
 }
@@ -654,10 +663,10 @@ void NetSession::processInlineBuffer() {
     if (_queryBufPos > REDIS_INLINE_MAX_SIZE) {
       ++_netMatrix->invalidPackets;
       setRspAndClose("Protocol error: too big inline request");
+      setState(State::Stop);
       return;
     }
     setState(State::DrainReqNet);
-    schedule();
     return;
   }
 
@@ -673,6 +682,7 @@ void NetSession::processInlineBuffer() {
   auto ret = redis_port::splitargs(argv, aux);
   if (ret == NULL) {
     setRspAndClose("Protocol error: unbalanced quotes in request");
+    setState(State::Stop);
     return;
   }
 
@@ -690,7 +700,7 @@ void NetSession::processInlineBuffer() {
   }
 
   setState(State::Process);
-  schedule();
+  processReq();
 }
 
 // NOTE(deyukong): mainly port from redis::networking.c,
@@ -708,18 +718,17 @@ void NetSession::processMultibulkBuffer() {
       if (_queryBufPos > REDIS_INLINE_MAX_SIZE) {
         ++_netMatrix->invalidPackets;
         setRspAndClose("Protocol error: too big mbulk count string");
+        setState(State::Stop);
         return;
       }
       // not complete line
       setState(State::DrainReqNet);
-      schedule();
       return;
     }
     /* Buffer should also contain \n */
     if (newLine - _queryBuf.data() > _queryBufPos - 2) {
       // not complete line
       setState(State::DrainReqNet);
-      schedule();
       return;
     }
 
@@ -729,6 +738,7 @@ void NetSession::processMultibulkBuffer() {
       LOG(ERROR) << "multiBulk first char not *";
       ++_netMatrix->invalidPackets;
       setRspAndClose("Protocol error: multiBulk first char not *");
+      setState(State::Stop);
       return;
     }
     char* newStart = _queryBuf.data() + 1;
@@ -736,6 +746,7 @@ void NetSession::processMultibulkBuffer() {
     if (!ok || ll > 1024 * 1024) {
       ++_netMatrix->invalidPackets;
       setRspAndClose("Protocol error: invalid multibulk length");
+      setState(State::Stop);
       return;
     }
     pos = newLine - _queryBuf.data() + 2;
@@ -744,7 +755,7 @@ void NetSession::processMultibulkBuffer() {
 
       INVARIANT(_args.size() == 0);
       setState(State::Process);
-      schedule();
+      processReq();
       return;
     }
     _multibulklen = ll;
@@ -766,6 +777,7 @@ void NetSession::processMultibulkBuffer() {
                      << ", _queryBufPos = " << _queryBufPos << ", pos =" << pos;
           INVARIANT_D(0);
           setRspAndClose("Protocol error: too big bulk count string");
+          setState(State::Stop);
           return;
         }
         break;
@@ -781,6 +793,7 @@ void NetSession::processMultibulkBuffer() {
         s << "Protocol error: expected '$', got '" << _queryBuf.data()[pos]
           << "'";
         setRspAndClose(s.str());
+        setState(State::Stop);
         return;
       }
       char* newStart = _queryBuf.data() + pos + 1;
@@ -793,6 +806,7 @@ void NetSession::processMultibulkBuffer() {
       if (!ok || ll < 0 || ll > maxBulkLen) {
         ++_netMatrix->invalidPackets;
         setRspAndClose("Protocol error: invalid bulk length");
+        setState(State::Stop);
         return;
       }
       pos += newLine - (_queryBuf.data() + pos) + 2;
@@ -824,10 +838,10 @@ void NetSession::processMultibulkBuffer() {
   }
   if (_multibulklen == 0) {
     setState(State::Process);
+    processReq();
   } else {
     setState(State::DrainReqNet);
   }
-  schedule();
 }
 
 void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
@@ -849,7 +863,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
       ++_server->getServerStat().rejectedConn;
 
       LOG(WARNING) << "-ERR max number of clients reached, clients: "
-                   << maxClients;
+        << maxClients;
       setRspAndClose("-ERR max number of clients reached\r\n");
       return;
     }
@@ -866,19 +880,30 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
     setRspAndClose("Closing client that reached max query buffer length");
     return;
   }
-  if (_reqType == RedisReqMode::REDIS_REQ_UNKNOWN) {
-    if (_queryBuf[0] == '*') {
-      _reqType = RedisReqMode::REDIS_REQ_MULTIBULK;
+  setState(State::DrainReqBuf);
+  schedule();
+}
+
+void NetSession::parseAndProcessReq() {
+  while (_state == State::DrainReqBuf) {
+    if (_reqType == RedisReqMode::REDIS_REQ_UNKNOWN) {
+      if (_queryBuf[0] == '*') {
+        _reqType = RedisReqMode::REDIS_REQ_MULTIBULK;
+      } else {
+        _reqType = RedisReqMode::REDIS_REQ_INLINE;
+      }
+    }
+    if (_reqType == RedisReqMode::REDIS_REQ_MULTIBULK) {
+      processMultibulkBuffer();
+    } else if (_reqType == RedisReqMode::REDIS_REQ_INLINE) {
+      processInlineBuffer();
     } else {
-      _reqType = RedisReqMode::REDIS_REQ_INLINE;
+      LOG(FATAL) << "unknown request type";
     }
   }
-  if (_reqType == RedisReqMode::REDIS_REQ_MULTIBULK) {
-    processMultibulkBuffer();
-  } else if (_reqType == RedisReqMode::REDIS_REQ_INLINE) {
-    processInlineBuffer();
-  } else {
-    LOG(FATAL) << "unknown request type";
+  drainRsp();
+  if (_state == State::DrainReqNet) {
+    drainReqNet();
   }
 }
 
@@ -966,19 +991,23 @@ void NetSession::processReq() {
   }
   if (!continueSched) {
     endSession();
+    setState(State::Stop);
   } else if (!_closeAfterRsp) {
     resetMultiBulkCtx();
     if (_queryBufPos == 0) {
       setState(State::DrainReqNet);
+      return;
     } else {
       setState(State::DrainReqBuf);
       ++_netMatrix->stickyPackets;
+      return;
     }
-    schedule();
   } else {
     // closeAfterRsp, donot process more requests
     // let drainRspCallback end this session
+    setState(State::Stop);
   }
+  return;
 }
 
 void NetSession::drainRsp() {
@@ -1077,7 +1106,7 @@ void NetSession::endSession() {
         _sock.shutdown(asio::ip::tcp::socket::shutdown_receive);
       }
     } catch (const std::exception& ex) {
-      LOG(ERROR) << "shutdown socket failed." << ex.what();
+      LOG(ERROR) << "shutdown socket failed." << ex.what() << " id:" << id();
     }
   }
   _server->endSession(id());
@@ -1096,9 +1125,10 @@ void NetSession::stepState() {
       return;
     case State::DrainReqBuf:
       INVARIANT_D(_type != Session::Type::CLUSTER);
-      drainReqBuf();
+      parseAndProcessReq();
       return;
     case State::Process:
+      INVARIANT_D(_type != Session::Type::NET);
       processReq();
       return;
     default:
