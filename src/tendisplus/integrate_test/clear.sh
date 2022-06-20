@@ -8,7 +8,6 @@ rm benchmark_*.log
 rm predixy_* -rf
 rm stderr*
 rm redis-sync-*.conf 
-rm sync-*.log
 
 user=$USER
 tpids=`ps axu |grep tendisplus|grep integrate_test| grep $user|awk '{print $2}'`
@@ -32,12 +31,14 @@ do
   kill -9 $rpid
 done
 
-spids=`ps axu |grep redis-sync | grep integrate_test | grep $user | awk '{print $2}'`
+spids=`ps axu |grep redis-sync | grep $user | awk '{print $2}'`
 for spid in $spids
 do
   echo "killing redis-sync process : $spid"
   kill -9 $spid
 done
+
+rm sync-*.log
 
 while true
 do

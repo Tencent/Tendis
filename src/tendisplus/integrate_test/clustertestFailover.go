@@ -225,11 +225,14 @@ func testClusterShutdownFailoverIncrSync() {
     log.Debug("cluster vote new master, online again!")
 
     var new_master *util.RedisServer
+    var new_slave *util.RedisServer
     if (cluster_check_is_master(&slave1)) {
         new_master = &slave1
+        new_slave = slave2
     }
     if (cluster_check_is_master(slave2)) {
         new_master = slave2
+        new_slave = &slave1
     }
     log.Infof("vote new master[%s]", new_master.Addr())
 
@@ -251,7 +254,7 @@ func testClusterShutdownFailoverIncrSync() {
     log.Info("add data in coroutine end")
 
     for {
-        if (cluster_check_repl_offset(&slave1, slave2)) {
+        if (cluster_check_repl_offset(new_master, new_slave)) {
             break;                    
         } else {
             log.Info("cluster check repl offset not equal, wait")
