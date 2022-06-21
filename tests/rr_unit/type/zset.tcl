@@ -1045,5 +1045,29 @@ start_server {tags {"zset"}} {
 
             #r config set zset-load-startup-threshhold 100000
         }
+
+        test "bug fix about range limit" {
+            r del salary
+            r zadd salary 10086 jack
+            r zadd salary 7500 peter
+            r zadd salary 3500 joe
+            assert_equal {} [r zrevrangebyscore salary +inf -inf withscores limit 1000 100]
+            assert_equal {} [r zrevrangebyscore salary +inf -inf withscores limit 2000 100]
+            assert_equal {} [r zrevrangebyscore salary +inf -inf withscores limit 4000 100]
+            assert_equal {} [r zrangebyscore salary -inf +inf withscores limit 1000 100]
+            assert_equal {} [r zrangebyscore salary -inf +inf withscores limit 2000 100]
+            assert_equal {} [r zrangebyscore salary -inf +inf withscores limit 4000 100]
+
+            r del salary
+            r zadd salary 0 jack
+            r zadd salary 0 peter
+            r zadd salary 0 joe
+            assert_equal {} [r zrevrangebylex salary + - limit 1000 100]
+            assert_equal {} [r zrevrangebylex salary + - limit 2000 100]
+            assert_equal {} [r zrevrangebylex salary + - limit 4000 100]
+            assert_equal {} [r zrangebylex salary + - limit 1000 100]
+            assert_equal {} [r zrangebylex salary - + limit 2000 100]
+            assert_equal {} [r zrangebylex salary - + limit 4000 100]
+        }
     }
 }
