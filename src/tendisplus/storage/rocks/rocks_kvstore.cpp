@@ -1637,7 +1637,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
   uint64_t cur_ts = msSinceEpoch();
 
   const auto guard = MakeGuard([this, &nextStart, &start, &ts, &txn] {
-    if (_cfg->saveMinBinlogId && nextStart != start) {
+    if (nextStart != start) {
       INVARIANT_D(ts != 0);
       // NOTE(takenliu): as we keep at least one binlog,
       //   so nextStart must be in db.
@@ -1646,14 +1646,18 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     }
   });
 
-  // TODO(takenliu) change binlogDelRange scope to (1000, 1000000)
-  INVARIANT_D(_cfg->binlogDelRange >= 1);
-  // if binlogDelRange > 1 and needn't save binlog, use deleteRange quickly
-  if (fs == nullptr && _cfg->binlogDelRange > 1) {
-    uint64_t range_end = start + _cfg->binlogDelRange;
+  // TODO(zakzheng) always use deleteRange quickly,
+  // delete range is defined by truncateBinlogNum
+  if (fs == nullptr) {
+    uint64_t range_end = start + _cfg->truncateBinlogNum;
+    // the while loop only execute once time, and will break
     while (true) {
-      if (range_end - 1 > end || range_end - start > max_cnt) {
+      if (end < nextStart) {
         break;
+      }
+
+      if (range_end > end + 1) {
+        range_end = end + 1;
       }
 
       auto cursor = txn->createRepllogCursorV2(range_end - 1);
@@ -1677,14 +1681,14 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
                  << explog.value().getBinlogId()
                  << " time:" << (cur_ts - ts) / 1000 << " sec ago.";
 
-      auto s = deleteRangeBinlog(nextStart, range_end);  // [start, end)
+      auto s = deleteRangeBinlog(0, range_end);  // [start, end)
       if (!s.ok()) {
         LOG(ERROR) << "deleteRangeBinlog error:" << s.toString();
         return s;
       }
       deleten += range_end - nextStart;
       nextStart = range_end;
-      range_end = range_end + _cfg->binlogDelRange;
+      break;
     }
     result.deleten = deleten;
     result.written = written;
@@ -1719,49 +1723,34 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     }
 
     size++;
-    if (fs) {
-      if ((int64_t)written >= maxWritelen) {
-        break;
-      }
-      // save binlog
-      int len = saveBinlogV2(fs, explog.value());
-      if (len < 0) {
-        LOG(ERROR) << "saveBinlogV2 failed, break.";
-        // NOTE(takenliu): maybe write part of explog, so the binlog file's last
-        // binlog will be error. then we change a new binlog file.
-        err = -1;
-        break;
-      }
-      written += len;
+    if ((int64_t)written >= maxWritelen) {
+      break;
     }
+    // save binlog
+    int len = saveBinlogV2(fs, explog.value());
+    if (len < 0) {
+      LOG(ERROR) << "saveBinlogV2 failed, break.";
+      // NOTE(takenliu): maybe write part of explog, so the binlog file's last
+      // binlog will be error. then we change a new binlog file.
+      err = -1;
+      break;
+    }
+    written += len;
     nextSave = explog.value().getBinlogId() + 1;
     ts = explog.value().getTimestamp();
-    if (_cfg->binlogDelRange == 1) {
-      DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
-                 << " delete:" << explog.value().getBinlogId()
-                 << " time:" << (cur_ts - ts) / 1000 << " sec ago.";
-      auto s = txn->delBinlog(explog.value());
-      if (!s.ok()) {
-        // NOTE(vinchen): if error here, binlog would be wrong because
-        // saveBinlogV2() can't be rollbacked;
-        LOG(ERROR) << "delbinlog error:" << s.toString();
-        return s;
-      }
-      deleten++;
-      nextStart = nextSave;
-    } else if (nextSave - nextStart >= _cfg->binlogDelRange) {
-      DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
-                 << " delete:" << nextStart << " to "
-                 << explog.value().getBinlogId()
-                 << " time:" << (cur_ts - ts) / 1000 << " sec ago.";
-      auto s = deleteRangeBinlog(nextStart, nextSave);
-      if (!s.ok()) {
-        LOG(ERROR) << "deleteRangeBinlog error:" << s.toString();
-        return s;
-      }
-      deleten += nextSave - nextStart;
-      nextStart = nextSave;
+  }
+
+  if (nextSave > nextStart) {
+    DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
+               << " delete:" << nextStart << " to " << nextSave
+               << " time:" << (cur_ts - ts) / 1000 << " sec ago.";
+    auto s = deleteRangeBinlog(0, nextSave);
+    if (!s.ok()) {
+      LOG(ERROR) << "deleteRangeBinlog error:" << s.toString();
+      return s;
     }
+    deleten += nextSave - nextStart;
+    nextStart = nextSave;
   }
 
   result.deleten = deleten;
@@ -2858,27 +2847,12 @@ Status RocksKVStore::saveMinBinlogId(uint64_t id, uint64_t ts,
 
 // [begin, end)
 Status RocksKVStore::deleteRangeBinlog(uint64_t begin, uint64_t end) {
-  if (_cfg->deleteFilesInRangeForBinlog) {
-    auto s = deleteFilesInRangeBinlog(begin, end, false);
-    RET_IF_ERR(s);
-  } else {
-    ReplLogKeyV2 beginKey(0);  // begin always use 0
-    ReplLogKeyV2 endKey(end);
-    auto beginKeyStr = beginKey.encode();
-    auto endKeyStr = endKey.encode();
-    auto s = deleteRangeWithoutBinlog(
-            getBinlogColumnFamilyHandle(), beginKeyStr, endKeyStr);
-    RET_IF_ERR(s);
-
-    if (_cfg->compactRangeAfterDeleteRange) {
-      // NOTE(takenliu) if dont real delete,maybe cause performance problem
-      // for example: when server restart, in ReplManager::startup(),
-      //   getMinBinlog() will take a long time
-      return compactRange(getBinlogColumnFamilyNumber(),
-                          &beginKeyStr, &endKeyStr);
-    }
+  auto s = deleteFilesInRangeBinlog(0, end, false);
+  if (!s.ok()) {
+    LOG(ERROR) << "call deleteFilesInRangeBinlog failed, end:" << end;
+    return s;
   }
-  return {ErrorCodes::ERR_OK, ""};
+  return s;
 }
 
 void RocksKVStore::initRocksProperties() {

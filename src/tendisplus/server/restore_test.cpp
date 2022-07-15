@@ -203,12 +203,15 @@ void waitBinlogDump(const std::shared_ptr<ServerEntry>& server) {
       if (expBinlogidMax.status().code() == ErrorCodes::ERR_EXHAUST) {
         maxBinlogId = 0;
       } else {
-        EXPECT_TRUE(expBinlogidMin.ok());
+        EXPECT_TRUE(expBinlogidMax.ok());
         maxBinlogId = expBinlogidMax.value();
       }
 
       // wait only one binlog left in rocksdb
       if (minBinlogId == maxBinlogId) {
+        LOG(INFO) << "BinlogOpt waitBinlogDump, store=" << i << ",path="
+                  << kvstore->dbPath() << ",minBinlogId=" << minBinlogId
+                  << ",maxBinlogId=" << maxBinlogId;
         break;
       } else {
         std::this_thread::sleep_for(10ms);
@@ -236,7 +239,11 @@ void compareAllowNotFound(const std::shared_ptr<ServerEntry>& master,
     EXPECT_TRUE(ptxn1.ok());
     std::unique_ptr<Transaction> txn1 = std::move(ptxn1.value());
     auto cursor1 = txn1->createAllDataCursor();
+    auto minBinlog1 = RepllogCursorV2::getMinBinlogId(txn1.get());
+    EXPECT_TRUE(minBinlog1.ok());
+    auto minBinlogBound1 = ReplLogKeyV2(minBinlog1.value()).encode();
     auto cursor1_binlog = txn1->createBinlogCursor();
+    cursor1_binlog->seek(minBinlogBound1);
     while (true) {
       Expected<Record> exptRcd1 = cursor1->next();
       if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -272,7 +279,11 @@ void compareAllowNotFound(const std::shared_ptr<ServerEntry>& master,
     }
 
     auto cursor2 = txn2->createAllDataCursor();
+    auto minBinlog2 = RepllogCursorV2::getMinBinlogId(txn2.get());
+    EXPECT_TRUE(minBinlog2.ok());
+    auto minBinlogBound2 = ReplLogKeyV2(minBinlog2.value()).encode();
     auto cursor2_binlog = txn2->createBinlogCursor();
+    cursor2_binlog->seek(minBinlogBound2);
     while (true) {
       Expected<Record> exptRcd2 = cursor2->next();
       if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -370,8 +381,6 @@ makeRestoreEnv(uint32_t storeCnt) {
   cfg2->maxBinlogKeepNum = 1;
   cfg1->minBinlogKeepSec = 0;
   cfg2->minBinlogKeepSec = 0;
-  cfg1->binlogDelRange = 1;
-  cfg2->binlogDelRange = 1;
 
   auto master1 = std::make_shared<ServerEntry>(cfg1);
   auto s = master1->startup(cfg1);
@@ -471,6 +480,7 @@ TEST(Restore, Common) {
     restoreBinlog(master1_dir, master2, UINT64_MAX);
     addOneKeyEveryKvstore(master2, "restore_test_key1");
     waitBinlogDump(master2);
+    LOG(INFO) << ">>>>>> compareData 3st end;";
     compareData(master1, master2, false);  // compare data only
 
     master1->stop();
@@ -490,13 +500,10 @@ std::vector<std::shared_ptr<ServerEntry>> makeRestoreEnv2(uint32_t storeCnt) {
   auto cfg2 = makeServerParam(master2_port, storeCnt, master2_dir, false);
   auto cfg3 = makeServerParam(slave1_port, storeCnt, slave1_dir, false);
   cfg1->minBinlogKeepSec = 60;
-  cfg1->binlogDelRange = 1;
   cfg2->maxBinlogKeepNum = 1;
   cfg2->minBinlogKeepSec = 0;
-  cfg2->binlogDelRange = 1;
   cfg3->maxBinlogKeepNum = 1;
   cfg3->minBinlogKeepSec = 0;
-  cfg3->binlogDelRange = 1;
   cfg3->slaveBinlogKeepNum = 1;
 
   auto master1 = std::make_shared<ServerEntry>(cfg1);

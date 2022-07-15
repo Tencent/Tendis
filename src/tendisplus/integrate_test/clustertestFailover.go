@@ -82,7 +82,7 @@ func testClusterManualFailoverIncrSync() {
 	cfg["cluster-enabled"] = "yes"
 	cfg["masterauth"] = "tendis+test"
 
-    var servers, predixy, _ = startCluster("127.0.0.1", *mport, 3)
+    var servers, predixy, _ = startCluster("127.0.0.1", *mport, 3, map[string]string{"minBinlogKeepSec": "60"})
 
 	master := (*servers)[0]
 	// defer shutdownServer(master, *shutdown, *clear)
@@ -164,7 +164,7 @@ func testClusterShutdownFailoverIncrSync() {
 	cfg["cluster-enabled"] = "yes"
 	cfg["masterauth"] = "tendis+test"
 
-    var servers, predixy, _ = startCluster("127.0.0.1", *mport, 3)
+    var servers, predixy, _ = startCluster("127.0.0.1", *mport, 3, map[string]string{"minBinlogKeepSec": "60"})
 
 	master := (*servers)[0]
 	// defer shutdownServer(master, *shutdown, *clear)
@@ -276,7 +276,7 @@ func testClusterShutdownFailoverIncrSync() {
 func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int,
     failoverQuickly bool) {
     log.Infof("testCluster begin failoverQuickly:%t", failoverQuickly)
-    var servers, predixy, _ = startCluster(clusterIp, clusterPortStart, clusterNodeNum)
+    var servers, predixy, _ = startCluster(clusterIp, clusterPortStart, clusterNodeNum, map[string]string{})
     //nodeInfoArray
 
     // add data

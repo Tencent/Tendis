@@ -34,6 +34,7 @@ using preProcess = std::function<string(const string&)>;
 
 string removeQuotes(const string& v);
 string removeQuotesAndToLower(const string& v);
+void NoUseWarning(const string& name);
 
 class BaseVar {
  public:
@@ -56,6 +57,9 @@ class BaseVar {
       return {ErrorCodes::ERR_PARSEOPT, name + "can't change dynamically"};
     }
     return set(value, startup);
+  }
+  virtual bool need_show() const {
+    return true;
   }
   virtual string show() const = 0;
   virtual string default_show() const = 0;
@@ -333,6 +337,32 @@ class BoolVar : public BaseVar {
   bool _defaultValue;
 };
 
+class NoUseVar : public BaseVar {
+ public:
+  NoUseVar(const string& name,
+          void* v,
+          checkfunptr ptr,
+          preProcess preFun,
+          bool allowDynamicSet)
+    : BaseVar(name, v, ptr, preFun, allowDynamicSet), _setFlag(false) {}
+  virtual string show() const {
+    return " not supported anymore";
+  }
+  virtual string default_show() const {
+    return "no";
+  }
+  virtual bool need_show() const {
+    return _setFlag;
+  }
+ private:
+  TSAN_SUPPRESSION Status set(const string& val, bool startup) {
+    _setFlag = true;
+    NoUseWarning(name);
+    return {ErrorCodes::ERR_OK, ""};
+  }
+  bool _setFlag;
+};
+
 class rewriteConfigState {
  public:
   rewriteConfigState() : _hasTail(false) {}
@@ -466,7 +496,6 @@ class ServerParams {
   uint32_t truncateBinlogNum = 100000;
   uint32_t binlogFileSizeMB = 64;
   uint32_t binlogFileSecs = 20 * 60;
-  uint32_t binlogDelRange = 100000;
 
   uint32_t keysDefaultLimit = 100;
   uint32_t lockWaitTimeOut = 3600;
@@ -567,14 +596,11 @@ class ServerParams {
   bool jeprofAutoDump = true;
   bool deleteFilesInRangeForMigrateGc = false;
   bool compactRangeAfterDeleteRange = false;
-  bool saveMinBinlogId = true;
-  bool deleteFilesInRangeForBinlog = true;
   bool logError = false;
   bool directIo = false;
   bool allowCrossSlot = false;
   uint32_t generateHeartbeatBinlogInterval = 0;  // s
   int64_t waitTimeIfExistsMigrateTask = 600;  // s
-  uint32_t netSendBatchSize = 1400;  // no use anymore
 };
 
 extern std::shared_ptr<tendisplus::ServerParams> gParams;

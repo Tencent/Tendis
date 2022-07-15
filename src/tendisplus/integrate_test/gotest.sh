@@ -53,6 +53,7 @@ function runOne() {
     passcnt=`grep "go passed" $tmplog|wc -l`
     if [ $passcnt -lt 1 ]; then
         echo grep 'go passed' failed
+        echo "##### $cmd excute failed, no find passed in $tmplog"
         exit 1
     fi
 }

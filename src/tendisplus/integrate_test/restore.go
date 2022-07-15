@@ -29,7 +29,6 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
 
     cfgArgs["maxbinlogkeepnum"] = "10000"
     cfgArgs["minbinlogkeepsec"] = "60"
-    cfgArgs["binlogDelRange"] = "1"
 
     m1_port = util.FindAvailablePort(m1_port)
     log.Infof("FindAvailablePort:%d", m1_port)

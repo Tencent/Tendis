@@ -841,141 +841,113 @@ void checkBinlogKeepNum(std::shared_ptr<ServerEntry> svr, uint32_t num) {
               << " binlogstart:" << binlogstart << " num:" << num
               << " binlogmeta:" << binlogmeta;
 
-    // if data not full, binlogpos-binlogstart may be smaller than num.
-    if (svr->getParams()->binlogDelRange == 1 ||
-        svr->getParams()->binlogDelRange == 0) {
-      EXPECT_EQ(binlogpos - binlogstart + 1, num);
-    } else {
-      EXPECT_LT(binlogpos - binlogstart + 1,
-                num + svr->getParams()->binlogDelRange);
-    }
+    EXPECT_EQ(binlogstart + num, binlogpos + 1);
   }
 }
 
 TEST(Repl, BinlogKeepNum_Test) {
-  size_t i = 0;
   {
-    for (int j = 0; j < 3; j++) {
-      LOG(INFO) << ">>>>>> test time:" << j;
-      const auto guard = MakeGuard([] {
-        destroyEnv(master_dir);
-        destroyEnv(slave_dir);
-        destroyEnv(slave1_dir);
-        destroyEnv(single_dir);
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-      });
-
-      EXPECT_TRUE(setupEnv(master_dir));
-      EXPECT_TRUE(setupEnv(slave_dir));
-      EXPECT_TRUE(setupEnv(slave1_dir));
-      EXPECT_TRUE(setupEnv(single_dir));
-
-      auto cfg1 = makeServerParam(master_port, i, master_dir, false);
-      auto cfg2 = makeServerParam(slave_port, i, slave_dir, false);
-      auto cfg3 = makeServerParam(slave1_port, i, slave1_dir, false);
-      auto cfg4 = makeServerParam(single_port, i, single_dir, false);
-      uint64_t masterBinlogNum = 10;
-      cfg1->maxBinlogKeepNum = masterBinlogNum;
-      cfg1->minBinlogKeepSec = 0;
-      cfg2->maxBinlogKeepNum = masterBinlogNum;
-      cfg2->minBinlogKeepSec = 0;
-      cfg2->slaveBinlogKeepNum = 1;
-      cfg3->slaveBinlogKeepNum = 1;
-      cfg3->minBinlogKeepSec = 0;
-      cfg4->maxBinlogKeepNum = masterBinlogNum;
-      cfg4->minBinlogKeepSec = 0;
-      cfg1->binlogDelRange = 1;
-      cfg2->binlogDelRange = 1;
-      cfg3->binlogDelRange = 1;
-      cfg4->binlogDelRange = 1;
-      if (j == 1) {
-        cfg1->binlogDelRange = 5000;
-        cfg2->binlogDelRange = 5000;
-        cfg3->binlogDelRange = 5000;
-        cfg4->binlogDelRange = 5000;
-        cfg1->compactRangeAfterDeleteRange = true;
-      } else if (j == 2) {
-        cfg1->binlogDelRange = 5000;
-        cfg2->binlogDelRange = 5000;
-        cfg3->binlogDelRange = 5000;
-        cfg4->binlogDelRange = 5000;
-        cfg1->deleteFilesInRangeForBinlog = true;
-      }
-
-      // NOTE(takenliu) be care of gParams set by cfg1.
-      gParams = cfg1;
-
-      auto master = std::make_shared<ServerEntry>(cfg1);
-      auto s = master->startup(cfg1);
-      INVARIANT(s.ok());
-
-      auto slave = std::make_shared<ServerEntry>(cfg2);
-      s = slave->startup(cfg2);
-      INVARIANT(s.ok());
-
-      auto slave1 = std::make_shared<ServerEntry>(cfg3);
-      s = slave1->startup(cfg3);
-      INVARIANT(s.ok());
-
-      auto single = std::make_shared<ServerEntry>(cfg4);
-      s = single->startup(cfg4);
-      INVARIANT(s.ok());
-
-      runCmd(slave, {"slaveof", "127.0.0.1", std::to_string(master_port)});
-      // slaveof need about 3 seconds to transfer file.
+    LOG(INFO) << ">>>>>> BinlogKeepNum_Test";
+    const auto guard = MakeGuard([] {
+      destroyEnv(master_dir);
+      destroyEnv(slave_dir);
+      destroyEnv(slave1_dir);
+      destroyEnv(single_dir);
       std::this_thread::sleep_for(std::chrono::seconds(5));
+    });
 
-      auto allKeys =
-        writeComplexDataToServer(master, recordSize, 50, nullptr, true);
-      writeComplexDataToServer(single, recordSize, 50, nullptr, true);
+    EXPECT_TRUE(setupEnv(master_dir));
+    EXPECT_TRUE(setupEnv(slave_dir));
+    EXPECT_TRUE(setupEnv(slave1_dir));
+    EXPECT_TRUE(setupEnv(single_dir));
 
-      waitSlaveCatchup(master, slave);
-      sleep(3);  // wait recycle binlog
+    auto cfg1 = makeServerParam(master_port, 0, master_dir, false);
+    auto cfg2 = makeServerParam(slave_port, 0, slave_dir, false);
+    auto cfg3 = makeServerParam(slave1_port, 0, slave1_dir, false);
+    auto cfg4 = makeServerParam(single_port, 0, single_dir, false);
+    uint64_t masterBinlogNum = 10;
+    cfg1->maxBinlogKeepNum = masterBinlogNum;
+    cfg1->minBinlogKeepSec = 0;
+    cfg2->maxBinlogKeepNum = masterBinlogNum;
+    cfg2->minBinlogKeepSec = 0;
+    cfg2->slaveBinlogKeepNum = 1;
+    cfg3->slaveBinlogKeepNum = 1;
+    cfg3->minBinlogKeepSec = 0;
+    cfg4->maxBinlogKeepNum = masterBinlogNum;
+    cfg4->minBinlogKeepSec = 0;
 
-      LOG(INFO) << ">>>>>> checkBinlogKeepNum begin.";
-      checkBinlogKeepNum(master, masterBinlogNum);
-      checkBinlogKeepNum(slave, 1);
-      checkBinlogKeepNum(single, masterBinlogNum);
+    // NOTE(takenliu) be care of gParams set by cfg1.
+    gParams = cfg1;
 
+    auto master = std::make_shared<ServerEntry>(cfg1);
+    auto s = master->startup(cfg1);
+    INVARIANT(s.ok());
 
-      LOG(INFO) << ">>>>>> master add data begin.";
-      auto thread = std::thread([this, master]() {
-        testAll(master);  // need about 40 seconds
-      });
-      uint32_t sleep_time = genRand() % 20 + 10;  // 10-30 seconds
-      sleep(sleep_time);
+    auto slave = std::make_shared<ServerEntry>(cfg2);
+    s = slave->startup(cfg2);
+    INVARIANT(s.ok());
 
-      LOG(INFO) << ">>>>>> slaveof begin.";
-      runCmd(slave1, {"slaveof", "127.0.0.1", std::to_string(slave_port)});
-      // slaveof need about 3 seconds to transfer file.
-      std::this_thread::sleep_for(std::chrono::seconds(5));
+    auto slave1 = std::make_shared<ServerEntry>(cfg3);
+    s = slave1->startup(cfg3);
+    INVARIANT(s.ok());
 
-      thread.join();
-      // add data every store
+    auto single = std::make_shared<ServerEntry>(cfg4);
+    s = single->startup(cfg4);
+    INVARIANT(s.ok());
+
+    runCmd(slave, {"slaveof", "127.0.0.1", std::to_string(master_port)});
+    // slaveof need about 3 seconds to transfer file.
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+
+    auto allKeys =
       writeComplexDataToServer(master, recordSize, 50, nullptr, true);
-      waitSlaveCatchup(master, slave);
-      waitSlaveCatchup(slave, slave1);
-      sleep(3);  // wait recycle binlog
-      LOG(INFO) << ">>>>>> checkBinlogKeepNum begin.";
-      checkBinlogKeepNum(master, masterBinlogNum);
-      checkBinlogKeepNum(slave, masterBinlogNum);
-      checkBinlogKeepNum(slave1, 1);
-      LOG(INFO) << ">>>>>> checkBinlogKeepNum end.";
+    writeComplexDataToServer(single, recordSize, 50, nullptr, true);
+
+    waitSlaveCatchup(master, slave);
+    sleep(3);  // wait recycle binlog
+
+    LOG(INFO) << ">>>>>> checkBinlogKeepNum begin.";
+    checkBinlogKeepNum(master, masterBinlogNum);
+    checkBinlogKeepNum(slave, 1);
+    checkBinlogKeepNum(single, masterBinlogNum);
+
+    LOG(INFO) << ">>>>>> master add data begin.";
+    auto thread = std::thread([this, master]() {
+      testAll(master);  // need about 40 seconds
+    });
+    uint32_t sleep_time = genRand() % 20 + 10;  // 10-30 seconds
+    sleep(sleep_time);
+
+    LOG(INFO) << ">>>>>> slaveof begin.";
+    runCmd(slave1, {"slaveof", "127.0.0.1", std::to_string(slave_port)});
+    // slaveof need about 3 seconds to transfer file.
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+
+    thread.join();
+    // add data every store
+    writeComplexDataToServer(master, recordSize, 50, nullptr, true);
+    waitSlaveCatchup(master, slave);
+    waitSlaveCatchup(slave, slave1);
+    sleep(3);  // wait recycle binlog
+    LOG(INFO) << ">>>>>> checkBinlogKeepNum begin.";
+    checkBinlogKeepNum(master, masterBinlogNum);
+    checkBinlogKeepNum(slave, masterBinlogNum);
+    checkBinlogKeepNum(slave1, 1);
+    LOG(INFO) << ">>>>>> checkBinlogKeepNum end.";
 
 #ifndef _WIN32
-      master->stop();
-      slave->stop();
-      slave1->stop();
-      single->stop();
+    master->stop();
+    slave->stop();
+    slave1->stop();
+    single->stop();
 
-      ASSERT_EQ(slave.use_count(), 1);
-      ASSERT_EQ(master.use_count(), 1);
-      ASSERT_EQ(slave1.use_count(), 1);
-      ASSERT_EQ(single.use_count(), 1);
+    ASSERT_EQ(slave.use_count(), 1);
+    ASSERT_EQ(master.use_count(), 1);
+    ASSERT_EQ(slave1.use_count(), 1);
+    ASSERT_EQ(single.use_count(), 1);
 #endif
 
-      LOG(INFO) << ">>>>>> test time:" << j << " end;";
-    }
+    LOG(INFO) << ">>>>>> BinlogKeepNum_Test" << " end;";
   }
 }
 
@@ -1098,7 +1070,6 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
     uint64_t masterBinlogNum = 10;
     cfg->maxBinlogKeepNum = masterBinlogNum;
     cfg->minBinlogKeepSec = 0;
-    cfg->binlogDelRange = 5000;
     gParams = cfg;
 
     {

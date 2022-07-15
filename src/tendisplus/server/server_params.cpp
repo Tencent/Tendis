@@ -85,6 +85,15 @@ string gMappingCmdList = "";  // NOLINT
   else                                                                        \
     INVARIANT(0);  // NOTE(takenliu): if other type is needed, change here.
 
+#define REGISTER_VARS_NOUSE(str)       \
+  _mapServerParams.insert(             \
+      make_pair(toLower(str),          \
+                new NoUseVar(str,      \
+                            NULL,      \
+                            NULL,      \
+                            NULL,      \
+                            false)));
+
 #define REGISTER_VARS(var) \
   REGISTER_VARS_FULL(#var, var, NULL, NULL, 0, INT_MAX, false)
 #define REGISTER_VARS_DIFF_NAME(str, var) \
@@ -131,22 +140,6 @@ bool executorThreadNumCheck(
   return true;
 }
 
-bool binlogDelRangeCheck(
-        const std::string& val, bool startup, string* errinfo) {
-  auto num = std::strtoull(val.c_str(), nullptr, 10);
-  if (startup || !gParams) {
-    return true;
-  }
-  auto truncateBinlogNum = gParams->truncateBinlogNum;
-  if (num > truncateBinlogNum) {
-    if (errinfo != NULL) {
-      *errinfo = "need binlogDelRange < truncateBinlogNum";
-    }
-    return false;
-  }
-  return true;
-}
-
 bool aofEnabledCheck(const std::string& val, bool startup, string* errinfo) {
   bool v = isOptionOn(val);
   if (startup || !gParams) {
@@ -165,33 +158,10 @@ bool aofEnabledCheck(const std::string& val, bool startup, string* errinfo) {
 bool truncateBinlogNumCheck(
         const std::string& val, bool startup, string* errinfo) {
   auto num = std::strtoull(val.c_str(), nullptr, 10);
-  if (startup || !gParams) {
-    return true;
-  }
-  auto binlogDelRange = gParams->binlogDelRange;
-  if (num < binlogDelRange) {
-    if (errinfo != NULL) {
-      *errinfo = "need binlogDelRange < truncateBinlogNum";
-    }
+  if (num < 1) {
     return false;
   }
-  return true;
-}
 
-
-bool deleteFilesInRangeForBinlogCheck(
-        const std::string& val, bool startup, string* errinfo) {
-  if (startup || !gParams) {
-    return true;
-  }
-  bool value = isOptionOn(val);
-  if (!gParams->saveMinBinlogId && value) {
-    if (errinfo != NULL) {
-      *errinfo =
-        "set deleteFilesInRangeForBinlog=true need saveMinBinlogId==ture";
-    }
-    return false;
-  }
   return true;
 }
 
@@ -217,6 +187,10 @@ string removeQuotesAndToLower(const string& v) {
     tmp = tmp.substr(1, tmp.size() - 2);
   }
   return tmp;
+}
+
+void NoUseWarning(const string& name) {
+  LOG(INFO) << name << "is not supported anymore" << endl;
 }
 
 Status rewriteConfigState::rewriteConfigReadOldFile(
@@ -434,8 +408,7 @@ ServerParams::ServerParams() {
     truncateBinlogNum, truncateBinlogNumCheck, nullptr, 1, INT_MAX, true);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(binlogFileSizeMB);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(binlogFileSecs);
-  REGISTER_VARS_SAME_NAME(
-    binlogDelRange, binlogDelRangeCheck, nullptr, 1, 100000000, true);
+  REGISTER_VARS_NOUSE("binlogDelRange");
   REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-send-batch", binlogSendBatch);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-send-bytes", binlogSendBytes);
 
@@ -572,11 +545,8 @@ ServerParams::ServerParams() {
                                   deleteFilesInRangeForMigrateGc);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("compactrange-after-deleterange",
                                   compactRangeAfterDeleteRange);
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("save-min-binlogid",
-                                  saveMinBinlogId);
-  REGISTER_VARS_FULL(
-          "deletefilesinrange-for-binlog", deleteFilesInRangeForBinlog,
-          deleteFilesInRangeForBinlogCheck, nullptr, -1, -1, true);
+  REGISTER_VARS_NOUSE("save-min-binlogid");
+  REGISTER_VARS_NOUSE("deletefilesinrange-for-binlog");
   REGISTER_VARS_DIFF_NAME_DYNAMIC("log-error", logError);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("direct-io", directIo);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("allow-cross-slot", allowCrossSlot);
@@ -584,7 +554,7 @@ ServerParams::ServerParams() {
                                   generateHeartbeatBinlogInterval);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("wait-time-if-exists-migrate-task",
                                   waitTimeIfExistsMigrateTask);
-  REGISTER_VARS_DIFF_NAME("net-send-batch-size", netSendBatchSize);
+  REGISTER_VARS_NOUSE("net-send-batch-size");
 }
 
 ServerParams::~ServerParams() {
@@ -670,13 +640,6 @@ Status ServerParams::checkParams() {
             "need executorThreadNum % executorWorkPoolSize == 0"};
   }
 
-  if (binlogDelRange > truncateBinlogNum) {
-    LOG(ERROR) << "not allow binlogDelRange > truncateBinlogNum : "
-               << binlogDelRange << " > " << truncateBinlogNum;
-    return {ErrorCodes::ERR_INTERNAL,
-            "not allow binlogDelRange > truncateBinlogNum"};
-  }
-
   if (psyncEnabled && !aofEnabled) {
     auto err = "psyncEnabled is not allowed when aofEnable is 0";
     LOG(ERROR) << err;
@@ -725,12 +688,6 @@ Status ServerParams::checkParams() {
     logRecycleThreadnum = kvStoreCount;
   }
 
-  if (!saveMinBinlogId && deleteFilesInRangeForBinlog) {
-    auto err =
-      "set deleteFilesInRangeForBinlog=true need saveMinBinlogId==ture";
-    LOG(ERROR) << err;
-    return {ErrorCodes::ERR_INTERNAL, err};
-  }
   return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -822,7 +779,9 @@ string ServerParams::showAll() const {
       ret += "  " + iter.second->getName() + ":******\n";
       continue;
     }
-    ret += "  " + iter.second->getName() + ":" + iter.second->show() + "\n";
+    if (iter.second->need_show()) {
+      ret += "  " + iter.second->getName() + ":" + iter.second->show() + "\n";
+    }
   }
 
   for (auto iter : _rocksdbOptions) {
