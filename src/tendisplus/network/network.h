@@ -98,7 +98,6 @@ class NetworkAsio {
   uint16_t getPort() {
     return _port;
   }
-  void timeoutProcess(size_t index);
   void addSession(std::shared_ptr<Session> sess);
   void endSession(uint64_t id);
 #ifdef _WIN32
@@ -120,8 +119,6 @@ class NetworkAsio {
   std::unique_ptr<asio::ip::tcp::acceptor> _acceptor;
   std::unique_ptr<std::thread> _acceptThd;
   std::vector<std::thread> _rwThreads;
-  std::vector<asio::steady_timer> _timers;
-  std::mutex _mutex;
   std::atomic<bool> _isRunning;
   std::shared_ptr<NetworkMatrix> _netMatrix;
   std::shared_ptr<RequestMatrix> _reqMatrix;
@@ -131,7 +128,6 @@ class NetworkAsio {
   std::shared_ptr<ServerParams> _cfg;
   bool _sendDelay;
   std::string _name;
-  std::vector<std::map<uint64_t, std::shared_ptr<Session>>> _sessions;
 };
 
 struct SendBuffer {
@@ -157,7 +153,6 @@ class NetSession : public Session {
   virtual std::string getLocalRepr() const;
   asio::ip::tcp::socket borrowConn();
   asio::ip::tcp::socket* getSock();
-  bool isSendDelay();
   virtual Status setResponse(const std::string& s);
   void setCloseAfterRsp();
   virtual void start();

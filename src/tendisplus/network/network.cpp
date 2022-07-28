@@ -10,6 +10,7 @@
 #include "tendisplus/network/network.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/test_util.h"
 #include "tendisplus/storage/varint.h"
@@ -341,74 +342,7 @@ Status NetworkAsio::startThread() {
     });
     _rwThreads.emplace_back(std::move(thd));
   }
-  _sessions.resize(_netIoThreadNum);
-  /*
-  if (_sendDelay) {
-    _timers.reserve(_netIoThreadNum);
-    for (size_t i = 0; i < _netIoThreadNum; i++) {
-      _timers.emplace_back(*(_rwCtxList[i]), std::chrono::milliseconds(1));
-      timeoutProcess(i);
-      LOG(INFO) << "NetworkAsio::start timer:" << i;
-    }
-  }
-  */
   return {ErrorCodes::ERR_OK, ""};
-}
-
-void NetworkAsio::timeoutProcess(size_t index) {
-  auto cb = [this, index](const std::error_code& ec) {
-    std::lock_guard<std::mutex> lk(_mutex);
-    if (!_isRunning.load(std::memory_order_relaxed)) {
-      LOG(INFO) << "timeoutCb, server is shuting down";
-      return;
-    }
-    if (ec.value()) {
-      LOG(WARNING) << "timeoutCb errorcode:" << ec.message();
-      // we log this error, but dont return
-    }
-
-    for (auto& sess : _sessions[index]) {
-      // NOTE(tanninzhu): session type must be NET or CLUSTER,
-      // so we use static_pointer_cast
-      INVARIANT(sess.second->getType() == Session::Type::NET ||
-        sess.second->getType() == Session::Type::CLUSTER);
-      auto s = static_pointer_cast<NetSession>(sess.second);
-      if (s->isSendDelay()) {
-        s->drainRsp();
-      }
-    }
-
-    timeoutProcess(index);
-  };
-  _timers[index].expires_at(
-    _timers[index].expires_at() + std::chrono::milliseconds(1));
-  _timers[index].async_wait(cb);
-}
-
-void NetworkAsio::addSession(std::shared_ptr<Session> sess) {
-  std::lock_guard<std::mutex> lk(_mutex);
-  INVARIANT(sess->getType() == Session::Type::NET ||
-    sess->getType() == Session::Type::CLUSTER);
-  std::shared_ptr<NetSession> s = static_pointer_cast<NetSession>(sess);
-  for (uint64_t i = 0; i < _rwCtxList.size(); i++) {
-    if (&(s->getSock()->get_io_context()) == _rwCtxList[i].get()) {
-      _sessions[i][sess->id()] = sess;
-      return;
-    }
-  }
-  LOG(WARNING) << "session id:" << sess->id()
-    << " can't find io context";
-  return;
-}
-
-void NetworkAsio::endSession(uint64_t id) {
-  std::lock_guard<std::mutex> lk(_mutex);
-  for (auto& sessMap : _sessions) {
-    if (sessMap.find(id) != sessMap.end()) {
-      sessMap.erase(id);
-      return;
-    }
-  }
 }
 
 Status NetworkAsio::run(bool forGossip) {
@@ -564,10 +498,6 @@ asio::ip::tcp::socket* NetSession::getSock() {
   return &_sock;
 }
 
-bool NetSession::isSendDelay() {
-  return _sendDelay;
-}
-
 Status NetSession::setResponse(const std::string& s) {
   std::lock_guard<std::mutex> lk(_mutex);
   if (_isEnded) {
@@ -594,21 +524,13 @@ Status NetSession::setResponse(const std::string& s) {
     }
   }
 
-  /*
-  uint32_t netSendBatchSize = _server->getParams()->netSendBatchSize;
-  */
   if (_isSendRunning) {
     std::copy(s.begin(), s.end(), std::back_inserter(_sendBufferBack));
   } else {
     std::copy(s.begin(), s.end(), std::back_inserter(_sendBuffer));
-    /*
-    if (netSendBatchSize <= 0 || !_sendDelay ||
-        (netSendBatchSize > 0 && _sendDelay &&
-          _sendBuffer.size() > netSendBatchSize)) {
+    if (!_sendDelay) {
       drainRspWithoutLock();
     }
-    */
-    drainRspWithoutLock();
   }
   return {ErrorCodes::ERR_OK, ""};
 }
@@ -851,6 +773,12 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
     return;
   }
 
+  const auto guard = MakeGuard([&] {
+    if (_state == State::Stop) {
+      drainRsp();
+    }
+  });
+
   if (_server) {
     // TODO(vinchen): Is it right when cluster is enable?
     _server->getServerStat().netInputBytes += actualLen;
@@ -865,6 +793,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
       LOG(WARNING) << "-ERR max number of clients reached, clients: "
         << maxClients;
       setRspAndClose("-ERR max number of clients reached\r\n");
+      setState(State::Stop);
       return;
     }
     _first = false;
@@ -878,6 +807,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
   if (_queryBufPos > REDIS_MAX_QUERYBUF_LEN) {
     ++_netMatrix->invalidPackets;
     setRspAndClose("Closing client that reached max query buffer length");
+    setState(State::Stop);
     return;
   }
   setState(State::DrainReqBuf);
@@ -1050,7 +980,6 @@ void NetSession::drainRspCallback(const std::error_code& ec,
     _sendBuffer.clear();
     return;
   }
-  uint64_t netSendBatchSize = _server->getParams()->netSendBatchSize;
   if (_server) {
     // TODO(vinchen): Is it right when cluster = true
     _server->getServerStat().netOutputBytes += _sendBuffer.size();
@@ -1061,14 +990,9 @@ void NetSession::drainRspCallback(const std::error_code& ec,
     INVARIANT(_isSendRunning);
     _sendBuffer.clear();
     _sendBuffer.swap(_sendBufferBack);
-    if (netSendBatchSize && _sendDelay) {
-      if (_sendBuffer.size() > netSendBatchSize) {
-        drainRspWithoutLock();
-      } else {
-        _isSendRunning = false;
-      }
+    if (_sendDelay) {
+      _isSendRunning = false;
     } else {
-      INVARIANT(!_sendDelay);
       if (!_sendBuffer.empty()) {
         drainRspWithoutLock();
       } else {

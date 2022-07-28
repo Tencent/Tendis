@@ -4075,9 +4075,10 @@ void ClusterManager::stop() {
 
 Status ClusterManager::initNetWork() {
   shared_ptr<ServerParams> cfg = _svr->getParams();
+  bool sendDelay = false;
   _clusterNetwork =
     std::make_unique<NetworkAsio>(_svr, _netMatrix, _reqMatrix, cfg,
-      false, "cluster");
+      sendDelay, "cluster");
 
   Status s =
     _clusterNetwork->prepare(cfg->bindIp, cfg->port + CLUSTER_PORT_INCR, 1);

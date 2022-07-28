@@ -611,9 +611,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     _cfg->executorThreadNum += pool->size();
   }
 
-  bool sendDelay = _cfg->netSendBatchSize > 0 ? true : false;
-  // _cfg->executorThreadNum = _executorList.size() *
-  // _executorList.back()->size(); network
+  bool sendDelay = true;
   _network = std::make_unique<NetworkAsio>(
     shared_from_this(), _netMatrix, _reqMatrix, cfg, sendDelay);
   Status s = _network->prepare(cfg->bindIp, cfg->port, cfg->netIoThreadNum);
@@ -780,16 +778,6 @@ bool ServerEntry::versionIncrease() const {
 }
 
 bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
-  if (!addSessionInSvr(sess)) {
-    return false;
-  }
-  if (sess->getType() == Session::Type::NET) {
-    _network->addSession(sess);
-  }
-  return true;
-}
-
-bool ServerEntry::addSessionInSvr(std::shared_ptr<Session> sess) {
   std::lock_guard<std::mutex> lk(_mutex_session);
   if (!_isRunning.load(std::memory_order_relaxed)) {
     LOG(WARNING) << "session:" << sess->id()
@@ -859,11 +847,6 @@ Status ServerEntry::cancelSession(uint64_t connId) {
 }
 //
 void ServerEntry::endSession(uint64_t connId) {
-  endSessionInSvr(connId);
-  _network->endSession(connId);
-}
-
-void ServerEntry::endSessionInSvr(uint64_t connId) {
   std::lock_guard<std::mutex> lk(_mutex_session);
   if (!_isRunning.load(std::memory_order_relaxed)) {
     return;
