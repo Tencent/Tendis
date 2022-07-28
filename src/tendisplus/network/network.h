@@ -242,6 +242,8 @@ class NetSession : public Session {
   // other variables will never be visited in send-threads.
   std::mutex _mutex;
   bool _isSendRunning;
+  bool _sendDelay;
+  bool _callbackCanWrite;
   bool _isEnded;
   bool _first;
   std::vector<char> _sendBuffer;
@@ -251,7 +253,6 @@ class NetSession : public Session {
   std::shared_ptr<NetworkMatrix> _netMatrix;
   std::shared_ptr<RequestMatrix> _reqMatrix;
   uint32_t _ioCtxId = UINT32_MAX;
-  bool _sendDelay;
 };
 
 }  // namespace tendisplus

@@ -376,11 +376,12 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
     _multibulklen(0),
     _bulkLen(-1),
     _isSendRunning(false),
+    _sendDelay(sendDelay),
+    _callbackCanWrite(false),
     _isEnded(false),
     _closeResponse(false),
     _netMatrix(netMatrix),
-    _reqMatrix(reqMatrix),
-    _sendDelay(sendDelay) {
+    _reqMatrix(reqMatrix) {
   if (initSock) {
     std::error_code ec;
     _sock.non_blocking(true, ec);
@@ -943,6 +944,7 @@ void NetSession::processReq() {
 void NetSession::drainRsp() {
   std::lock_guard<std::mutex> lk(_mutex);
   if (_isSendRunning) {
+    _callbackCanWrite = true;
     return;
   }
   drainRspWithoutLock();
@@ -958,7 +960,7 @@ void NetSession::drainRspWithoutLock() {
   asio::async_write(
     _sock,
     asio::buffer(_sendBuffer.data(), _sendBuffer.size()),
-    [this, self, now](const std::error_code& ec, size_t actualLen) {
+    [this, self, now] (const std::error_code& ec, size_t actualLen) {
       _reqMatrix->sendPacketCost += nsSinceEpoch() - now;
       drainRspCallback(ec, actualLen);
     });
@@ -990,17 +992,17 @@ void NetSession::drainRspCallback(const std::error_code& ec,
     INVARIANT(_isSendRunning);
     _sendBuffer.clear();
     _sendBuffer.swap(_sendBufferBack);
-    if (_sendDelay) {
-      _isSendRunning = false;
+
+    if (!_sendDelay && !_sendBuffer.empty()) {
+      drainRspWithoutLock();
+    } else if (_callbackCanWrite && !_sendBuffer.empty()) {
+      _callbackCanWrite = false;
+      drainRspWithoutLock();
     } else {
-      if (!_sendBuffer.empty()) {
-        drainRspWithoutLock();
-      } else {
-        _isSendRunning = false;
-      }
+      _callbackCanWrite = false;
+      _isSendRunning = false;
     }
   }
-
   if (_closeResponse && _sendBuffer.empty()) {
     endSession();
   }
