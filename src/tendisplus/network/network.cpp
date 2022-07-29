@@ -51,6 +51,7 @@ constexpr ssize_t REDIS_IOBUF_LEN = (1024 * 16);
 constexpr ssize_t REDIS_MAX_QUERYBUF_LEN = (1024 * 1024 * 1024);
 constexpr ssize_t REDIS_INLINE_MAX_SIZE = (1024 * 64);
 constexpr ssize_t REDIS_MBULK_BIG_ARG = (1024 * 32);
+const int BUFFER_LONG_SIZE = 10*1024*1024;
 
 std::string RequestMatrix::toString() const {
   std::stringstream ss;
@@ -101,7 +102,6 @@ NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
                          std::shared_ptr<NetworkMatrix> netMatrix,
                          std::shared_ptr<RequestMatrix> reqMatrix,
                          std::shared_ptr<ServerParams> cfg,
-                         bool sendDelay,
                          const std::string& name)
   : _connCreated(0),
     _server(server),
@@ -112,7 +112,6 @@ NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
     _netMatrix(netMatrix),
     _reqMatrix(reqMatrix),
     _cfg(cfg),
-    _sendDelay(sendDelay),
     _name(name) {}
 
 #ifdef _WIN32
@@ -267,7 +266,7 @@ void NetworkAsio::doAccept() {
     uint64_t newConnId = _connCreated.fetch_add(1, std::memory_order_relaxed);
     auto sess = std::make_shared<T>(
       _server, std::move(socket), newConnId,
-      true, _netMatrix, _reqMatrix, _sendDelay);
+      true, _netMatrix, _reqMatrix);
     DLOG(INFO) << "new net session, id:" << sess->id()
                << ",connId:" << newConnId << ",from:" << sess->getRemoteRepr()
                << " created";
@@ -363,7 +362,6 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
                        bool initSock,
                        std::shared_ptr<NetworkMatrix> netMatrix,
                        std::shared_ptr<RequestMatrix> reqMatrix,
-                       bool sendDelay,
                        Session::Type type)
   : Session(server, type),
     _connId(connid),
@@ -376,7 +374,6 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
     _multibulklen(0),
     _bulkLen(-1),
     _isSendRunning(false),
-    _sendDelay(sendDelay),
     _callbackCanWrite(false),
     _isEnded(false),
     _closeResponse(false),
@@ -525,11 +522,13 @@ Status NetSession::setResponse(const std::string& s) {
     }
   }
 
+#define NET_SEND_RSP_BATCH_SIZE 1400
+
   if (_isSendRunning) {
     std::copy(s.begin(), s.end(), std::back_inserter(_sendBufferBack));
   } else {
     std::copy(s.begin(), s.end(), std::back_inserter(_sendBuffer));
-    if (!_sendDelay) {
+    if (_sendBuffer.size() > NET_SEND_RSP_BATCH_SIZE) {
       drainRspWithoutLock();
     }
   }
@@ -957,6 +956,10 @@ void NetSession::drainRspWithoutLock() {
   uint64_t now = nsSinceEpoch();
   _isSendRunning = true;
   auto self(shared_from_this());
+  if (_sendBuffer.size() > BUFFER_LONG_SIZE) {
+    LOG(WARNING) << "drainRspWithoutLock async_write long size:"
+      << _sendBuffer.size();
+  }
   asio::async_write(
     _sock,
     asio::buffer(_sendBuffer.data(), _sendBuffer.size()),
@@ -993,9 +996,7 @@ void NetSession::drainRspCallback(const std::error_code& ec,
     _sendBuffer.clear();
     _sendBuffer.swap(_sendBufferBack);
 
-    if (!_sendDelay && !_sendBuffer.empty()) {
-      drainRspWithoutLock();
-    } else if (_callbackCanWrite && !_sendBuffer.empty()) {
+    if (_callbackCanWrite && !_sendBuffer.empty()) {
       _callbackCanWrite = false;
       drainRspWithoutLock();
     } else {

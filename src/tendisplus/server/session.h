@@ -35,6 +35,7 @@ class Session : public std::enable_shared_from_this<Session> {
   virtual std::vector<std::string> getResponse() {
     return std::vector<std::string>();
   }
+  virtual void drainRsp() = 0;
   const std::vector<std::string>& getArgs() const;
   Status processExtendProtocol();
   SessionCtx* getCtx() const;
@@ -104,6 +105,7 @@ class LocalSession : public Session {
   int getFd() final;
   std::string getRemote() const final;
   Status setResponse(const std::string& s) final;
+  virtual void drainRsp() {}
   void setArgs(const std::vector<std::string>& args);
   void setArgs(const std::string& cmd);
 

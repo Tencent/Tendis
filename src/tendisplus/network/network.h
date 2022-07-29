@@ -68,7 +68,6 @@ class NetworkAsio {
               std::shared_ptr<NetworkMatrix> netMatrix,
               std::shared_ptr<RequestMatrix> reqMatrix,
               std::shared_ptr<ServerParams> cfg,
-              bool sendDelay,
               const std::string& name = "tx-io");
   NetworkAsio(const NetworkAsio&) = delete;
   NetworkAsio(NetworkAsio&&) = delete;
@@ -126,7 +125,6 @@ class NetworkAsio {
   uint16_t _port;
   uint32_t _netIoThreadNum;
   std::shared_ptr<ServerParams> _cfg;
-  bool _sendDelay;
   std::string _name;
 };
 
@@ -144,7 +142,6 @@ class NetSession : public Session {
              bool initSock,
              std::shared_ptr<NetworkMatrix> netMatrix,
              std::shared_ptr<RequestMatrix> reqMatrix,
-             bool sendDelay = false,
              Session::Type type = Session::Type::NET);
   NetSession(const NetSession&) = delete;
   NetSession(NetSession&&) = delete;
@@ -242,7 +239,6 @@ class NetSession : public Session {
   // other variables will never be visited in send-threads.
   std::mutex _mutex;
   bool _isSendRunning;
-  bool _sendDelay;
   bool _callbackCanWrite;
   bool _isEnded;
   bool _first;

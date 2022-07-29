@@ -507,8 +507,7 @@ class ClusterSession : public NetSession {
                  uint64_t connid,
                  bool initSock,
                  std::shared_ptr<NetworkMatrix> netMatrix,
-                 std::shared_ptr<RequestMatrix> reqMatrix,
-                 bool sendDelay = false);
+                 std::shared_ptr<RequestMatrix> reqMatrix);
   ClusterSession(const ClusterSession&) = delete;
   ClusterSession(ClusterSession&&) = delete;
   virtual ~ClusterSession() {}

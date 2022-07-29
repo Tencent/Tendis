@@ -611,9 +611,8 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     _cfg->executorThreadNum += pool->size();
   }
 
-  bool sendDelay = true;
   _network = std::make_unique<NetworkAsio>(
-    shared_from_this(), _netMatrix, _reqMatrix, cfg, sendDelay);
+    shared_from_this(), _netMatrix, _reqMatrix, cfg);
   Status s = _network->prepare(cfg->bindIp, cfg->port, cfg->netIoThreadNum);
   if (!s.ok()) {
     LOG(ERROR) << "ServerEntry::startup failed, _network->prepare:"
@@ -1017,6 +1016,7 @@ void ServerEntry::replyMonitors(Session* sess) {
     if (!s.ok()) {
       iter = _monitors.erase(iter);
     } else {
+      (*iter)->drainRsp();
       ++iter;
     }
   }
