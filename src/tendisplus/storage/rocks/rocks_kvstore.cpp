@@ -1276,10 +1276,10 @@ rocksdb::Options RocksKVStore::options() {
   table_options.cache_index_and_filter_blocks = false;
 
   options.write_buffer_size = 64 * 1024 * 1024;  // 64MB
-  // level_0 max size: 8*64MB = 512MB
-  options.level0_slowdown_writes_trigger = 8;
-  options.max_write_buffer_number = 2;
-  options.max_write_buffer_number_to_maintain = 1;
+  // level_0 files don't have a fixed file size.
+  options.level0_slowdown_writes_trigger = 20;
+  options.max_write_buffer_number = 4;
+  options.min_write_buffer_number_to_merge = 2;
   options.max_background_compactions = 8;
   options.max_background_flushes = 2;
   options.target_file_size_base = 64 * 1024 * 1024;  // 64MB
