@@ -68,7 +68,6 @@ class NetworkAsio {
               std::shared_ptr<NetworkMatrix> netMatrix,
               std::shared_ptr<RequestMatrix> reqMatrix,
               std::shared_ptr<ServerParams> cfg,
-              bool sendDelay,
               const std::string& name = "tx-io");
   NetworkAsio(const NetworkAsio&) = delete;
   NetworkAsio(NetworkAsio&&) = delete;
@@ -98,7 +97,6 @@ class NetworkAsio {
   uint16_t getPort() {
     return _port;
   }
-  void timeoutProcess(size_t index);
   void addSession(std::shared_ptr<Session> sess);
   void endSession(uint64_t id);
 #ifdef _WIN32
@@ -120,8 +118,6 @@ class NetworkAsio {
   std::unique_ptr<asio::ip::tcp::acceptor> _acceptor;
   std::unique_ptr<std::thread> _acceptThd;
   std::vector<std::thread> _rwThreads;
-  std::vector<asio::steady_timer> _timers;
-  std::mutex _mutex;
   std::atomic<bool> _isRunning;
   std::shared_ptr<NetworkMatrix> _netMatrix;
   std::shared_ptr<RequestMatrix> _reqMatrix;
@@ -129,9 +125,7 @@ class NetworkAsio {
   uint16_t _port;
   uint32_t _netIoThreadNum;
   std::shared_ptr<ServerParams> _cfg;
-  bool _sendDelay;
   std::string _name;
-  std::vector<std::map<uint64_t, std::shared_ptr<Session>>> _sessions;
 };
 
 struct SendBuffer {
@@ -148,7 +142,6 @@ class NetSession : public Session {
              bool initSock,
              std::shared_ptr<NetworkMatrix> netMatrix,
              std::shared_ptr<RequestMatrix> reqMatrix,
-             bool sendDelay = false,
              Session::Type type = Session::Type::NET);
   NetSession(const NetSession&) = delete;
   NetSession(NetSession&&) = delete;
@@ -157,7 +150,6 @@ class NetSession : public Session {
   virtual std::string getLocalRepr() const;
   asio::ip::tcp::socket borrowConn();
   asio::ip::tcp::socket* getSock();
-  bool isSendDelay();
   virtual Status setResponse(const std::string& s);
   void setCloseAfterRsp();
   virtual void start();
@@ -184,6 +176,7 @@ class NetSession : public Session {
     DrainReqNet,
     DrainReqBuf,
     Process,
+    Stop,
   };
   bool isEnded() {
     std::lock_guard<std::mutex> lk(_mutex);
@@ -205,6 +198,9 @@ class NetSession : public Session {
   virtual void drainRspCallback(const std::error_code& ec,
                                 size_t actualLen);
   virtual void drainRspWithoutLock();
+
+  // parse req and process req
+  virtual void parseAndProcessReq();
 
   // handle msg parsed from drainReqCallback
   virtual void processReq();
@@ -243,6 +239,7 @@ class NetSession : public Session {
   // other variables will never be visited in send-threads.
   std::mutex _mutex;
   bool _isSendRunning;
+  bool _callbackCanWrite;
   bool _isEnded;
   bool _first;
   std::vector<char> _sendBuffer;
@@ -252,7 +249,6 @@ class NetSession : public Session {
   std::shared_ptr<NetworkMatrix> _netMatrix;
   std::shared_ptr<RequestMatrix> _reqMatrix;
   uint32_t _ioCtxId = UINT32_MAX;
-  bool _sendDelay;
 };
 
 }  // namespace tendisplus

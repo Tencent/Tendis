@@ -10,6 +10,7 @@
 #include "tendisplus/network/network.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/test_util.h"
 #include "tendisplus/storage/varint.h"
@@ -50,6 +51,7 @@ constexpr ssize_t REDIS_IOBUF_LEN = (1024 * 16);
 constexpr ssize_t REDIS_MAX_QUERYBUF_LEN = (1024 * 1024 * 1024);
 constexpr ssize_t REDIS_INLINE_MAX_SIZE = (1024 * 64);
 constexpr ssize_t REDIS_MBULK_BIG_ARG = (1024 * 32);
+const int BUFFER_LONG_SIZE = 10*1024*1024;
 
 std::string RequestMatrix::toString() const {
   std::stringstream ss;
@@ -100,7 +102,6 @@ NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
                          std::shared_ptr<NetworkMatrix> netMatrix,
                          std::shared_ptr<RequestMatrix> reqMatrix,
                          std::shared_ptr<ServerParams> cfg,
-                         bool sendDelay,
                          const std::string& name)
   : _connCreated(0),
     _server(server),
@@ -111,7 +112,6 @@ NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
     _netMatrix(netMatrix),
     _reqMatrix(reqMatrix),
     _cfg(cfg),
-    _sendDelay(sendDelay),
     _name(name) {}
 
 #ifdef _WIN32
@@ -266,7 +266,7 @@ void NetworkAsio::doAccept() {
     uint64_t newConnId = _connCreated.fetch_add(1, std::memory_order_relaxed);
     auto sess = std::make_shared<T>(
       _server, std::move(socket), newConnId,
-      true, _netMatrix, _reqMatrix, _sendDelay);
+      true, _netMatrix, _reqMatrix);
     DLOG(INFO) << "new net session, id:" << sess->id()
                << ",connId:" << newConnId << ",from:" << sess->getRemoteRepr()
                << " created";
@@ -324,6 +324,8 @@ Status NetworkAsio::startThread() {
       std::string threadName = _name + "-rw-" + std::to_string(i);
       threadName.resize(15);
       INVARIANT_D(!pthread_setname_np(pthread_self(), threadName.c_str()));
+      LOG(INFO) << "add netIoThread, i:" << i
+        << ", threadId:" << std::this_thread::get_id();
       while (_isRunning.load(std::memory_order_relaxed)) {
         // if no workguard, the run() returns immediately if no
         // tasks
@@ -339,72 +341,7 @@ Status NetworkAsio::startThread() {
     });
     _rwThreads.emplace_back(std::move(thd));
   }
-  _sessions.resize(_netIoThreadNum);
-  if (_sendDelay) {
-    _timers.reserve(_netIoThreadNum);
-    for (size_t i = 0; i < _netIoThreadNum; i++) {
-      _timers.emplace_back(*(_rwCtxList[i]), std::chrono::milliseconds(1));
-      timeoutProcess(i);
-      LOG(INFO) << "NetworkAsio::start timer:" << i;
-    }
-  }
   return {ErrorCodes::ERR_OK, ""};
-}
-
-void NetworkAsio::timeoutProcess(size_t index) {
-  auto cb = [this, index](const std::error_code& ec) {
-    std::lock_guard<std::mutex> lk(_mutex);
-    if (!_isRunning.load(std::memory_order_relaxed)) {
-      LOG(INFO) << "timeoutCb, server is shuting down";
-      return;
-    }
-    if (ec.value()) {
-      LOG(WARNING) << "timeoutCb errorcode:" << ec.message();
-      // we log this error, but dont return
-    }
-
-    for (auto& sess : _sessions[index]) {
-      // NOTE(tanninzhu): session type must be NET or CLUSTER,
-      // so we use static_pointer_cast
-      INVARIANT(sess.second->getType() == Session::Type::NET ||
-        sess.second->getType() == Session::Type::CLUSTER);
-      auto s = static_pointer_cast<NetSession>(sess.second);
-      if (s->isSendDelay()) {
-        s->drainRsp();
-      }
-    }
-
-    timeoutProcess(index);
-  };
-  _timers[index].expires_at(
-    _timers[index].expires_at() + std::chrono::milliseconds(1));
-  _timers[index].async_wait(cb);
-}
-
-void NetworkAsio::addSession(std::shared_ptr<Session> sess) {
-  std::lock_guard<std::mutex> lk(_mutex);
-  INVARIANT(sess->getType() == Session::Type::NET ||
-    sess->getType() == Session::Type::CLUSTER);
-  std::shared_ptr<NetSession> s = static_pointer_cast<NetSession>(sess);
-  for (uint64_t i = 0; i < _rwCtxList.size(); i++) {
-    if (&(s->getSock()->get_io_context()) == _rwCtxList[i].get()) {
-      _sessions[i][sess->id()] = sess;
-      return;
-    }
-  }
-  LOG(WARNING) << "session id:" << sess->id()
-    << " can't find io context";
-  return;
-}
-
-void NetworkAsio::endSession(uint64_t id) {
-  std::lock_guard<std::mutex> lk(_mutex);
-  for (auto& sessMap : _sessions) {
-    if (sessMap.find(id) != sessMap.end()) {
-      sessMap.erase(id);
-      return;
-    }
-  }
 }
 
 Status NetworkAsio::run(bool forGossip) {
@@ -425,7 +362,6 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
                        bool initSock,
                        std::shared_ptr<NetworkMatrix> netMatrix,
                        std::shared_ptr<RequestMatrix> reqMatrix,
-                       bool sendDelay,
                        Session::Type type)
   : Session(server, type),
     _connId(connid),
@@ -438,11 +374,11 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
     _multibulklen(0),
     _bulkLen(-1),
     _isSendRunning(false),
+    _callbackCanWrite(false),
     _isEnded(false),
     _closeResponse(false),
     _netMatrix(netMatrix),
-    _reqMatrix(reqMatrix),
-    _sendDelay(sendDelay) {
+    _reqMatrix(reqMatrix) {
   if (initSock) {
     std::error_code ec;
     _sock.non_blocking(true, ec);
@@ -560,10 +496,6 @@ asio::ip::tcp::socket* NetSession::getSock() {
   return &_sock;
 }
 
-bool NetSession::isSendDelay() {
-  return _sendDelay;
-}
-
 Status NetSession::setResponse(const std::string& s) {
   std::lock_guard<std::mutex> lk(_mutex);
   if (_isEnded) {
@@ -590,14 +522,13 @@ Status NetSession::setResponse(const std::string& s) {
     }
   }
 
-  uint32_t netSendBatchSize = _server->getParams()->netSendBatchSize;
+#define NET_SEND_RSP_BATCH_SIZE 1400
+
   if (_isSendRunning) {
     std::copy(s.begin(), s.end(), std::back_inserter(_sendBufferBack));
   } else {
     std::copy(s.begin(), s.end(), std::back_inserter(_sendBuffer));
-    if (netSendBatchSize <= 0 || !_sendDelay ||
-        (netSendBatchSize > 0 && _sendDelay &&
-          _sendBuffer.size() > netSendBatchSize)) {
+    if (_sendBuffer.size() > NET_SEND_RSP_BATCH_SIZE) {
       drainRspWithoutLock();
     }
   }
@@ -654,10 +585,10 @@ void NetSession::processInlineBuffer() {
     if (_queryBufPos > REDIS_INLINE_MAX_SIZE) {
       ++_netMatrix->invalidPackets;
       setRspAndClose("Protocol error: too big inline request");
+      setState(State::Stop);
       return;
     }
     setState(State::DrainReqNet);
-    schedule();
     return;
   }
 
@@ -673,6 +604,7 @@ void NetSession::processInlineBuffer() {
   auto ret = redis_port::splitargs(argv, aux);
   if (ret == NULL) {
     setRspAndClose("Protocol error: unbalanced quotes in request");
+    setState(State::Stop);
     return;
   }
 
@@ -690,7 +622,7 @@ void NetSession::processInlineBuffer() {
   }
 
   setState(State::Process);
-  schedule();
+  processReq();
 }
 
 // NOTE(deyukong): mainly port from redis::networking.c,
@@ -708,18 +640,17 @@ void NetSession::processMultibulkBuffer() {
       if (_queryBufPos > REDIS_INLINE_MAX_SIZE) {
         ++_netMatrix->invalidPackets;
         setRspAndClose("Protocol error: too big mbulk count string");
+        setState(State::Stop);
         return;
       }
       // not complete line
       setState(State::DrainReqNet);
-      schedule();
       return;
     }
     /* Buffer should also contain \n */
     if (newLine - _queryBuf.data() > _queryBufPos - 2) {
       // not complete line
       setState(State::DrainReqNet);
-      schedule();
       return;
     }
 
@@ -729,6 +660,7 @@ void NetSession::processMultibulkBuffer() {
       LOG(ERROR) << "multiBulk first char not *";
       ++_netMatrix->invalidPackets;
       setRspAndClose("Protocol error: multiBulk first char not *");
+      setState(State::Stop);
       return;
     }
     char* newStart = _queryBuf.data() + 1;
@@ -736,6 +668,7 @@ void NetSession::processMultibulkBuffer() {
     if (!ok || ll > 1024 * 1024) {
       ++_netMatrix->invalidPackets;
       setRspAndClose("Protocol error: invalid multibulk length");
+      setState(State::Stop);
       return;
     }
     pos = newLine - _queryBuf.data() + 2;
@@ -744,7 +677,7 @@ void NetSession::processMultibulkBuffer() {
 
       INVARIANT(_args.size() == 0);
       setState(State::Process);
-      schedule();
+      processReq();
       return;
     }
     _multibulklen = ll;
@@ -766,6 +699,7 @@ void NetSession::processMultibulkBuffer() {
                      << ", _queryBufPos = " << _queryBufPos << ", pos =" << pos;
           INVARIANT_D(0);
           setRspAndClose("Protocol error: too big bulk count string");
+          setState(State::Stop);
           return;
         }
         break;
@@ -781,6 +715,7 @@ void NetSession::processMultibulkBuffer() {
         s << "Protocol error: expected '$', got '" << _queryBuf.data()[pos]
           << "'";
         setRspAndClose(s.str());
+        setState(State::Stop);
         return;
       }
       char* newStart = _queryBuf.data() + pos + 1;
@@ -793,6 +728,7 @@ void NetSession::processMultibulkBuffer() {
       if (!ok || ll < 0 || ll > maxBulkLen) {
         ++_netMatrix->invalidPackets;
         setRspAndClose("Protocol error: invalid bulk length");
+        setState(State::Stop);
         return;
       }
       pos += newLine - (_queryBuf.data() + pos) + 2;
@@ -824,10 +760,10 @@ void NetSession::processMultibulkBuffer() {
   }
   if (_multibulklen == 0) {
     setState(State::Process);
+    processReq();
   } else {
     setState(State::DrainReqNet);
   }
-  schedule();
 }
 
 void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
@@ -836,6 +772,12 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
     endSession();
     return;
   }
+
+  const auto guard = MakeGuard([&] {
+    if (_state == State::Stop) {
+      drainRsp();
+    }
+  });
 
   if (_server) {
     // TODO(vinchen): Is it right when cluster is enable?
@@ -849,8 +791,9 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
       ++_server->getServerStat().rejectedConn;
 
       LOG(WARNING) << "-ERR max number of clients reached, clients: "
-                   << maxClients;
+        << maxClients;
       setRspAndClose("-ERR max number of clients reached\r\n");
+      setState(State::Stop);
       return;
     }
     _first = false;
@@ -864,21 +807,33 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
   if (_queryBufPos > REDIS_MAX_QUERYBUF_LEN) {
     ++_netMatrix->invalidPackets;
     setRspAndClose("Closing client that reached max query buffer length");
+    setState(State::Stop);
     return;
   }
-  if (_reqType == RedisReqMode::REDIS_REQ_UNKNOWN) {
-    if (_queryBuf[0] == '*') {
-      _reqType = RedisReqMode::REDIS_REQ_MULTIBULK;
+  setState(State::DrainReqBuf);
+  schedule();
+}
+
+void NetSession::parseAndProcessReq() {
+  while (_state == State::DrainReqBuf) {
+    if (_reqType == RedisReqMode::REDIS_REQ_UNKNOWN) {
+      if (_queryBuf[0] == '*') {
+        _reqType = RedisReqMode::REDIS_REQ_MULTIBULK;
+      } else {
+        _reqType = RedisReqMode::REDIS_REQ_INLINE;
+      }
+    }
+    if (_reqType == RedisReqMode::REDIS_REQ_MULTIBULK) {
+      processMultibulkBuffer();
+    } else if (_reqType == RedisReqMode::REDIS_REQ_INLINE) {
+      processInlineBuffer();
     } else {
-      _reqType = RedisReqMode::REDIS_REQ_INLINE;
+      LOG(FATAL) << "unknown request type";
     }
   }
-  if (_reqType == RedisReqMode::REDIS_REQ_MULTIBULK) {
-    processMultibulkBuffer();
-  } else if (_reqType == RedisReqMode::REDIS_REQ_INLINE) {
-    processInlineBuffer();
-  } else {
-    LOG(FATAL) << "unknown request type";
+  drainRsp();
+  if (_state == State::DrainReqNet) {
+    drainReqNet();
   }
 }
 
@@ -966,24 +921,29 @@ void NetSession::processReq() {
   }
   if (!continueSched) {
     endSession();
+    setState(State::Stop);
   } else if (!_closeAfterRsp) {
     resetMultiBulkCtx();
     if (_queryBufPos == 0) {
       setState(State::DrainReqNet);
+      return;
     } else {
       setState(State::DrainReqBuf);
       ++_netMatrix->stickyPackets;
+      return;
     }
-    schedule();
   } else {
     // closeAfterRsp, donot process more requests
     // let drainRspCallback end this session
+    setState(State::Stop);
   }
+  return;
 }
 
 void NetSession::drainRsp() {
   std::lock_guard<std::mutex> lk(_mutex);
   if (_isSendRunning) {
+    _callbackCanWrite = true;
     return;
   }
   drainRspWithoutLock();
@@ -996,10 +956,14 @@ void NetSession::drainRspWithoutLock() {
   uint64_t now = nsSinceEpoch();
   _isSendRunning = true;
   auto self(shared_from_this());
+  if (_sendBuffer.size() > BUFFER_LONG_SIZE) {
+    LOG(WARNING) << "drainRspWithoutLock async_write long size:"
+      << _sendBuffer.size();
+  }
   asio::async_write(
     _sock,
     asio::buffer(_sendBuffer.data(), _sendBuffer.size()),
-    [this, self, now](const std::error_code& ec, size_t actualLen) {
+    [this, self, now] (const std::error_code& ec, size_t actualLen) {
       _reqMatrix->sendPacketCost += nsSinceEpoch() - now;
       drainRspCallback(ec, actualLen);
     });
@@ -1021,7 +985,6 @@ void NetSession::drainRspCallback(const std::error_code& ec,
     _sendBuffer.clear();
     return;
   }
-  uint64_t netSendBatchSize = _server->getParams()->netSendBatchSize;
   if (_server) {
     // TODO(vinchen): Is it right when cluster = true
     _server->getServerStat().netOutputBytes += _sendBuffer.size();
@@ -1032,22 +995,15 @@ void NetSession::drainRspCallback(const std::error_code& ec,
     INVARIANT(_isSendRunning);
     _sendBuffer.clear();
     _sendBuffer.swap(_sendBufferBack);
-    if (netSendBatchSize && _sendDelay) {
-      if (_sendBuffer.size() > netSendBatchSize) {
-        drainRspWithoutLock();
-      } else {
-        _isSendRunning = false;
-      }
+
+    if (_callbackCanWrite && !_sendBuffer.empty()) {
+      _callbackCanWrite = false;
+      drainRspWithoutLock();
     } else {
-      INVARIANT(!_sendDelay);
-      if (!_sendBuffer.empty()) {
-        drainRspWithoutLock();
-      } else {
-        _isSendRunning = false;
-      }
+      _callbackCanWrite = false;
+      _isSendRunning = false;
     }
   }
-
   if (_closeResponse && _sendBuffer.empty()) {
     endSession();
   }
@@ -1077,7 +1033,7 @@ void NetSession::endSession() {
         _sock.shutdown(asio::ip::tcp::socket::shutdown_receive);
       }
     } catch (const std::exception& ex) {
-      LOG(ERROR) << "shutdown socket failed." << ex.what();
+      LOG(ERROR) << "shutdown socket failed." << ex.what() << " id:" << id();
     }
   }
   _server->endSession(id());
@@ -1096,9 +1052,10 @@ void NetSession::stepState() {
       return;
     case State::DrainReqBuf:
       INVARIANT_D(_type != Session::Type::CLUSTER);
-      drainReqBuf();
+      parseAndProcessReq();
       return;
     case State::Process:
+      INVARIANT_D(_type != Session::Type::NET);
       processReq();
       return;
     default:

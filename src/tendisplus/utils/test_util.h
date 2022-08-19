@@ -55,6 +55,7 @@ class NoSchedNetSession : public NetSession {
 
  protected:
   virtual void schedule() {}
+  virtual void processReq() {}
 
  public:
   // cmd using AOF format

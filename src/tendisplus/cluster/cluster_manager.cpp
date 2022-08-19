@@ -4077,7 +4077,7 @@ Status ClusterManager::initNetWork() {
   shared_ptr<ServerParams> cfg = _svr->getParams();
   _clusterNetwork =
     std::make_unique<NetworkAsio>(_svr, _netMatrix, _reqMatrix, cfg,
-      false, "cluster");
+      "cluster");
 
   Status s =
     _clusterNetwork->prepare(cfg->bindIp, cfg->port + CLUSTER_PORT_INCR, 1);
@@ -5091,15 +5091,13 @@ ClusterSession::ClusterSession(std::shared_ptr<ServerEntry> server,
                                uint64_t connid,
                                bool initSock,
                                std::shared_ptr<NetworkMatrix> netMatrix,
-                               std::shared_ptr<RequestMatrix> reqMatrix,
-                               bool sendDelay)
+                               std::shared_ptr<RequestMatrix> reqMatrix)
   : NetSession(server,
                std::move(sock),
                connid,
                initSock,
                netMatrix,
                reqMatrix,
-               sendDelay,
                Session::Type::CLUSTER),
     _pkgSize(-1) {
   DLOG(INFO) << "cluster session, id:" << id() << " created";
@@ -5878,6 +5876,9 @@ Status ClusterSession::clusterReadHandler() {
 
 Status ClusterSession::clusterSendMessage(ClusterMsg& msg) {  // NOLINT
   setResponse(msg.msgEncode());
+
+  //  NOTE(takenliu): we need call drainRsp to trigger write.
+  drainRsp();
   return {ErrorCodes::ERR_OK, ""};
 }
 

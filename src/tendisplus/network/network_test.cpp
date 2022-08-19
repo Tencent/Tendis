@@ -45,13 +45,13 @@ TEST(NetSession, drainReqInvalid) {
     {"\r\n", NetSession::State::Process},
     {":1\r\n", NetSession::State::Process},
     {"ping\r\n", NetSession::State::Process},
-    {"\"\r\n", NetSession::State::Created},  // error
+    {"\"\r\n", NetSession::State::Stop},  // error
     {"*10\r", NetSession::State::DrainReqNet},
     {"*2\r\n$1\r\n", NetSession::State::DrainReqNet},
-    {"*2\r\n$a\r\n", NetSession::State::Created},    // error
-    {"*100000000\r\n", NetSession::State::Created},  // error
+    {"*2\r\n$a\r\n", NetSession::State::Stop},    // error
+    {"*100000000\r\n", NetSession::State::Stop},  // error
     {"*-10\r\n", NetSession::State::Process},
-    {"*2\r\n:\r\n", NetSession::State::Created},  // error, should be $
+    {"*2\r\n:\r\n", NetSession::State::Stop},  // error, should be $
   };
   sess->_queryBuf.reserve(128);
   int i = 0;
@@ -60,6 +60,7 @@ TEST(NetSession, drainReqInvalid) {
     sess->_queryBuf.clear();
     sess->_queryBufPos = 0;
     sess->resetMultiBulkCtx();
+    LOG(INFO) << "drainReqInvalid arr i:" << i;
     std::copy(
       s.first.begin(), s.first.end(), std::back_inserter(sess->_queryBuf));
 #ifdef _WIN32
@@ -67,7 +68,10 @@ TEST(NetSession, drainReqInvalid) {
 #endif
     sess->setState(NetSession::State::DrainReqNet);
     sess->drainReqCallback(std::error_code(), s.first.size());
-    if (s.second == NetSession::State::Created) {
+    EXPECT_EQ(sess->_state, NetSession::State::DrainReqBuf);
+
+    sess->parseAndProcessReq();
+    if (s.second == NetSession::State::Stop) {
       EXPECT_TRUE(sess->_closeAfterRsp && hasCalled);
     } else {
       EXPECT_EQ(sess->_state, s.second);
@@ -93,11 +97,13 @@ TEST(NetSession, Completed) {
   for (auto& c : s) {
     sess->_queryBuf[sess->_queryBufPos] = c;
     sess->drainReqCallback(std::error_code(), 1);
-    EXPECT_EQ(sess->_state.load(), NetSession::State::DrainReqNet);
+    EXPECT_EQ(sess->_state.load(), NetSession::State::DrainReqBuf);
     EXPECT_EQ(sess->_closeAfterRsp, false);
   }
   sess->_queryBuf[sess->_queryBufPos] = '\n';
   sess->drainReqCallback(std::error_code(), 1);
+  EXPECT_EQ(sess->_state.load(), NetSession::State::DrainReqBuf);
+  sess->parseAndProcessReq();
   EXPECT_EQ(sess->_state.load(), NetSession::State::Process);
   EXPECT_EQ(sess->_closeAfterRsp, false);
   EXPECT_EQ(sess->_args.size(), size_t(2));
@@ -111,11 +117,13 @@ TEST(NetSession, Completed) {
   for (auto& c : s) {
     sess->_queryBuf[sess->_queryBufPos] = c;
     sess->drainReqCallback(std::error_code(), 1);
-    EXPECT_EQ(sess->_state.load(), NetSession::State::DrainReqNet);
+    EXPECT_EQ(sess->_state.load(), NetSession::State::DrainReqBuf);
     EXPECT_EQ(sess->_closeAfterRsp, false);
   }
   sess->_queryBuf[sess->_queryBufPos] = '\n';
   sess->drainReqCallback(std::error_code(), 1);
+  EXPECT_EQ(sess->_state.load(), NetSession::State::DrainReqBuf);
+  sess->parseAndProcessReq();
   EXPECT_EQ(sess->_state.load(), NetSession::State::Process);
   EXPECT_EQ(sess->_closeAfterRsp, false);
   EXPECT_EQ(sess->_args.size(), size_t(2));
