@@ -336,10 +336,66 @@ func testRepl(m_port int, s_port int, kvstore_count int) {
     shutdownServer(&m);
 }
 
+func testBindMultiIP(m_port int, kvstore_count int) {
+	m := util.RedisServer{}
+    pwd := getCurrentDirectory()
+    log.Infof("current pwd:" + pwd)
+
+    cfgArgs := make(map[string]string)
+    ip := "127.0.0.1"
+    ip2 := util.GetIp()
+    log.Infof("getIp:%v", ip2)
+    cfgArgs["bind"] = ip
+    cfgArgs["bind2"] = ip2
+
+    m_port = util.FindAvailablePort(m_port)
+    log.Infof("FindAvailablePort:%d", m_port)
+    m.Init("127.0.0.1", m_port, pwd, "m_")
+	if err := m.Setup(false, &cfgArgs); err != nil {
+		log.Fatalf("setup master failed:%v", err)
+	}
+	time.Sleep(3 * time.Second)
+
+	cli1, err := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", ip, m.Port), 10*time.Second)
+    if err != nil {
+        log.Fatalf("can't connect to %s %d: %v", ip, m.Port, err)
+    }
+    cli2, err := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", ip2, m.Port), 10*time.Second)
+    if err != nil {
+        log.Fatalf("can't connect to %s %d: %v", ip2, m.Port, err)
+    }
+
+	if r, err := cli1.Cmd("set", "a", "1").Str(); err != nil {
+		log.Fatalf("ip cmd failed:%v", err)
+	} else if r != "OK" {
+		log.Fatalf("ip cmd error:%s", r)
+	}
+
+    if r, err := cli2.Cmd("set", "b", "2").Str(); err != nil {
+        log.Fatalf("ip2 cmd failed:%v", err)
+    } else if r != "OK" {
+        log.Fatalf("ip2 cmd error:%s", r)
+    }
+
+    if r, err := cli1.Cmd("get", "b").Str(); err != nil {
+        log.Fatalf("ip cmd failed:%v", err)
+    } else if r != "2" {
+        log.Fatalf("ip cmd error:%s", r)
+    }
+    if r, err := cli2.Cmd("get", "a").Str(); err != nil {
+        log.Fatalf("ip cmd failed:%v", err)
+    } else if r != "1" {
+        log.Fatalf("ip cmd error:%s", r)
+    }
+
+    shutdownServer(&m);
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	flag.Parse()
 	rand.Seed(time.Now().UTC().UnixNano())
 	testRepl(*mport, *sport, *kvstorecount)
+	testBindMultiIP(*mport+1, *kvstorecount)
 	log.Infof("repl.go passed.")
 }

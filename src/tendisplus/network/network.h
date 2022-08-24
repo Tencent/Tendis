@@ -85,7 +85,7 @@ class NetworkAsio {
   Expected<std::shared_ptr<ClusterSession>> client2ClusterSession(
     std::shared_ptr<BlockingTcpClient> c);
 
-  Status prepare(const std::string& ip,
+  Status prepare(const std::string& ip, const std::string& ip2,
                  const uint16_t port,
                  uint32_t netIoThreadNum);
 
@@ -105,23 +105,33 @@ class NetworkAsio {
 
  private:
   Status startThread();
+  Status startAcceptThread(std::shared_ptr<std::thread>& acceptThd,
+                           std::shared_ptr<asio::io_context>& acceptCtx);
   // we envolve a single-thread accept, mutex is not needed.
+  Status prepareAccept(const std::string& ip,
+                 const uint16_t port,
+                 std::shared_ptr<asio::io_context>& acceptCtx,
+                 std::shared_ptr<asio::ip::tcp::acceptor>& acceptor);
   template <typename T>
-  void doAccept();
+  void doAccept(std::shared_ptr<asio::ip::tcp::acceptor>& acceptor);
   std::shared_ptr<asio::io_context> getRwCtx();
   std::shared_ptr<asio::io_context> getRwCtx(asio::ip::tcp::socket& socket);
 
   std::atomic<uint64_t> _connCreated;
   std::shared_ptr<ServerEntry> _server;
-  std::unique_ptr<asio::io_context> _acceptCtx;
+  std::shared_ptr<asio::io_context> _acceptCtx;
+  std::shared_ptr<asio::ip::tcp::acceptor> _acceptor;
+  std::shared_ptr<std::thread> _acceptThd;
+  std::shared_ptr<asio::io_context> _acceptCtx2;
+  std::shared_ptr<asio::ip::tcp::acceptor> _acceptor2;
+  std::shared_ptr<std::thread> _acceptThd2;
   std::vector<std::shared_ptr<asio::io_context>> _rwCtxList;
-  std::unique_ptr<asio::ip::tcp::acceptor> _acceptor;
-  std::unique_ptr<std::thread> _acceptThd;
   std::vector<std::thread> _rwThreads;
   std::atomic<bool> _isRunning;
   std::shared_ptr<NetworkMatrix> _netMatrix;
   std::shared_ptr<RequestMatrix> _reqMatrix;
   std::string _ip;
+  std::string _ip2;
   uint16_t _port;
   uint32_t _netIoThreadNum;
   std::shared_ptr<ServerParams> _cfg;

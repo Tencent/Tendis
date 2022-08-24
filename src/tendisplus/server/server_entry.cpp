@@ -613,14 +613,17 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
   _network = std::make_unique<NetworkAsio>(
     shared_from_this(), _netMatrix, _reqMatrix, cfg);
-  Status s = _network->prepare(cfg->bindIp, cfg->port, cfg->netIoThreadNum);
+  Status s = _network->prepare(
+    cfg->bindIp, cfg->bindIp2, cfg->port, cfg->netIoThreadNum);
   if (!s.ok()) {
     LOG(ERROR) << "ServerEntry::startup failed, _network->prepare:"
                << s.toString() << " ip:" << cfg->bindIp
+               << " ip2:" << cfg->bindIp2
                << " port:" << cfg->port;
     return s;
   }
-  LOG(INFO) << "_network->prepare ok. ip :" << cfg->bindIp
+  LOG(INFO) << "_network->prepare ok. ip:" << cfg->bindIp
+            << " ip2:" << cfg->bindIp2
             << " port:" << cfg->port;
 
 
@@ -686,7 +689,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     return s;
   } else {
     LOG(WARNING) << "ready to accept connections at " << cfg->bindIp << ":"
-                 << cfg->port;
+      << cfg->port << " " << cfg->bindIp2 << ":" << cfg->port;
   }
 
   _isRunning.store(true, std::memory_order_relaxed);
