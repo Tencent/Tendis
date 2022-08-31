@@ -183,15 +183,15 @@ start_server {tags {"expire"}} {
     # using rrdbsize would pass this test
     test {Redis should lazy expire keys} {
         #r debug set-active-expire 0
-        r psetex key1 500 a
-        r psetex key2 500 a
-        r psetex key3 500 a
+        r psetex key1 1000 a
+        r psetex key2 1000 a
+        r psetex key3 1000 a
         set size1 [r dbsize]
         # Redis expires random keys ten times every second so we are
         # fairly sure that all the three keys should be evicted after
         # one second.
         # in tendis, there is no set-active-expire
-        after 1000
+        after 2000
         set size2 [r dbsize]
         r mget key1 key2 key3
         set size3 [r dbsize]
