@@ -479,6 +479,7 @@ class ServerParams {
   // parameter for rocksdb
   uint32_t rocksBlockcacheMB = 4096;
   int32_t rocksBlockcacheNumShardBits = 6;
+  uint32_t rocksRowcacheMB = 0;
   int64_t rocksRateLimiterRateBytesPerSec = 0;
   int64_t rocksRateLimiterRefillPeriodUs = 100 * 1000;
   int64_t rocksRateLimiterFairness = 10;

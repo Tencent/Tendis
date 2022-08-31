@@ -228,6 +228,7 @@ ServerEntry::ServerEntry()
     _clusterMgr(nullptr),
     _gcMgr(nullptr),
     _scriptMgr(nullptr),
+    _rowCache(nullptr),
     _catalog(nullptr),
     _netMatrix(std::make_shared<NetworkMatrix>()),
     _poolMatrix(std::make_shared<PoolMatrix>()),
@@ -457,12 +458,13 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
                        nullptr,
                        nullptr,
                        nullptr,
+                       nullptr,
                        false,
                        KVStore::StoreMode::READ_WRITE,
                        static_cast<TxnMode>(cfg->rocksTransactionMode)))),
-    kvStoreCount,
-    chunkSize,
-    cfg->binlogUsingDefaultCF);
+                       kvStoreCount,
+                       chunkSize,
+                       cfg->binlogUsingDefaultCF);
   installCatalog(std::move(catalog));
   // forward compatibilty : binlogVersion is used to check whether binlog
   // column_family exists
@@ -496,6 +498,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   _blockCache = rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL,
                                      cfg->rocksBlockcacheNumShardBits,
                                      cfg->rocksStrictCapacityLimit);
+  if (cfg->rocksRowcacheMB > 0) {
+    _rowCache = rocksdb::NewLRUCache(cfg->rocksRowcacheMB * 1024 * 1024LL);
+  }
 
   if (cfg->rocksDeleteBytesPerSecond > 0) {
     _sstFileManager = std::shared_ptr<rocksdb::SstFileManager>(
@@ -540,6 +545,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
       new RocksKVStore(std::to_string(i),
                        cfg,
                        _blockCache,
+                       _rowCache,
                        _rateLimiter,
                        _sstFileManager,
                        _cfg->binlogEnabled,

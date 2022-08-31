@@ -457,6 +457,7 @@ ServerParams::ServerParams() {
                     nullptr, nullptr, -1, 19, false);
   REGISTER_VARS_DIFF_NAME("rocks.blockcache_strict_capacity_limit",
                           rocksStrictCapacityLimit);
+  REGISTER_VARS_DIFF_NAME("rocks.rowcachemb", rocksRowcacheMB);
 
   REGISTER_VARS_DIFF_NAME("rocks.rate_limiter_rate_bytes_per_sec",
                           rocksRateLimiterRateBytesPerSec);
