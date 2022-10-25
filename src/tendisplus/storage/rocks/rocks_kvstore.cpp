@@ -2638,32 +2638,11 @@ Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
   return RecordValue::decode(s.value());
 }
 
-Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
-                                          Transaction* txn,
-                                          RecordType valueType) {
-  auto eValue = getKV(key, txn);
-
-  if (eValue.ok()) {
-    if (eValue.value().getRecordType() != valueType) {
-      return {ErrorCodes::ERR_WRONG_TYPE, ""};
-    }
-  }
-
-  return eValue;
-}
-
 Status RocksKVStore::setKV(const RecordKey& key,
                            const RecordValue& value,
                            Transaction* txn) {
   INVARIANT_D(txn->getKVStoreId() == dbId());
   return txn->setKV(key.encode(), value.encode());
-}
-
-Status RocksKVStore::setKV(const Record& kv, Transaction* txn) {
-  // TODO(deyukong): statstics and inmemory-accumulative counter
-  INVARIANT_D(txn->getKVStoreId() == dbId());
-  Record::KV pair = kv.encode();
-  return txn->setKV(pair.first, pair.second);
 }
 
 Status RocksKVStore::handleRocksdbError(rocksdb::Status s) const {
@@ -2678,13 +2657,6 @@ Status RocksKVStore::handleRocksdbError(rocksdb::Status s) const {
 
   LOG(ERROR) << "Get unexpected error from rocksdb:" << s.ToString();
   return {ErrorCodes::ERR_INTERNAL, s.ToString()};
-}
-
-Status RocksKVStore::setKV(const std::string& key,
-                           const std::string& val,
-                           Transaction* txn) {
-  INVARIANT_D(txn->getKVStoreId() == dbId());
-  return txn->setKV(key, val);
 }
 
 Status RocksKVStore::delKV(const RecordKey& key, Transaction* txn) {

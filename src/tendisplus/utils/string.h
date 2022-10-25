@@ -46,7 +46,7 @@ std::string& replaceAll(std::string& str,
                         const std::string& old_value,
                         const std::string& new_value);
 
-uint64_t getCurThreadId();
+const std::string& getCurThreadId();
 
 using LenStrDecodeResult = std::pair<std::string, size_t>;
 size_t lenStrEncode(std::stringstream& ss, const std::string& val);

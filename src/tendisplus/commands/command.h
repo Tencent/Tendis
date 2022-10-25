@@ -91,6 +91,7 @@ class Command {
   static Status delKeyAndTTL(Session* sess,
                              const RecordKey& mk,
                              const RecordValue& val,
+                             PStore kvstore,
                              Transaction* txn);
   static Status delKey(Session* sess, const std::string& key, RecordType tp,
           Transaction* txn);

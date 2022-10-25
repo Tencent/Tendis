@@ -321,12 +321,14 @@ std::string& replaceAll(std::string& str,  // NOLINT
   return str;
 }
 
-uint64_t getCurThreadId() {
-#ifdef _WIN32
-  return 0;
-#else
-  return pthread_self();
-#endif
+const std::string& getCurThreadId() {
+  thread_local static std::string threadid = "";
+  if (threadid.empty()) {
+    std::stringstream ss;
+    ss << std::this_thread::get_id();
+    threadid = ss.str();
+  }
+  return threadid;
 }
 
 

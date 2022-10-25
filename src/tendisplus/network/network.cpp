@@ -325,7 +325,7 @@ Status NetworkAsio::startThread() {
       threadName.resize(15);
       INVARIANT_D(!pthread_setname_np(pthread_self(), threadName.c_str()));
       LOG(INFO) << "add netIoThread, i:" << i
-        << ", threadId:" << std::this_thread::get_id();
+                << ", threadId:" << getCurThreadId();
       while (_isRunning.load(std::memory_order_relaxed)) {
         // if no workguard, the run() returns immediately if no
         // tasks

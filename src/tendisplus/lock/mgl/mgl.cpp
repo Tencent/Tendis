@@ -1,3 +1,7 @@
+// Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+// Please refer to the license text that comes with this tendis open source
+// project for additional information.
+
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/lock/mgl/mgl.h"
 #include "tendisplus/lock/mgl/mgl_mgr.h"
@@ -103,13 +107,13 @@ std::string MGLock::toString() const {
   snprintf(buf,
            sizeof(buf),
            "id:%" PRIu64 " target:%s targetHash:%" PRIu64
-           " LockMode:%s LockRes:%d threadId:0x%" PRIx64,
+           " LockMode:%s LockRes:%d threadId:%s",
            _id,
            _target.c_str(),
            _targetHash,
            lockModeRepr(_mode),
            static_cast<int>(_res),
-           _threadId);
+           _threadId.c_str());
   return std::string(buf);
 }
 

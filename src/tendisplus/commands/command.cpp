@@ -747,9 +747,9 @@ Expected<bool> Command::delKeyChkExpire(Session* sess,
 Status Command::delKeyAndTTL(Session* sess,
                              const RecordKey& mk,
                              const RecordValue& val,
+                             PStore kvstore,
                              Transaction* txn) {
-  Status s(ErrorCodes::ERR_OK, "");
-  s = txn->delKV(mk.encode());
+  Status s = kvstore->delKV(mk, txn);
   if (!s.ok()) {
     return s;
   }

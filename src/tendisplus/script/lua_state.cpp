@@ -672,8 +672,8 @@ void scriptingEnableGlobalsProtection(lua_State *lua) {
 }
 
 
-LuaState::LuaState(std::shared_ptr<ServerEntry> svr, uint32_t id)
-  : _id(id), _svr(std::move(svr)) {
+LuaState::LuaState(std::shared_ptr<ServerEntry> svr, std::string id)
+  : _id(std::move(id)), _svr(std::move(svr)) {
   _lua = initLua(1);
   _scriptMgr = _svr->getScriptMgr();
   _gc_count = 0;

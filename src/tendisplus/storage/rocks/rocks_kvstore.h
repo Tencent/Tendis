@@ -288,18 +288,9 @@ class RocksKVStore : public KVStore {
     stop();
   }
   Expected<std::unique_ptr<Transaction>> createTransaction(Session* sess) final;
-  Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn) final;
-  Expected<RecordValue> getKV(const RecordKey& key,
-                              Transaction* txn,
-                              RecordType valueType) final;
-  Status setKV(const Record& kv, Transaction* txn) final;
-  Status setKV(const RecordKey& key,
-               const RecordValue& val,
-               Transaction* txn) final;
-  Status setKV(const std::string& key,
-               const std::string& val,
-               Transaction* txn) final;
-  Status delKV(const RecordKey& key, Transaction* txn) final;
+  Expected<RecordValue> getKV(const RecordKey&, Transaction*) final;
+  Status setKV(const RecordKey&, const RecordValue&, Transaction*) final;
+  Status delKV(const RecordKey&, Transaction*) final;
 
   // [begin, end)
   Status deleteRange(const std::string& begin, const std::string& end,

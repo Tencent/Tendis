@@ -11,6 +11,7 @@
 namespace tendisplus {
 
 uint64_t nsSinceEpoch();
+uint64_t usSinceEpoch();
 uint64_t msSinceEpoch();
 uint32_t sinceEpoch();
 

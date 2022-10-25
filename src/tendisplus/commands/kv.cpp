@@ -2136,7 +2136,8 @@ class RenameGenericCommand : public Command {
     });
 
     // del old meta k/v
-    Status s = Command::delKeyAndTTL(sess, rk, rv.value(), sptxn.value());
+    Status s =
+      Command::delKeyAndTTL(sess, rk, rv.value(), srcstore, sptxn.value());
     if (!s.ok()) {
       return s;
     }
