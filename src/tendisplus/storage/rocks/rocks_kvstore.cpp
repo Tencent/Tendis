@@ -44,6 +44,7 @@
 #include "tendisplus/server/session.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/storage/varint.h"
+#include "tendisplus/utils/time_record.h"
 
 namespace tendisplus {
 
@@ -723,7 +724,9 @@ void RocksTxn::setBinlogId(uint64_t binlogId) {
 rocksdb::Status RocksTxn::put(rocksdb::ColumnFamilyHandle* columnFamily,
                               const std::string& key,
                               const std::string& val) {
-  return _txn->Put(columnFamily, key, val);
+  TENDIS_ROCKSDB_LATENCY_RECORD(_txn->Put(columnFamily, key, val),
+                                (key.size() + val.size()),
+                                RocksdbLatencyType::RLT_PUT);
 }
 
 rocksdb::Status RocksTxn::put(const std::string& key, const std::string& val) {
@@ -736,16 +739,21 @@ rocksdb::Status RocksTxn::get(const rocksdb::ReadOptions& options,
                               rocksdb::ColumnFamilyHandle* columnFamily,
                               const std::string& key,
                               std::string* value) {
-  return _txn->Get(options, columnFamily, key, value);
+  TENDIS_ROCKSDB_LATENCY_RECORD(_txn->Get(options, columnFamily, key, value),
+                                (key.size()),
+                                RocksdbLatencyType::RLT_GET);
 }
 
 rocksdb::Status RocksTxn::del(rocksdb::ColumnFamilyHandle* columnFamily,
                               const std::string& key) {
-  return _txn->Delete(columnFamily, key);
+  TENDIS_ROCKSDB_LATENCY_RECORD(_txn->Delete(columnFamily, key),
+                                (key.size()),
+                                RocksdbLatencyType::RLT_DELETE);
 }
 
 rocksdb::Status RocksTxn::txnCommit() {
-  return _txn->Commit();
+  TENDIS_ROCKSDB_LATENCY_RECORD(
+    _txn->Commit(), size_t(0), RocksdbLatencyType::RLT_COMMIT);
 }
 
 const rocksdb::Snapshot* RocksTxn::getSnapshot() {
@@ -907,7 +915,9 @@ Status RocksWBTxn::rollback() {
 rocksdb::Status RocksWBTxn::put(rocksdb::ColumnFamilyHandle* columnFamily,
                                 const std::string& key,
                                 const std::string& val) {
-  return _writeBatch->Put(columnFamily, key, val);
+  TENDIS_ROCKSDB_LATENCY_RECORD(_writeBatch->Put(columnFamily, key, val),
+                                (key.size() + val.size()),
+                                RocksdbLatencyType::RLT_PUT);
 }
 
 rocksdb::Status RocksWBTxn::put(const std::string& key,
@@ -918,22 +928,30 @@ rocksdb::Status RocksWBTxn::put(const std::string& key,
 }
 
 rocksdb::Status RocksWBTxn::get(const rocksdb::ReadOptions& options,
-                              rocksdb::ColumnFamilyHandle* columnFamily,
-                              const std::string& key,
-                              std::string* value) {
+                                rocksdb::ColumnFamilyHandle* columnFamily,
+                                const std::string& key,
+                                std::string* value) {
   // TODO(jingjunli): ReadUncommited or ReadCommited ?
   // s = _store->getBaseDB()->Get(readOpts, handle, key, &value);
-  return _writeBatch->GetFromBatchAndDB(
-    _store->getBaseDB(), options, columnFamily, key, value);
+  TENDIS_ROCKSDB_LATENCY_RECORD(
+    _writeBatch->GetFromBatchAndDB(
+      _store->getBaseDB(), options, columnFamily, key, value),
+    (key.size()),
+    RocksdbLatencyType::RLT_GET);
 }
 
 rocksdb::Status RocksWBTxn::del(rocksdb::ColumnFamilyHandle* columnFamily,
-                              const std::string& key) {
-  return _writeBatch->Delete(columnFamily, key);
+                                const std::string& key) {
+  TENDIS_ROCKSDB_LATENCY_RECORD(_writeBatch->Delete(columnFamily, key),
+                                (key.size()),
+                                RocksdbLatencyType::RLT_DELETE);
 }
 
 rocksdb::Status RocksWBTxn::txnCommit() {
-  return _store->getBaseDB()->Write(_writeOpts, _writeBatch->GetWriteBatch());
+  TENDIS_ROCKSDB_LATENCY_RECORD(
+    _store->getBaseDB()->Write(_writeOpts, _writeBatch->GetWriteBatch()),
+    size_t(0),
+    RocksdbLatencyType::RLT_COMMIT);
 }
 
 const rocksdb::Snapshot* RocksWBTxn::getSnapshot() {
@@ -2638,32 +2656,11 @@ Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
   return RecordValue::decode(s.value());
 }
 
-Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
-                                          Transaction* txn,
-                                          RecordType valueType) {
-  auto eValue = getKV(key, txn);
-
-  if (eValue.ok()) {
-    if (eValue.value().getRecordType() != valueType) {
-      return {ErrorCodes::ERR_WRONG_TYPE, ""};
-    }
-  }
-
-  return eValue;
-}
-
 Status RocksKVStore::setKV(const RecordKey& key,
                            const RecordValue& value,
                            Transaction* txn) {
   INVARIANT_D(txn->getKVStoreId() == dbId());
   return txn->setKV(key.encode(), value.encode());
-}
-
-Status RocksKVStore::setKV(const Record& kv, Transaction* txn) {
-  // TODO(deyukong): statstics and inmemory-accumulative counter
-  INVARIANT_D(txn->getKVStoreId() == dbId());
-  Record::KV pair = kv.encode();
-  return txn->setKV(pair.first, pair.second);
 }
 
 Status RocksKVStore::handleRocksdbError(rocksdb::Status s) const {
@@ -2678,13 +2675,6 @@ Status RocksKVStore::handleRocksdbError(rocksdb::Status s) const {
 
   LOG(ERROR) << "Get unexpected error from rocksdb:" << s.ToString();
   return {ErrorCodes::ERR_INTERNAL, s.ToString()};
-}
-
-Status RocksKVStore::setKV(const std::string& key,
-                           const std::string& val,
-                           Transaction* txn) {
-  INVARIANT_D(txn->getKVStoreId() == dbId());
-  return txn->setKV(key, val);
 }
 
 Status RocksKVStore::delKV(const RecordKey& key, Transaction* txn) {

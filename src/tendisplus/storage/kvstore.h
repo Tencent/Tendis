@@ -365,18 +365,9 @@ class KVStore {
   }
   virtual Expected<std::unique_ptr<Transaction>> createTransaction(
     Session* sess) = 0;
-  virtual Expected<RecordValue> getKV(const RecordKey& key,
-                                      Transaction* txn) = 0;
-  virtual Expected<RecordValue> getKV(const RecordKey& key,
-                                      Transaction* txn,
-                                      RecordType valueType) = 0;
+  virtual Expected<RecordValue> getKV(const RecordKey&, Transaction* txn) = 0;
   virtual Status setKV(const RecordKey&, const RecordValue&, Transaction*) = 0;
-  virtual Status setKV(const Record& kv, Transaction* txn) = 0;
-  // TODO(eliotwang) deprecate this member function
-  virtual Status setKV(const std::string& key,
-                       const std::string& val,
-                       Transaction* txn) = 0;
-  virtual Status delKV(const RecordKey& key, Transaction* txn) = 0;
+  virtual Status delKV(const RecordKey&, Transaction*) = 0;
 
   // [begin, end)
   virtual Status deleteRange(

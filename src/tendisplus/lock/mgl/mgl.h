@@ -1,3 +1,7 @@
+// Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+// Please refer to the license text that comes with this tendis open source
+// project for additional information.
+
 #ifndef SRC_TENDISPLUS_LOCK_MGL_MGL_H__
 #define SRC_TENDISPLUS_LOCK_MGL_MGL_H__
 
@@ -33,7 +37,9 @@ class MGLock {
     LockRes getStatus() const;
     const std::string& getTarget() const { return _target; }
     std::string toString() const;
-    uint64_t getThreadId() const { return _threadId; }
+    const std::string& getThreadId() const {
+      return _threadId;
+    }
 
  private:
     friend class LockSchedCtx;
@@ -54,7 +60,7 @@ class MGLock {
     LockRes _res;
     std::list<MGLock*>::iterator _resIter;
     MGLockMgr* _lockMgr;
-    uint64_t _threadId;
+    std::string _threadId;
 
     static std::atomic<uint64_t> _idGen;
     static std::list<MGLock*> _dummyList;

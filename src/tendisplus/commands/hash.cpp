@@ -1473,7 +1473,7 @@ class HDelCommand : public Command {
       if (realDel > hashMeta.getCount()) {
         LOG(ERROR) << "invalid hashmeta of " << metaKey.getPrimaryKey();
       }
-      s = Command::delKeyAndTTL(sess, metaKey, eValue.value(), txn);
+      s = Command::delKeyAndTTL(sess, metaKey, eValue.value(), kvstore, txn);
     } else {
       hashMeta.setCount(hashMeta.getCount() - realDel);
       RecordValue metaValue(hashMeta.encode(),

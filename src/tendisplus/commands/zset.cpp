@@ -84,7 +84,7 @@ Expected<std::string> genericZrem(Session* sess,
     s = sl.save(ptxn.value(), eMeta, pCtx->getVersionEP());
   } else {
     INVARIANT(sl.getCount() == 1);
-    s = Command::delKeyAndTTL(sess, mk, eMeta.value(), ptxn.value());
+    s = Command::delKeyAndTTL(sess, mk, eMeta.value(), kvstore, ptxn.value());
     if (!s.ok()) {
       return s;
     }
@@ -274,8 +274,7 @@ Expected<std::string> genericZRank(Session* sess,
                RecordType::RT_ZSET_H_ELE,
                mk.getPrimaryKey(),
                subkey);
-  Expected<RecordValue> eValue =
-    kvstore->getKV(hk, ptxn.value(), RecordType::RT_ZSET_H_ELE);
+  Expected<RecordValue> eValue = kvstore->getKV(hk, ptxn.value());
   if (!eValue.ok()) {
     if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return Command::fmtNull();
@@ -430,7 +429,7 @@ class ZRemByRangeGenericCommand : public Command {
       s = sl.save(ptxn.value(), eMeta, pCtx->getVersionEP());
     } else {
       INVARIANT(sl.getCount() == 1);
-      s = Command::delKeyAndTTL(sess, mk, eMeta.value(), ptxn.value());
+      s = Command::delKeyAndTTL(sess, mk, eMeta.value(), kvstore, ptxn.value());
       if (!s.ok()) {
         return s;
       }

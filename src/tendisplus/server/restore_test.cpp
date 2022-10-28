@@ -43,10 +43,9 @@ void addOneKeyEveryKvstore(const std::shared_ptr<ServerEntry>& server,
     EXPECT_EQ(eTxn1.ok(), true);
     std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
 
-    Status s =
-      kvstore->setKV(Record(RecordKey(0, 0, RecordType::RT_KV, key, ""),
-                            RecordValue("txn1", RecordType::RT_KV, -1)),
-                     txn1.get());
+    Status s = kvstore->setKV(RecordKey(0, 0, RecordType::RT_KV, key, ""),
+                              RecordValue("txn1", RecordType::RT_KV, -1),
+                              txn1.get());
     EXPECT_EQ(s.ok(), true);
 
     Expected<uint64_t> exptCommitId = txn1->commit();

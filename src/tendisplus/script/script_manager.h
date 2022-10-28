@@ -6,7 +6,7 @@
 #define SRC_TENDISPLUS_SCRIPT_SCRIPT_MANAGER_H_
 
 #include <list>
-#include <map>
+#include <unordered_map>
 #include <memory>
 #include <string>
 #include <shared_mutex>
@@ -47,7 +47,7 @@ class ScriptManager {
   std::shared_ptr<ServerEntry> _svr;
 
   mutable std::shared_timed_mutex _mutex;
-  std::map<uint64_t, std::shared_ptr<LuaState>> _mapLuaState;
+  std::unordered_map<std::string, std::shared_ptr<LuaState>> _mapLuaState;
 
   std::atomic<bool> _luaKill;
   std::atomic<bool> _stopped;

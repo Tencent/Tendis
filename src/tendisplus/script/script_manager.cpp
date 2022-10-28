@@ -19,7 +19,7 @@ ScriptManager::ScriptManager(std::shared_ptr<ServerEntry> svr)
 
 std::shared_ptr<LuaState> ScriptManager::getLuaStateBelongToThisThread() {
   std::shared_ptr<LuaState> luaState;
-  uint64_t threadid = getCurThreadId();
+  const auto& threadid = getCurThreadId();
   {
     std::shared_lock<std::shared_timed_mutex> lock(_mutex);
     auto iter = _mapLuaState.find(threadid);
@@ -130,15 +130,13 @@ Expected<std::string> ScriptManager::getScriptContent(Session* sess,
   auto expdb = _svr->getSegmentMgr()->getDb(
     sess, LUASCRIPT_DEFAULT_DBID, mgl::LockMode::LOCK_IS);
   RET_IF_ERR_EXPECTED(expdb);
-  auto ptxn = expdb.value().store->createTransaction(sess);
+  auto& kvstore = expdb.value().store;
+  auto ptxn = kvstore->createTransaction(sess);
   RET_IF_ERR_EXPECTED(ptxn);
-
-  std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+  auto& txn = ptxn.value();
   RecordKey rk(
     LuaScript::CHUNKID, LuaScript::DBID, RecordType::RT_META, sha, "");
-  auto expRvStr = txn->getKV(rk.encode());
-  RET_IF_ERR_EXPECTED(expRvStr);
-  auto expRv = RecordValue::decode(expRvStr.value());
+  auto expRv = kvstore->getKV(rk, txn.get());
   RET_IF_ERR_EXPECTED(expRv);
   return expRv.value().getValue();
 }
@@ -159,7 +157,7 @@ Expected<std::string> ScriptManager::saveLuaScript(Session* sess,
   auto kvstore = expdb.value().store;
   auto ptxn = kvstore->createTransaction(sess);
   RET_IF_ERR_EXPECTED(ptxn);
-  std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+  auto& txn = ptxn.value();
   // if sha is empty, calculate sha code for script first.
   std::string tmpSha;
   if (sha.empty()) {
@@ -170,7 +168,7 @@ Expected<std::string> ScriptManager::saveLuaScript(Session* sess,
   RecordKey rk(
     LuaScript::CHUNKID, LuaScript::DBID, RecordType::RT_META, tmpSha, "");
   RecordValue rv(script, RecordType::RT_META, -1);
-  auto s = txn->setKV(rk.encode(), rv.encode());
+  auto s = kvstore->setKV(rk, rv, txn.get());
   RET_IF_ERR(s);
   auto commitStatus = txn->commit();
   RET_IF_ERR_EXPECTED(commitStatus);
@@ -186,14 +184,14 @@ Expected<std::string> ScriptManager::checkIfScriptExists(Session* sess) {
   auto kvstore = expdb.value().store;
   auto ptxn = kvstore->createTransaction(sess);
   RET_IF_ERR_EXPECTED(ptxn);
-  std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+  auto& txn = ptxn.value();
   std::stringstream ss;
   Command::fmtMultiBulkLen(ss, args.size() - 2);
   for (uint32_t i = 2; i < args.size(); ++i) {
     auto tmpSha = toLower(args[i]);
     RecordKey rk(
       LuaScript::CHUNKID, LuaScript::DBID, RecordType::RT_META, tmpSha, "");
-    auto expStr = txn->getKV(rk.encode());
+    auto expStr = kvstore->getKV(rk, txn.get());
     Command::fmtLongLong(ss, expStr.ok() ? 1 : 0);
   }
   return ss.str();

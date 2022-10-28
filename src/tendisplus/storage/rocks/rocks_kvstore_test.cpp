@@ -394,19 +394,19 @@ TEST(RocksKVStore, RepllogCursorV2) {
   EXPECT_EQ(eTxn1.ok(), true);
   std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
 
-  Status s = kvstore->setKV(Record(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
-                                   RecordValue("txn1", RecordType::RT_KV, -1)),
+  Status s = kvstore->setKV(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
+                            RecordValue("txn1", RecordType::RT_KV, -1),
                             txn1.get());
   EXPECT_EQ(s.ok(), true);
 
-  s = kvstore->setKV(Record(RecordKey(0, 0, RecordType::RT_KV, "ab", ""),
-                            RecordValue("txn1", RecordType::RT_KV, -1)),
+  s = kvstore->setKV(RecordKey(0, 0, RecordType::RT_KV, "ab", ""),
+                     RecordValue("txn1", RecordType::RT_KV, -1),
                      txn1.get());
   EXPECT_EQ(s.ok(), true);
 
   // different chunk
-  s = kvstore->setKV(Record(RecordKey(1, 0, RecordType::RT_KV, "abc", ""),
-                            RecordValue("txn1", RecordType::RT_KV, -1)),
+  s = kvstore->setKV(RecordKey(1, 0, RecordType::RT_KV, "abc", ""),
+                     RecordValue("txn1", RecordType::RT_KV, -1),
                      txn1.get());
   EXPECT_EQ(s.ok(), true);
 
@@ -427,8 +427,8 @@ TEST(RocksKVStore, RepllogCursorV2) {
   uint64_t ts = msSinceEpoch();
   uint64_t chunkId = genRand() % 1000;
   uint64_t binlogid = kvstore->getNextBinlogSeq();
-  s = kvstore->setKV(Record(RecordKey(chunkId, 0, RecordType::RT_KV, "b", ""),
-                            RecordValue("txn3", RecordType::RT_KV, -1)),
+  s = kvstore->setKV(RecordKey(chunkId, 0, RecordType::RT_KV, "b", ""),
+                     RecordValue("txn3", RecordType::RT_KV, -1),
                      txn3.get());
   EXPECT_EQ(s.ok(), true);
 
@@ -499,28 +499,28 @@ void cursorVisibleRoutine(RocksKVStore* kvstore) {
   EXPECT_EQ(eTxn1.ok(), true);
   std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
 
-  Status s = kvstore->setKV(Record(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
-                                   RecordValue("txn1", RecordType::RT_KV, -1)),
+  Status s = kvstore->setKV(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
+                            RecordValue("txn1", RecordType::RT_KV, -1),
                             txn1.get());
   EXPECT_EQ(s.ok(), true);
 
-  s = kvstore->setKV(Record(RecordKey(0, 0, RecordType::RT_KV, "ab", ""),
-                            RecordValue("txn1", RecordType::RT_KV, -1)),
+  s = kvstore->setKV(RecordKey(0, 0, RecordType::RT_KV, "ab", ""),
+                     RecordValue("txn1", RecordType::RT_KV, -1),
                      txn1.get());
   EXPECT_EQ(s.ok(), true);
 
-  s = kvstore->setKV(Record(RecordKey(0, 0, RecordType::RT_KV, "abc", ""),
-                            RecordValue("txn1", RecordType::RT_KV, -1)),
+  s = kvstore->setKV(RecordKey(0, 0, RecordType::RT_KV, "abc", ""),
+                     RecordValue("txn1", RecordType::RT_KV, -1),
                      txn1.get());
   EXPECT_EQ(s.ok(), true);
 
-  s = kvstore->setKV(Record(RecordKey(0, 0, RecordType::RT_KV, "b", ""),
-                            RecordValue("txn1", RecordType::RT_KV, -1)),
+  s = kvstore->setKV(RecordKey(0, 0, RecordType::RT_KV, "b", ""),
+                     RecordValue("txn1", RecordType::RT_KV, -1),
                      txn1.get());
   EXPECT_EQ(s.ok(), true);
 
-  s = kvstore->setKV(Record(RecordKey(0, 0, RecordType::RT_KV, "bac", ""),
-                            RecordValue("txn1", RecordType::RT_KV, -1)),
+  s = kvstore->setKV(RecordKey(0, 0, RecordType::RT_KV, "bac", ""),
+                     RecordValue("txn1", RecordType::RT_KV, -1),
                      txn1.get());
   EXPECT_EQ(s.ok(), true);
 
@@ -604,10 +604,10 @@ void setKV(RocksKVStore* kvstore,
   std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
   for (uint32_t i = 0; i < num; i++) {
     string key = prefix + to_string(i);
-    Status s = kvstore->setKV(
-      Record(RecordKey(chunkid, 0, RecordType::RT_KV, key, ""),
-             RecordValue("12345abcdefghijklmn", RecordType::RT_KV, -1)),
-      txn1.get());
+    Status s =
+      kvstore->setKV(RecordKey(chunkid, 0, RecordType::RT_KV, key, ""),
+                     RecordValue("12345abcdefghijklmn", RecordType::RT_KV, -1),
+                     txn1.get());
     EXPECT_EQ(s.ok(), true);
   }
   txn1->commit();
@@ -678,8 +678,8 @@ TEST(RocksKVStore, BackupCkptInter) {
   auto eTxn1 = kvstore->createTransaction(nullptr);
   EXPECT_EQ(eTxn1.ok(), true);
   std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
-  Status s = kvstore->setKV(Record(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
-                                   RecordValue("txn1", RecordType::RT_KV, -1)),
+  Status s = kvstore->setKV(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
+                            RecordValue("txn1", RecordType::RT_KV, -1),
                             txn1.get());
   EXPECT_EQ(s.ok(), true);
   Expected<uint64_t> exptCommitId = txn1->commit();
@@ -752,8 +752,8 @@ TEST(RocksKVStore, BackupCkpt) {
   auto eTxn1 = kvstore->createTransaction(nullptr);
   EXPECT_EQ(eTxn1.ok(), true);
   std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
-  Status s = kvstore->setKV(Record(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
-                                   RecordValue("txn1", RecordType::RT_KV, -1)),
+  Status s = kvstore->setKV(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
+                            RecordValue("txn1", RecordType::RT_KV, -1),
                             txn1.get());
   EXPECT_EQ(s.ok(), true);
   Expected<uint64_t> exptCommitId = txn1->commit();
@@ -823,8 +823,8 @@ TEST(RocksKVStore, BackupCopy) {
   auto eTxn1 = kvstore->createTransaction(nullptr);
   EXPECT_EQ(eTxn1.ok(), true);
   std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
-  Status s = kvstore->setKV(Record(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
-                                   RecordValue("txn1", RecordType::RT_KV, -1)),
+  Status s = kvstore->setKV(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
+                            RecordValue("txn1", RecordType::RT_KV, -1),
                             txn1.get());
   EXPECT_EQ(s.ok(), true);
   Expected<uint64_t> exptCommitId = txn1->commit();
@@ -924,8 +924,8 @@ void commonRoutine(RocksKVStore* kvstore) {
   EXPECT_NE(uncommitted.find(dynamic_cast<RocksTxn*>(txn2.get())->getTxnId()),
             uncommitted.end());
 
-  Status s = kvstore->setKV(Record(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
-                                   RecordValue("txn1", RecordType::RT_KV, -1)),
+  Status s = kvstore->setKV(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
+                            RecordValue("txn1", RecordType::RT_KV, -1),
                             txn1.get());
   EXPECT_EQ(s.ok(), true);
   Expected<RecordValue> e =
@@ -936,8 +936,8 @@ void commonRoutine(RocksKVStore* kvstore) {
   Expected<RecordValue> e1 =
     kvstore->getKV(RecordKey(0, 0, RecordType::RT_KV, "a", ""), txn2.get());
   EXPECT_EQ(e1.status().code(), ErrorCodes::ERR_NOTFOUND);
-  s = kvstore->setKV(Record(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
-                            RecordValue("txn2", RecordType::RT_KV, -1)),
+  s = kvstore->setKV(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
+                     RecordValue("txn2", RecordType::RT_KV, -1),
                      txn2.get());
   if (kvstore->getTxnMode() == TxnMode::TXN_OPT) {
     EXPECT_EQ(s.code(), ErrorCodes::ERR_OK);
@@ -1032,9 +1032,10 @@ TEST(RocksKVStore, WBCommon) {
     auto eTxn1 = kvstore->createTransaction(nullptr);
     EXPECT_EQ(eTxn1.ok(), true);
     std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
-    kvstore->setKV(Record(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
-                       RecordValue("txn1", RecordType::RT_KV, -1)),
-                txn1.get());
+    Status s = kvstore->setKV(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
+                              RecordValue("txn1", RecordType::RT_KV, -1),
+                              txn1.get());
+    EXPECT_EQ(s.ok(), true);
     txn1->commit();
 
     auto eTxn2 = kvstore->createTransaction(nullptr);

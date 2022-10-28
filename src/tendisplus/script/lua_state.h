@@ -27,11 +27,11 @@ class ScriptManager;
 
 class LuaState {
  public:
-  explicit LuaState(std::shared_ptr<ServerEntry> svr, uint32_t id);
+  explicit LuaState(std::shared_ptr<ServerEntry> svr, std::string id);
   ~LuaState();
 
   lua_State* initLua(int setup);
-  uint32_t Id() const {
+  const std::string& Id() const {
     return _id;
   }
   Expected<std::string> evalCommand(Session* sess);
@@ -77,7 +77,7 @@ class LuaState {
   static int redis_math_randomseed(lua_State *L);
 
  private:
-  uint32_t _id;
+  std::string _id;
   lua_State* _lua;
   std::shared_ptr<ServerEntry> _svr;
   ScriptManager* _scriptMgr;

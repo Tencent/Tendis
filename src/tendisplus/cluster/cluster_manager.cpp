@@ -5186,7 +5186,7 @@ void ClusterSession::processReq() {
   auto status = clusterProcessPacket();
   _reqMatrix->processed += 1;
   _reqMatrix->processCost += nsSinceEpoch() - _ctx->getProcessPacketStart();
-  _ctx->setProcessPacketStart(0);
+  _ctx->resetStatisticInfo();
 
   _queryBufPos = 0;
   if (!status.ok()) {

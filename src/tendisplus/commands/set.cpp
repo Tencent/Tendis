@@ -79,7 +79,7 @@ Expected<std::string> genericSRem(Session* sess,
                                                 sm.getCount(),
                                                 cnt);
     }
-    s = Command::delKeyAndTTL(sess, metaRk, rv.value(), txn);
+    s = Command::delKeyAndTTL(sess, metaRk, rv.value(), kvstore, txn);
   } else {
     sm.setCount(sm.getCount() - cnt);
     if (resetSKIndex) {
@@ -625,7 +625,8 @@ class SpopCommand : public Command {
       }
 
       if (deleteMeta) {
-        s = Command::delKeyAndTTL(sess, metaRk, rv.value(), ptxn.value());
+        s = Command::delKeyAndTTL(
+          sess, metaRk, rv.value(), kvstore, ptxn.value());
         if (!s.ok()) {
           return s;
         }

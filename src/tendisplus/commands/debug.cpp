@@ -3351,9 +3351,8 @@ class setInStoreCommand : public Command {
     LOG(INFO) << "setInStoreCommand storeid:" << storeid << " key:" << key
               << " val:" << value << " chunkId:" << chunkId;
     Status s = kvstore->setKV(
-      Record(RecordKey(
-               chunkId, sess->getCtx()->getDbId(), RecordType::RT_KV, key, ""),
-             RecordValue(value, RecordType::RT_KV, -1)),
+      RecordKey(chunkId, sess->getCtx()->getDbId(), RecordType::RT_KV, key, ""),
+      RecordValue(value, RecordType::RT_KV, -1),
       ptxn.value());
     if (!s.ok()) {
       LOG(ERROR) << "setInStoreCommand failed:" << s.toString();

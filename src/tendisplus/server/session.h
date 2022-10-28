@@ -40,7 +40,7 @@ class Session : public std::enable_shared_from_this<Session> {
   Status processExtendProtocol();
   SessionCtx* getCtx() const;
   ServerEntry* getServerEntry() const;
-  std::string getCmdStr() const;
+  std::string getCmdStr(size_t lengthLimit = 0) const;
   std::string getSessionCmd();
   uint64_t getCtime() const;
 
@@ -120,7 +120,7 @@ class LocalSessionGuard {
   ~LocalSessionGuard();
 
  private:
-  std::shared_ptr<LocalSession> _sess;
+  std::unique_ptr<LocalSession> _sess;
 };
 
 }  // namespace tendisplus

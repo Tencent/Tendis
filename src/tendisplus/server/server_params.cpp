@@ -17,6 +17,7 @@
 #include <utility>
 #include <memory>
 
+#include "rocksdb/tendis_extension.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/server/server_entry.h"
@@ -402,6 +403,8 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-flush-interval",
                                   slowlogFlushInterval);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-file-enabled", slowlogFileEnabled);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("tendis-latency-limit", tendisLatencyLimit);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.latency-limit", rocksdbLatencyLimit);
 
   // NOTE(pecochen): this two params should provide their own interface to
   // update.
@@ -759,12 +762,31 @@ Status ServerParams::setVar(const string& name,
       errinfo = "not found arg:" + argname;
       return {ErrorCodes::ERR_PARSEOPT, errinfo};
     } else {
+      if (argname == "rocks.latency-limit") {
+        auto ed = tendisplus::stoll(value);
+        if (!ed.ok()) {
+          errinfo = "invalid rocksdb options:" + argname + " value:" + value +
+            " " + ed.status().toString();
+          return {ErrorCodes::ERR_PARSEOPT, errinfo};
+        }
+        rocksdb::G_ROCKSDB_LATENCY_LIMIT = ed.value();
+      }
       return iter->second->setVar(value, startup);
     }
   } else {
     // change serverparam and rocksoptions when running
     if (iter != _mapServerParams.end()) {
       if (argname.substr(0, 6) == "rocks.") {
+        if (argname == "rocks.latency-limit") {
+          auto ed = tendisplus::stoll(value);
+          if (!ed.ok()) {
+            errinfo = "invalid rocksdb options:" + argname + " value:" + value +
+              " " + ed.status().toString();
+            return {ErrorCodes::ERR_PARSEOPT, errinfo};
+          }
+          rocksdb::G_ROCKSDB_LATENCY_LIMIT = ed.value();
+          return {ErrorCodes::ERR_OK, ""};
+        }
         // make sure changed RocksdbOptions take effect when KVstore is running
         auto server = getGlobalServer();
         LocalSessionGuard sg(server.get());

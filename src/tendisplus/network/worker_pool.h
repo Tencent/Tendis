@@ -61,8 +61,8 @@ class WorkerPool {
       try {
         mytask();
       } catch (const IOCtxException& ex) {
-        LOG(INFO) << "catch IOCtxException,"
-          << _name << ":" << std::this_thread::get_id();
+        LOG(INFO) << "catch IOCtxException," << _name << ":"
+                  << getCurThreadId();
         throw ex;
       } catch (const std::exception& ex) {
         LOG(ERROR) << "schedule task error:" << ex.what();

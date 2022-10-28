@@ -63,12 +63,15 @@ std::string Session::getTypeStr() const {
   return ts[(int32_t)_type];
 }
 
-std::string Session::getCmdStr() const {
+std::string Session::getCmdStr(size_t lengthLimit) const {
   std::lock_guard<std::mutex> lk(_baseMutex);
+  if (_args.empty()) {
+    return "";
+  }
   std::stringstream ss;
   size_t i = 0;
   if (_args[0] == "applybinlogsv2" || _args[0] == "migratebinlogs") {
-    for (auto arg : _args) {
+    for (const auto& arg : _args) {
       if (i++ == 2) {
         ss << "[" << arg.size() << "]";
       } else {
@@ -79,7 +82,7 @@ std::string Session::getCmdStr() const {
       }
     }
   } else {
-    for (auto arg : _args) {
+    for (const auto& arg : _args) {
       ss << (arg.size() > 0 ? arg : "\"\"");
 
       if (i++ < _args.size() - 1) {
@@ -87,7 +90,11 @@ std::string Session::getCmdStr() const {
       }
     }
   }
-  return ss.str();
+  std::string s = ss.str();
+  if (lengthLimit != 0 && s.size() > lengthLimit) {
+    return s.substr(0, lengthLimit);
+  }
+  return s;
 }
 
 int64_t Session::changeExpireTime(const std::string& cmdStr, int64_t millsecs) {
@@ -267,8 +274,8 @@ Status LocalSession::setResponse(const std::string& s) {
   return {ErrorCodes::ERR_OK, ""};
 }
 
-LocalSessionGuard::LocalSessionGuard(ServerEntry* svr, Session* sess) {
-  _sess = std::make_shared<LocalSession>(svr);
+LocalSessionGuard::LocalSessionGuard(ServerEntry* svr, Session* sess)
+  : _sess(std::make_unique<LocalSession>(svr)) {
   if (sess) {
     if (sess->getCtx()->authed()) {
       _sess->getCtx()->setAuthed();
@@ -281,6 +288,33 @@ LocalSessionGuard::LocalSessionGuard(ServerEntry* svr, Session* sess) {
 
 LocalSessionGuard::~LocalSessionGuard() {
   // don't call svr->endSession(_sess->id());
+  std::stringstream ss;
+  for (uint8_t i = 0; i < LockLatencyType::MAX_LLT; ++i) {
+    auto lockRecord = _sess->getCtx()->generateLockRecordLogIfNeeded(
+      static_cast<LockLatencyType>(i));
+    if (!lockRecord.empty()) {
+      ss << lockRecord << " ";
+    }
+  }
+  for (uint8_t i = 0; i < RocksdbLatencyType::MAX_RLT; ++i) {
+    auto rocksdbRecord = _sess->getCtx()->generateRocksdbRecordLogIfNeeded(
+      static_cast<RocksdbLatencyType>(i));
+    if (!rocksdbRecord.empty()) {
+      ss << rocksdbRecord << " ";
+    }
+  }
+
+  const std::string& s = ss.str();
+  if (!s.empty()) {
+    std::string cmds;
+    if (_sess && !_sess->getArgs().empty()) {
+      cmds = _sess->getCmdStr(100);
+    } else {
+      cmds = "null cmd.";
+    }
+    LOG(WARNING) << "latency too long localsession cmd:" << cmds << " " << s
+                 << " threadid:" << getCurThreadId();
+  }
 }
 
 LocalSession* LocalSessionGuard::getSession() {

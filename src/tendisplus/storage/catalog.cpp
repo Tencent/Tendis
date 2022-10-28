@@ -222,8 +222,7 @@ Status Catalog::setStoreMeta(const StoreMeta& meta) {
 
   Transaction* txn = exptxn.value().get();
 
-  Record rd(std::move(rk), std::move(rv));
-  Status s = _store->setKV(rd, txn);
+  Status s = _store->setKV(rk, rv, txn);
   if (!s.ok()) {
     return s;
   }
@@ -317,8 +316,7 @@ Status Catalog::setStoreMainMeta(const StoreMainMeta& meta) {
 
   Transaction* txn = exptxn.value().get();
 
-  Record rd(std::move(rk), std::move(rv));
-  Status s = _store->setKV(rd, txn);
+  Status s = _store->setKV(rk, rv, txn);
   if (!s.ok()) {
     return s;
   }
@@ -401,8 +399,7 @@ Status Catalog::setMainMeta(const MainMeta& meta) {
 
   Transaction* txn = exptxn.value().get();
 
-  Record rd(std::move(rk), std::move(rv));
-  Status s = _store->setKV(rd, txn);
+  Status s = _store->setKV(rk, rv, txn);
   if (!s.ok()) {
     LOG(ERROR) << "Catalog::setMainMeta failed:" << s.toString() << " "
                << sb.GetString();
@@ -522,8 +519,7 @@ Status Catalog::setClusterMeta(const ClusterMeta& meta) {
 
   Transaction* txn = exptxn.value().get();
 
-  Record rd(std::move(rk), std::move(rv));
-  Status s = _store->setKV(rd, txn);
+  Status s = _store->setKV(rk, rv, txn);
   if (!s.ok()) {
     LOG(ERROR) << "Catalog::ClusterMeta set failed:" << s.toString() << " "
                << sb.GetString();
@@ -795,8 +791,7 @@ Status Catalog::setEpochMeta(const EpochMeta& meta) {
 
   Transaction* txn = exptxn.value().get();
 
-  Record rd(std::move(rk), std::move(rv));
-  Status s = _store->setKV(rd, txn);
+  Status s = _store->setKV(rk, rv, txn);
   if (!s.ok()) {
     LOG(ERROR) << "Catalog::setEpochMeta failed:" << s.toString() << " "
                << sb.GetString();
