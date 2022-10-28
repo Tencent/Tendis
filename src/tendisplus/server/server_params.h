@@ -427,16 +427,17 @@ class ServerParams {
   uint32_t dbNum = CONFIG_DEFAULT_DBNUM;
 
   bool noexpire = false;
-  uint64_t maxBinlogKeepNum{1};
+  uint64_t maxBinlogKeepNum = 1;
   uint32_t minBinlogKeepSec = 3600;
   uint64_t slaveBinlogKeepNum = 1;
 
   uint32_t maxClients = CONFIG_DEFAULT_MAX_CLIENTS;
   std::string slowlogPath = "./slowlog";
-  uint32_t slowlogLogSlowerThan = CONFIG_DEFAULT_SLOWLOG_LOG_SLOWER_THAN;
-  // uint32_t slowlogMaxLen = CONFIG_DEFAULT_SLOWLOG_LOG_MAX_LEN;
-  uint32_t slowlogFlushInterval = CONFIG_DEFAULT_SLOWLOG_FLUSH_INTERVAL;
+  uint64_t slowlogLogSlowerThan = CONFIG_DEFAULT_SLOWLOG_LOG_SLOWER_THAN;
+  uint64_t slowlogFlushInterval = CONFIG_DEFAULT_SLOWLOG_FLUSH_INTERVAL;
   uint64_t slowlogMaxLen = CONFIG_DEFAULT_SLOWLOG_LOG_MAX_LEN;
+  uint64_t tendisLatencyLimit = 0;   // us
+  uint64_t rocksdbLatencyLimit = 0;  // us
   bool slowlogFileEnabled = true;
   bool binlogUsingDefaultCF = false;
 

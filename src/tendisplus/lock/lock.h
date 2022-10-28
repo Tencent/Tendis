@@ -21,7 +21,7 @@ class Session;
 
 class ILock {
  public:
-  ILock(ILock* parent, mgl::MGLock* lk, Session* sess);
+  ILock(ILock* parent, mgl::MGLock* lk, Session* sess, bool isRecursive);
   virtual ~ILock() TSAN_SUPPRESSION;
   mgl::LockMode getMode() const;
   mgl::LockRes getLockResult() const;
@@ -36,6 +36,7 @@ class ILock {
   std::unique_ptr<mgl::MGLock> _mgl;
   // not owned
   Session* _sess;
+  bool _isRecursive;
 };
 
 // TODO(takenliu) : delete StoresLock
@@ -63,7 +64,8 @@ class StoreLock : public ILock {
             mgl::LockMode mode,
             Session* sess,
             mgl::MGLockMgr* mgr,
-            uint64_t lockTimeoutMs = 3600000);
+            uint64_t lockTimeoutMs = 3600000,
+            bool isRecursive = false);
   uint32_t getStoreId() const final;
   virtual ~StoreLock() = default;
 
@@ -85,7 +87,8 @@ class ChunkLock : public ILock {
             mgl::LockMode mode,
             Session* sess,
             mgl::MGLockMgr* mgr,
-            uint64_t lockTimeoutMs = 3600000);
+            uint64_t lockTimeoutMs = 3600000,
+            bool isRecursive = false);
   uint32_t getStoreId() const final;
   uint32_t getChunkId() const final;
   virtual ~ChunkLock() = default;

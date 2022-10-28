@@ -917,7 +917,7 @@ void NetSession::processReq() {
     continueSched = _server->processRequest(reinterpret_cast<Session*>(this));
     _reqMatrix->processed += 1;
     _reqMatrix->processCost += nsSinceEpoch() - _ctx->getProcessPacketStart();
-    _ctx->setProcessPacketStart(0);
+    _ctx->resetStatisticInfo();
   }
   if (!continueSched) {
     endSession();

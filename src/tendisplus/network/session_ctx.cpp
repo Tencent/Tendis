@@ -24,6 +24,8 @@ SessionCtx::SessionCtx(Session* sess)
     _waitlockKey(""),
     _readPacketTs(nsSinceEpoch()),
     _processPacketStart(0),
+    _lockRecord(),
+    _rocksdbRecord(),
     _timestamp(TSEP_UNINITED),
     _version(VERSIONEP_UNINITED),
     _perfLevel(PerfLevel::kDisable),
@@ -317,6 +319,52 @@ bool SessionCtx::verifyVersion(uint64_t keyVersion) {
     }
   }
   return true;
+}
+
+void SessionCtx::addLockRecord(uint64_t cost,
+                               const std::string& id,
+                               LockLatencyType type) {
+  _lockRecord[type].addRecord(cost, id);
+}
+
+std::string SessionCtx::generateLockRecordLogIfNeeded(LockLatencyType type) {
+  if (!_session->getServerEntry() ||
+      _session->getServerEntry()->getParams()->tendisLatencyLimit == 0 ||
+      _lockRecord[type]._totalTimeAcquireLock <
+        _session->getServerEntry()->getParams()->tendisLatencyLimit) {
+    return "";
+  }
+  return LLTToString[type] + _lockRecord[type].toString();
+}
+
+void SessionCtx::addRocksdbRecord(uint64_t cost,
+                                  bool succ,
+                                  uint64_t size,
+                                  RocksdbLatencyType type) {
+  _rocksdbRecord[type].addRecord(cost, succ, size);
+}
+
+std::string SessionCtx::generateRocksdbRecordLogIfNeeded(
+  RocksdbLatencyType type) {
+  if (!_session->getServerEntry() ||
+      _session->getServerEntry()->getParams()->tendisLatencyLimit == 0 ||
+      _rocksdbRecord[type]._totalTimeRocksdb <
+        _session->getServerEntry()->getParams()->tendisLatencyLimit) {
+    return "";
+  }
+  return RLTToString[type] + _rocksdbRecord[type].toString();
+}
+
+void SessionCtx::resetStatisticInfo() {
+  _processPacketStart = 0;
+
+  for (auto& lr : _lockRecord) {
+    lr.reset();
+  }
+
+  for (auto& rr : _rocksdbRecord) {
+    rr.reset();
+  }
 }
 
 }  // namespace tendisplus

@@ -7,16 +7,18 @@
 #include "tendisplus/lock/lock.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/server/server_entry.h"
+#include "tendisplus/utils/time_record.h"
 
 namespace tendisplus {
 
 const char StoresLock::_target[] = "stores";
 
-ILock::ILock(ILock* parent, mgl::MGLock* lk, Session* sess)
+ILock::ILock(ILock* parent, mgl::MGLock* lk, Session* sess, bool isRecursive)
   : _lockResult(mgl::LockRes::LOCKRES_WAIT),
     _parent(parent),
     _mgl(lk),
-    _sess(sess) {}
+    _sess(sess),
+    _isRecursive(isRecursive) {}
 
 ILock::~ILock() {
   if (_mgl) {
@@ -25,7 +27,7 @@ ILock::~ILock() {
   if (_parent) {
     _parent.reset();
   }
-  if (_sess && _lockResult == mgl::LockRes::LOCKRES_OK) {
+  if (_sess && _lockResult == mgl::LockRes::LOCKRES_OK && !_isRecursive) {
     _sess->getCtx()->removeLock(this);
   }
 }
@@ -75,7 +77,7 @@ StoresLock::StoresLock(mgl::LockMode mode,
                        Session* sess,
                        mgl::MGLockMgr* mgr,
                        uint64_t lockTimeoutMs)
-  : ILock(nullptr, new mgl::MGLock(mgr), sess) {
+  : ILock(nullptr, new mgl::MGLock(mgr), sess, false) {
   _lockResult = _mgl->lock(_target, mode, lockTimeoutMs);
 }
 
@@ -101,22 +103,27 @@ StoreLock::StoreLock(uint32_t storeId,
                      mgl::LockMode mode,
                      Session* sess,
                      mgl::MGLockMgr* mgr,
-                     uint64_t lockTimeoutMs)
+                     uint64_t lockTimeoutMs,
+                     bool isRecursive)
   // NOTE(takenliu) : all request need get StoresLock, its a big cpu waste.
   //     then, you should not use StoresLock, you should process with every
   //     StoreLock.
   // :ILock(new StoresLock(getParentMode(mode), nullptr, mgr),
-  : ILock(NULL, new mgl::MGLock(mgr), sess), _storeId(storeId) {
+  : ILock(nullptr, new mgl::MGLock(mgr), sess, isRecursive), _storeId(storeId) {
   // NOTE(takenliu): std::to_string() has performance issue in multi thread,
   //     because it will use std::locale(), so use snprintf instead.
   std::string target = "store_" + uitos(storeId);
   if (_sess) {
     _sess->getCtx()->setWaitLock(storeId, 0, "", mode);
   }
-  _lockResult = _mgl->lock(target, mode, lockTimeoutMs);
+  TENDIS_LOCK_LATENCY_RECORD(
+    (_lockResult = _mgl->lock(target, mode, lockTimeoutMs)),
+    _sess,
+    uitos(_storeId),
+    LockLatencyType::LLT_STORE);
   if (_sess) {
     _sess->getCtx()->setWaitLock(0, 0, "", mgl::LockMode::LOCK_NONE);
-    if (_lockResult == mgl::LockRes::LOCKRES_OK) {
+    if (_lockResult == mgl::LockRes::LOCKRES_OK && !isRecursive) {
       _sess->getCtx()->addLock(this);
     }
   }
@@ -131,11 +138,13 @@ ChunkLock::ChunkLock(uint32_t storeId,
                      mgl::LockMode mode,
                      Session* sess,
                      mgl::MGLockMgr* mgr,
-                     uint64_t lockTimeoutMs)
-  : ILock(
-      new StoreLock(storeId, getParentMode(mode), nullptr, mgr, lockTimeoutMs),
-      new mgl::MGLock(mgr),
-      sess),
+                     uint64_t lockTimeoutMs,
+                     bool isRecursive)
+  : ILock(new StoreLock(
+            storeId, getParentMode(mode), sess, mgr, lockTimeoutMs, true),
+          new mgl::MGLock(mgr),
+          sess,
+          isRecursive),
     _chunkId(chunkId) {
   // TODO(vinchen): chunklock only cluster_enabled?
   // if (!_sess || !_sess->getServerEntry() ||
@@ -149,10 +158,14 @@ ChunkLock::ChunkLock(uint32_t storeId,
     if (_sess) {
       _sess->getCtx()->setWaitLock(storeId, chunkId, "", mode);
     }
-    _lockResult = _mgl->lock(target, mode, lockTimeoutMs);
+    TENDIS_LOCK_LATENCY_RECORD(
+      (_lockResult = _mgl->lock(target, mode, lockTimeoutMs)),
+      _sess,
+      uitos(_chunkId),
+      LockLatencyType::LLT_CHUNK);
     if (_sess) {
       _sess->getCtx()->setWaitLock(0, 0, "", mgl::LockMode::LOCK_NONE);
-      if (_lockResult == mgl::LockRes::LOCKRES_OK) {
+      if (_lockResult == mgl::LockRes::LOCKRES_OK && !isRecursive) {
         _sess->getCtx()->addLock(this);
       }
     }
@@ -219,10 +232,12 @@ KeyLock::KeyLock(uint32_t storeId,
                  uint64_t lockTimeoutMs)
   // :ILock(new StoreLock(storeId, getParentMode(mode), nullptr, mgr,
   // lockTimeoutMs),
-  : ILock(new ChunkLock(
-            storeId, chunkId, getParentMode(mode), nullptr, mgr, lockTimeoutMs),
-          new mgl::MGLock(mgr),
-          sess),
+  : ILock(
+      new ChunkLock(
+        storeId, chunkId, getParentMode(mode), sess, mgr, lockTimeoutMs, true),
+      new mgl::MGLock(mgr),
+      sess,
+      false),
     _key(key) {
   if (_parent->getLockResult() != mgl::LockRes::LOCKRES_OK) {
     _lockResult = _parent->getLockResult();
@@ -231,7 +246,11 @@ KeyLock::KeyLock(uint32_t storeId,
     if (_sess) {
       _sess->getCtx()->setWaitLock(storeId, chunkId, key, mode);
     }
-    _lockResult = _mgl->lock(target, mode, lockTimeoutMs);
+    TENDIS_LOCK_LATENCY_RECORD(
+      (_lockResult = _mgl->lock(target, mode, lockTimeoutMs)),
+      _sess,
+      key,
+      LockLatencyType::LLT_KEY);
     if (_sess) {
       _sess->getCtx()->setWaitLock(0, 0, "", mgl::LockMode::LOCK_NONE);
       if (_lockResult == mgl::LockRes::LOCKRES_OK) {

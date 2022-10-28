@@ -15,6 +15,7 @@
 #include "jemalloc/jemalloc.h"
 #endif
 #endif
+#include "tendisplus/network/latency_record.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/redis_port.h"
@@ -149,6 +150,21 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(
     _slowLog << "# Db: " << sess->getCtx()->getDbId() << "\n";
     _slowLog << "# Query_time: " << duration << "\n";
     _slowLog << "# Execute_time: " << execTime << "\n";
+    _slowLog << "# Thread_id: " << getCurThreadId() << "\n";
+    for (uint8_t i = 0; i < LockLatencyType::MAX_LLT; ++i) {
+      auto lockRecord = sess->getCtx()->generateLockRecordLogIfNeeded(
+        static_cast<LockLatencyType>(i));
+      if (!lockRecord.empty()) {
+        _slowLog << "# " << lockRecord << "\n";
+      }
+    }
+    for (uint8_t i = 0; i < RocksdbLatencyType::MAX_RLT; ++i) {
+      auto rocksdbRecord = sess->getCtx()->generateRocksdbRecordLogIfNeeded(
+        static_cast<RocksdbLatencyType>(i));
+      if (!rocksdbRecord.empty()) {
+        _slowLog << "# " << rocksdbRecord << "\n";
+      }
+    }
 
     uint64_t args_total_length = 0;
     uint64_t args_output_length = 0;
@@ -1501,9 +1517,10 @@ Status ServerEntry::generateHeartbeatBinlogRoutine() {
       continue;
     }
 
-    auto ptxn = expdb.value().store->createTransaction(nullptr);
+    auto& store = expdb.value().store;
+    auto ptxn = store->createTransaction(nullptr);
     RET_IF_ERR_EXPECTED(ptxn);
-    auto txn = ptxn.value().get();
+    auto& txn = ptxn.value();
 
     // NOTE(pecochen): record timestamp at "cas" field. TimeStamp NOT TTL!!!
     // In order to avoid compaction-filter expire record by "ttl"
@@ -1512,7 +1529,7 @@ Status ServerEntry::generateHeartbeatBinlogRoutine() {
       ADMINCMD_CHUNKID, ADMINCMD_DBID, RecordType::RT_DATA_META, key, "");
     RecordValue rv(value, RecordType::RT_KV, 0, 0, msSinceEpoch());
 
-    auto status = txn->setKV(rk.encode(), rv.encode());
+    auto status = store->setKV(rk, rv, txn.get());
     RET_IF_ERR(status);
     auto commitStatus = txn->commit();
     RET_IF_ERR_EXPECTED(commitStatus);

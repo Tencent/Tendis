@@ -20,6 +20,7 @@
 
 #include "tendisplus/lock/lock.h"
 #include "tendisplus/lock/mgl/lock_defines.h"
+#include "tendisplus/network/latency_record.h"
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/utils/string.h"
@@ -143,6 +144,16 @@ class SessionCtx {
   }
   bool verifyVersion(uint64_t keyVersion);
 
+  void addLockRecord(uint64_t, const std::string&, LockLatencyType);
+
+  std::string generateLockRecordLogIfNeeded(LockLatencyType);
+
+  void addRocksdbRecord(uint64_t, bool, uint64_t, RocksdbLatencyType);
+
+  std::string generateRocksdbRecordLogIfNeeded(RocksdbLatencyType);
+
+  void resetStatisticInfo();
+
   static constexpr uint64_t VERSIONEP_UNINITED = -1;
   static constexpr uint64_t TSEP_UNINITED = -1;
 
@@ -155,8 +166,12 @@ class SessionCtx {
   uint32_t _waitlockChunk;
   mgl::LockMode _waitlockMode;
   std::string _waitlockKey;
-  std::atomic<uint64_t> _readPacketTs;
-  std::atomic<uint64_t> _processPacketStart;
+  uint64_t _readPacketTs;
+  uint64_t _processPacketStart;
+
+  std::array<LockLatencyRecord, LockLatencyType::MAX_LLT> _lockRecord;
+  std::array<RocksdbLatencyRecord, RocksdbLatencyType::MAX_RLT> _rocksdbRecord;
+
   uint64_t _timestamp;
   uint64_t _version;
   PerfLevel _perfLevel;
