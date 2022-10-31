@@ -51,7 +51,8 @@ enum class BinlogVersion : uint8_t {
 
 using PStore = std::shared_ptr<KVStore>;
 
-enum class ColumnFamilyNumber { ColumnFamily_Default = 0, ColumnFamily_Binlog };
+enum class ColumnFamilyNumber { ColumnFamily_Default = 0, ColumnFamily_Binlog,
+                                ColumnFamily_All};
 
 class Cursor {
  public:

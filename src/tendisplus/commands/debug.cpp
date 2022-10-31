@@ -2391,11 +2391,17 @@ class InfoCommand : public Command {
       server->getTotalIntProperty(
         sess, "rocksdb.estimate-live-data-size", &estimate);
 
-      uint64_t numkeys = 0, memtables = 0, tablereaderMem = 0;
+      uint64_t numkeys = 0, numkeysBinlog = 0, curMemtables = 0,
+               totalMemtables = 0, tablereaderMem = 0;
       uint64_t numCompaction = 0, mem_pending = 0, compaction_pending = 0;
       server->getTotalIntProperty(sess, "rocksdb.estimate-num-keys", &numkeys);
+      server->getTotalIntProperty(sess, "rocksdb.estimate-num-keys",
+                                  &numkeysBinlog,
+                                  ColumnFamilyNumber::ColumnFamily_Binlog);
       server->getTotalIntProperty(
-        sess, "rocksdb.cur-size-all-mem-tables", &memtables);
+        sess, "rocksdb.cur-size-all-mem-tables", &curMemtables);
+      server->getTotalIntProperty(
+        sess, "rocksdb.size-all-mem-tables", &totalMemtables);
       server->getTotalIntProperty(
         sess, "rocksdb.estimate-table-readers-mem", &tablereaderMem);
       server->getTotalIntProperty(
@@ -2423,9 +2429,11 @@ class InfoCommand : public Command {
       ss << "rocksdb.live-sst-files-size:" << live << "\r\n";
       ss << "rocksdb.estimate-live-data-size:" << estimate << "\r\n";
       ss << "rocksdb.estimate-num-keys:" << numkeys << "\r\n";
-      ss << "rocksdb.total-memory:" << memtables + tablereaderMem + blockUsage
-         << "\r\n";
-      ss << "rocksdb.cur-size-all-mem-tables:" << memtables << "\r\n";
+      ss << "rocksdb.estimate-num-keys-binlogcf:" << numkeysBinlog << "\r\n";
+      ss << "rocksdb.total-memory:" <<
+        totalMemtables + tablereaderMem + blockUsage << "\r\n";
+      ss << "rocksdb.cur-size-all-mem-tables:" << curMemtables << "\r\n";
+      ss << "rocksdb.size-all-mem-tables:" << totalMemtables << "\r\n";
       ss << "rocksdb.estimate-table-readers-mem:" << tablereaderMem << "\r\n";
       ss << "rocksdb.blockcache.capacity:" << blockCapacity << "\r\n";
       ss << "rocksdb.blockcache.usage:" << blockUsage << "\r\n";

@@ -312,7 +312,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
     Session* sess,
     const std::string& property,
     uint64_t* value,
-    ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_Default) const;
+    ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_All) const;
 
   bool getAllProperty(Session* sess,
                       const std::string& property,
