@@ -130,6 +130,13 @@ void SlowlogStat::closeSlowlogFile() {
   _slowLog.close();
 }
 
+void SlowlogStat::slowlogFlush() {
+  std::lock_guard<std::mutex> lk(_mutex);
+  if (_slowLog.is_open()) {
+    _slowLog.flush();
+  }
+}
+
 void SlowlogStat::slowlogDataPushEntryIfNeeded(
   uint64_t time,
   uint64_t duration, /* including the queue time */
@@ -1619,7 +1626,11 @@ void ServerEntry::serverCron() {
         generateHeartbeatBinlogRoutine();
       }
     }
-
+    if (_cfg->slowlogFileEnabled) {
+      run_with_period(1000) {
+        _slowlogStat.slowlogFlush();
+      }
+    }
     cronLoop++;
   }
 }

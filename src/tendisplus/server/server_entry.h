@@ -126,6 +126,7 @@ class SlowlogStat {
   uint64_t getSlowlogNum();
   uint64_t getSlowlogLen();
   void resetSlowlogData();
+  void slowlogFlush();
   void slowlogDataPushEntryIfNeeded(
     uint64_t time,
     uint64_t duration, /* including the queue time */
