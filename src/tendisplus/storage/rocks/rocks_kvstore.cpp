@@ -2935,11 +2935,34 @@ bool RocksKVStore::getIntProperty(const std::string& property,
                                   ColumnFamilyNumber cf) const {
   bool ok = false;
   if (_isRunning) {
-    ok =
-      getBaseDB()->GetIntProperty(getColumnFamilyHandle(cf), property, value);
-    if (!ok) {
-      LOG(WARNING) << "db:" << dbId() << " getProperty:" << property
-                   << " failed";
+    if (cf == ColumnFamilyNumber::ColumnFamily_All
+        && _cfg->binlogUsingDefaultCF) {
+      cf = ColumnFamilyNumber::ColumnFamily_Default;
+    }
+    if (cf == ColumnFamilyNumber::ColumnFamily_All) {
+      *value = 0;
+      uint64_t tmp = 0;
+      ok =
+        getBaseDB()->GetIntProperty(_cfHandles[0], property, &tmp);
+      if (!ok) {
+        LOG(WARNING) << "db:" << dbId() << " getProperty:" << property
+                     << " failed";
+      }
+      *value += tmp;
+      ok =
+        getBaseDB()->GetIntProperty(_cfHandles[1], property, &tmp);
+      if (!ok) {
+        LOG(WARNING) << "db:" << dbId() << " getProperty:" << property
+        << " failed";
+      }
+      *value += tmp;
+    } else {
+      ok =
+        getBaseDB()->GetIntProperty(getColumnFamilyHandle(cf), property, value);
+      if (!ok) {
+        LOG(WARNING) << "db:" << dbId() << " getProperty:" << property
+        << " failed";
+      }
     }
   }
   return ok;
