@@ -3,6 +3,7 @@ logfile="gotest.log"
 
 rm -f $logfile
 
+go env -w GO111MODULE=off
 export PATH=$PATH:`pwd`/../../../build/bin:`pwd`/../../../bin
 
 srcroot=`pwd`/../../../
