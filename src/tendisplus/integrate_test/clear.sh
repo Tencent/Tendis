@@ -38,6 +38,13 @@ do
   kill -9 $spid
 done
 
+checkdtspids=`ps axu |grep checkdts | grep $user | awk '{print $2}'`
+for checkdtspid in $checkdtspids
+do
+  echo "killing checkdts process : $checkdtspid"
+  kill -9 $checkdtspid
+done
+
 rm sync-*.log
 
 while true
