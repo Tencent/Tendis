@@ -480,11 +480,19 @@ ServerParams::ServerParams() {
                           skipConcurrencyControl);
 #endif
 #if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 18)
-  REGISTER_VARS_DIFF_NAME("rocks.enable_blob_files", rocksEnableBlobFiles);
-  REGISTER_VARS_DIFF_NAME("rocks.min_blob_size", rocksMinBlobSize);
-  REGISTER_VARS_DIFF_NAME("rocks.blob_file_size", rocksBlobFileSize);
-  REGISTER_VARS_DIFF_NAME("rocks.enable_blob_garbage_collection",
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.enable_blob_files",
+                                  rocksEnableBlobFiles);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.binlog_enable_blob_files",
+                                  rocksBinlogEnableBlobFiles);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.min_blob_size", rocksMinBlobSize);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.blob_file_size", rocksBlobFileSize);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.blob_garbage_collection_age_cutoff",
+                                  rocksBlobGarbageCollectionAgeCutoff);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.enable_blob_garbage_collection",
                           rocksEnableBlobGarbageCollection);
+  REGISTER_VARS_FULL("rocks.blob_compress_type", rocksBlobCompressType,
+                     compressTypeParamCheck, removeQuotesAndToLower,
+                     -1, -1, true);
 #endif
 
   REGISTER_VARS_FULL("rocks.compress_type",
