@@ -606,8 +606,6 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
   auto tmpMGLockMgr = std::make_unique<mgl::MGLockMgr>();
   installMGLockMgrInLock(std::move(tmpMGLockMgr));
-  // inited single instance
-  mgl::MGLockMgr::getInstance();
 
   // FIXME: we may should move these function's static variable to global
   RecordKey::prefixTTLIndex();
@@ -1347,8 +1345,10 @@ uint64_t ServerEntry::getStatCountByName(Session* sess,
 }
 
 bool ServerEntry::isDbEmpty() {
+  LocalSessionGuard g(this);
   for (uint32_t i = 0; i < getKVStoreCount(); ++i) {
-    auto expdb = getSegmentMgr()->getDb(nullptr, i, mgl::LockMode::LOCK_IS);
+    auto expdb = getSegmentMgr()->getDb(
+      g.getSession(), i, mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {
       LOG(ERROR) << "get db lock fail:" << expdb.status().toString();
       return false;
@@ -1523,9 +1523,10 @@ Status ServerEntry::generateHeartbeatBinlogRoutine() {
   std::string value(buffer);
   auto rm = getReplManager();
 
+  LocalSessionGuard g(this);
   for (uint32_t i = 0; i < getKVStoreCount(); ++i) {
     auto expdb =
-      getSegmentMgr()->getDb(nullptr, i, mgl::LockMode::LOCK_IX);
+      getSegmentMgr()->getDb(g.getSession(), i, mgl::LockMode::LOCK_IX);
     RET_IF_ERR_EXPECTED(expdb);
 
     if (rm->isSlaveOfSomeone(i)) {

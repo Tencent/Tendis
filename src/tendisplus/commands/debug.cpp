@@ -4195,7 +4195,7 @@ class compactSlotsCommand : public Command {
                 << " beginChunk:" << myBegin << " endChunk:" << myEnd;
 
       auto expdb =
-        server->getSegmentMgr()->getDb(NULL, storeid, mgl::LockMode::LOCK_IS);
+        server->getSegmentMgr()->getDb(sess, storeid, mgl::LockMode::LOCK_IS);
       if (!expdb.ok()) {
         LOG(ERROR) << "getDb failed:" << storeid;
         return expdb.status();

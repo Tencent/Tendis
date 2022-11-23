@@ -21,8 +21,9 @@ Expected<uint64_t> addMigrateBinlog(MigrateBinlogType type,
                                     const string& nodeName = "none") {
   // Temporarily disabled
   INVARIANT_D(0);
-  auto expdb =
-    svr->getSegmentMgr()->getDb(NULL, storeid, mgl::LockMode::LOCK_IX);
+  LocalSessionGuard g(svr);
+  auto expdb = svr->getSegmentMgr()->getDb(
+    g.getSession(), storeid, mgl::LockMode::LOCK_IX);
   if (!expdb.ok()) {
     return expdb.status();
   }
@@ -1329,7 +1330,7 @@ void MigrateReceiveTask::fullReceive() {
    * should be destructed soon.
    */
   auto expdb =
-    _svr->getSegmentMgr()->getDb(nullptr, storeid, mgl::LockMode::LOCK_IX);
+    _svr->getSegmentMgr()->getDb(_sess.get(), storeid, mgl::LockMode::LOCK_IX);
   if (!expdb.ok()) {
     LOG(ERROR) << "get db failed: " << expdb.status().toString()
                << " taskid:" << _taskid << "slots:" << bitsetStrEncode(_slots);

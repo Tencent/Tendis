@@ -170,6 +170,7 @@ class ChunkMigrateSender {
   std::atomic<bool> _isRunning;
   bool _isFake;
 
+  std::unique_ptr<LocalSession> _sess;
   std::unique_ptr<DbWithLock> _dbWithLock;
   std::shared_ptr<BlockingTcpClient> _client;
   std::string _taskid;

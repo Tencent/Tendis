@@ -1,3 +1,7 @@
+// Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+// Please refer to the license text that comes with this tendis open source
+// project for additional information.
+
 #include <iostream>
 #include <string>
 #include <algorithm>
@@ -38,7 +42,8 @@ TEST(LockShard, Align) {
 }
 
 TEST(MGL, OneTarget) {
-    MGLock l1(nullptr), l2(nullptr), l3(nullptr), l4(nullptr), l5(nullptr);
+    MGLockMgr mgr;
+    MGLock l1(&mgr), l2(&mgr), l3(&mgr), l4(&mgr), l5(&mgr);
     EXPECT_EQ(l1.lock("something", LockMode::LOCK_IS, 1000),
                       LockRes::LOCKRES_OK);
     EXPECT_EQ(l2.lock("something", LockMode::LOCK_IS, 1000),
@@ -57,7 +62,8 @@ TEST(MGL, OneTarget) {
 }
 
 TEST(MGL, MultiTarget) {
-    MGLock l1(nullptr), l2(nullptr);
+    MGLockMgr mgr;
+    MGLock l1(&mgr), l2(&mgr);
     EXPECT_EQ(l1.lock("something", LockMode::LOCK_IS, 1000),
                       LockRes::LOCKRES_OK);
     EXPECT_EQ(l2.lock("something1", LockMode::LOCK_S, 1000),
@@ -67,7 +73,8 @@ TEST(MGL, MultiTarget) {
 }
 
 TEST(MGL, MultiThread) {
-    MGLock l1(nullptr), l2(nullptr), l3(nullptr), l4(nullptr), l5(nullptr);
+    MGLockMgr mgr;
+    MGLock l1(&mgr), l2(&mgr), l3(&mgr), l4(&mgr), l5(&mgr);
     EXPECT_EQ(l1.lock("something", LockMode::LOCK_IS, 1000),
                       LockRes::LOCKRES_OK);
     EXPECT_EQ(l2.lock("something", LockMode::LOCK_IS, 1000),
@@ -90,7 +97,8 @@ TEST(MGL, MultiThread) {
 }
 
 TEST(MGL, Starvation) {
-    MGLock l1(nullptr), l2(nullptr), l3(nullptr);
+    MGLockMgr mgr;
+    MGLock l1(&mgr), l2(&mgr), l3(&mgr);
     EXPECT_EQ(l1.lock("something", LockMode::LOCK_IS, 1000),
                       LockRes::LOCKRES_OK);
     std::thread tmp([&l2]() {

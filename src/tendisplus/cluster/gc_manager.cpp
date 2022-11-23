@@ -116,8 +116,9 @@ std::vector<DeleteRangeTask> GCManager::generateDeleleRangeTask(
 }
 
 Status GCManager::deleteSlots(const DeleteRangeTask& task) {
+  LocalSessionGuard g(_svr.get());
   auto expdb = _svr->getSegmentMgr()->getDb(
-    nullptr, task._storeid, mgl::LockMode::LOCK_IX);
+    g.getSession(), task._storeid, mgl::LockMode::LOCK_IX);
   RET_IF_ERR_EXPECTED(expdb);
 
   // try to lock all slots in case of something wrong.

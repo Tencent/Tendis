@@ -21,7 +21,9 @@ MGLock::MGLock(MGLockMgr* mgr)
     _res(LockRes::LOCKRES_UNINITED),
     _resIter(_dummyList.end()),
     _lockMgr(mgr),
-    _threadId(getCurThreadId()) {}
+    _threadId(getCurThreadId()) {
+      INVARIANT_D(_lockMgr != nullptr);
+    }
 
 MGLock::~MGLock() {
   INVARIANT_D(_res == LockRes::LOCKRES_UNINITED);
@@ -44,11 +46,7 @@ void MGLock::unlock() {
   if (status != LockRes::LOCKRES_UNINITED) {
     INVARIANT_D(status == LockRes::LOCKRES_OK ||
                 status == LockRes::LOCKRES_WAIT);
-    if (!_lockMgr) {
-      MGLockMgr::getInstance().unlock(this);
-    } else {
-      _lockMgr->unlock(this);
-    }
+    _lockMgr->unlock(this);
     status = getStatus();
     INVARIANT_D(status == LockRes::LOCKRES_UNINITED);
   }
@@ -66,11 +64,7 @@ LockRes MGLock::lock(const std::string& target,
   } else {
     _targetHash = 0;
   }
-  if (!_lockMgr) {
-    MGLockMgr::getInstance().lock(this);
-  } else {
-    _lockMgr->lock(this);
-  }
+  _lockMgr->lock(this);
   if (getStatus() == LockRes::LOCKRES_OK) {
     return LockRes::LOCKRES_OK;
   }

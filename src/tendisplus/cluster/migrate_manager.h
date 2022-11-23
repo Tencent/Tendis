@@ -137,11 +137,11 @@ class MigrateReceiveTask {
       _isRunning(false),
       _lastSyncTime(0),
       _state(MigrateReceiveState::RECEIVE_SNAPSHOT),
+      _sess(std::make_unique<LocalSession>(svr)),
+      _receiver(std::make_unique<ChunkMigrateReceiver>(
+        slots_, store_id, taskid_, svr, cfg)),
       _pTask(pTask_),
-      _retryTime(0) {
-    _receiver = std::make_unique<ChunkMigrateReceiver>(
-      slots_, store_id, taskid_, svr, cfg);
-  }
+      _retryTime(0) {}
   SlotsBitmap _slots;
   std::string _taskid;
   uint32_t _storeid;
@@ -152,6 +152,7 @@ class MigrateReceiveTask {
   SCLOCK::time_point _nextSchedTime;
   uint64_t _lastSyncTime;
   std::atomic<MigrateReceiveState> _state;
+  std::unique_ptr<LocalSession> _sess;
   std::unique_ptr<ChunkMigrateReceiver> _receiver;
   std::shared_ptr<pTask> _pTask;
   mutable std::mutex _mutex;
@@ -289,7 +290,6 @@ class MigrateManager {
   bool isRunning() const;
 
  private:
-  std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;
   void controlRoutine();
   bool containSlot(const SlotsBitmap& slots1, const SlotsBitmap& slots2);
   bool checkSlotOK(const SlotsBitmap& bitMap,
