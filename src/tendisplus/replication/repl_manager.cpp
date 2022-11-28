@@ -620,6 +620,16 @@ void ReplManager::updateSyncTime(uint32_t storeId) {
     auto& v = _syncStatus[storeId];
     v->lastSyncTime = SCLOCK::now();
 }
+
+// NOTE(takenliu): be careful, this interface is only for test case.
+void ReplManager::setSyncStatusError(uint32_t storeId) {
+  std::lock_guard<std::mutex> lk(_mutex);
+  auto& v = _syncStatus[storeId];
+  _svr->cancelSession(v->sessionId);
+  v->sessionId = std::numeric_limits<uint64_t>::max();
+  LOG(INFO) << "setSyncStatusError, close _syncStatus client, storeId:"
+            << storeId;
+}
 #endif
 
 bool ReplManager::hasSomeSlave(uint32_t storeId) {

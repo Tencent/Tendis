@@ -212,6 +212,7 @@ class ReplManager {
   void onFlush(uint32_t storeId, uint64_t binlogid);
 #ifdef TENDIS_DEBUG
   void updateSyncTime(uint32_t storeId);
+  void setSyncStatusError(uint32_t storeId);
 #endif
   bool hasSomeSlave(uint32_t storeId);
   bool isSlaveOfSomeone(uint32_t storeId);
