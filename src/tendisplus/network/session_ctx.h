@@ -167,7 +167,7 @@ class SessionCtx {
   mgl::LockMode _waitlockMode;
   std::string _waitlockKey;
   uint64_t _readPacketTs;
-  uint64_t _processPacketStart;
+  std::atomic<uint64_t> _processPacketStart;
 
   std::array<LockLatencyRecord, LockLatencyType::MAX_LLT> _lockRecord;
   std::array<RocksdbLatencyRecord, RocksdbLatencyType::MAX_RLT> _rocksdbRecord;
