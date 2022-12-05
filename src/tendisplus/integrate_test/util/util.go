@@ -74,6 +74,23 @@ func FindAvailablePort(start int) int {
 	return 0
 }
 
+func GetIp() string {
+	log.Infof("GetIp begin")
+
+	cmd1 := fmt.Sprintf("ifconfig -a|grep inet|grep -v 127.0.0.1|grep -v inet6|awk '{print $2}'|tr -d 'addr:'|head -1")
+	output1, err1 := exec.Command("sh", "-c", cmd1).CombinedOutput()
+	log.Infof("output1:%s", string(output1))
+	log.Infof("err1:%v", err1)
+
+	if len(output1) > 0 {
+		log.Infof("GetIp success:%+v", string(output1))
+		return strings.Replace(string(output1), "\n", "", -1)
+	}
+
+	fmt.Println("Can't GetIp.")
+	return ""
+}
+
 func FileExist(path string) (bool, error) {
 	_, err := os.Stat(path)
 	if err == nil {

@@ -427,7 +427,7 @@ TEST(BlockingTcpClient, RateLimit) {
 
 TEST(NetSession, SocketShutdownRead) {
   auto ioCtx = std::make_shared<asio::io_context>();
-  uint32_t port = 54011;
+  uint32_t port = 14021;
 
   server2 svr(*ioCtx, port);
 

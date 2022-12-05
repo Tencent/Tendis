@@ -105,9 +105,12 @@ NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
                          const std::string& name)
   : _connCreated(0),
     _server(server),
-    _acceptCtx(std::make_unique<asio::io_context>()),
+    _acceptCtx(nullptr),
     _acceptor(nullptr),
     _acceptThd(nullptr),
+    _acceptCtx2(nullptr),
+    _acceptor2(nullptr),
+    _acceptThd2(nullptr),
     _isRunning(false),
     _netMatrix(netMatrix),
     _reqMatrix(reqMatrix),
@@ -175,19 +178,49 @@ std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
 }
 
 Status NetworkAsio::prepare(const std::string& ip,
+                            const std::string& ip2,
                             const uint16_t port,
                             uint32_t netIoThreadNum) {
+  _ip = ip;
+  _port = port;
+  _netIoThreadNum = netIoThreadNum;
+  _ip2 = ip2;
+  if (_ip2 != "" &&
+    (_ip == "0.0.0.0" || _ip2 == "0.0.0.0")) {
+    LOG(ERROR) << "be careful, bind two ip,"
+      <<" and one of them is 0.0.0.0 may have some error!";
+  }
+  _acceptCtx = std::make_shared<asio::io_context>();
+  Status s = prepareAccept(_ip, _port, _acceptCtx, _acceptor);
+  if (!s.ok()) {
+    return s;
+  }
+  if (_ip2 != "") {
+    _acceptCtx2 = std::make_shared<asio::io_context>();
+    s = prepareAccept(_ip2, _port, _acceptCtx2, _acceptor2);
+    if (!s.ok()) {
+      return s;
+    }
+  }
+  s = startThread();
+  if (!s.ok()) {
+    return s;
+  }
+  return  {ErrorCodes::ERR_OK, ""};
+}
+
+Status NetworkAsio::prepareAccept(const std::string& ip,
+  const uint16_t port,
+  std::shared_ptr<asio::io_context>& acceptCtx,
+  std::shared_ptr<asio::ip::tcp::acceptor>& acceptor) {
   bool supportDomain = _server->getParams()->domainEnabled;
 
   try {
-    _ip = ip;
-    _port = port;
-    _netIoThreadNum = netIoThreadNum;
     asio::ip::tcp::endpoint ep;
     LOG(INFO) << "NetworkAsio::prepare ip:" << ip << " port:" << port;
     /*NOTE(wayenchen) if bind domain name, use resolver to get endpoint*/
     if (supportDomain) {
-      asio::ip::tcp::resolver resolver(*_acceptCtx);
+      asio::ip::tcp::resolver resolver(*acceptCtx);
       std::stringstream ss;
       ss << port;
       asio::ip::tcp::resolver::query query(ip, ss.str());
@@ -198,9 +231,9 @@ Status NetworkAsio::prepare(const std::string& ip,
       ep = tcp::endpoint(address, port);
     }
     std::error_code ec;
-    _acceptor = std::make_unique<tcp::acceptor>(*_acceptCtx, ep);
-    _acceptor->set_option(tcp::acceptor::reuse_address(true));
-    _acceptor->non_blocking(true, ec);
+    acceptor = std::make_shared<tcp::acceptor>(*acceptCtx, ep);
+    acceptor->set_option(tcp::acceptor::reuse_address(true));
+    acceptor->non_blocking(true, ec);
     if (ec.value()) {
       return {ErrorCodes::ERR_NETWORK, ec.message()};
     }
@@ -210,7 +243,6 @@ Status NetworkAsio::prepare(const std::string& ip,
 #endif
     return {ErrorCodes::ERR_NETWORK, e.what()};
   }
-  startThread();
   return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -251,9 +283,10 @@ Expected<std::shared_ptr<ClusterSession>> NetworkAsio::client2ClusterSession(
 }
 
 template <typename T>
-void NetworkAsio::doAccept() {
+void NetworkAsio::doAccept(std::shared_ptr<asio::ip::tcp::acceptor>& acceptor) {
   int index = _connCreated % _rwCtxList.size();
-  auto cb = [this, index](const std::error_code& ec, tcp::socket socket) {
+  auto cb = [this, index, &acceptor](
+    const std::error_code& ec, tcp::socket socket) {
     if (!_isRunning.load(std::memory_order_relaxed)) {
       LOG(INFO) << "acceptCb, server is shuting down";
       return;
@@ -276,37 +309,43 @@ void NetworkAsio::doAccept() {
       ++_netMatrix->connCreated;
     }
 
-    doAccept<T>();
+    doAccept<T>(acceptor);
   };
   auto rwCtx = _rwCtxList[index];
-  _acceptor->async_accept(*rwCtx, std::move(cb));
+  acceptor->async_accept(*rwCtx, std::move(cb));
 }
 
 void NetworkAsio::stop() {
   LOG(INFO) << "network-asio begin stops...";
   _isRunning.store(false, std::memory_order_relaxed);
   _acceptCtx->stop();
+  if (_ip2 != "") {
+    _acceptCtx2->stop();
+  }
   for (auto& rwCtx : _rwCtxList) {
     rwCtx->stop();
   }
   _acceptThd->join();
+  if (_ip2 != "") {
+    _acceptThd2->join();
+  }
   for (auto& v : _rwThreads) {
     v.join();
   }
   LOG(INFO) << "network-asio stops complete...";
 }
 
-Status NetworkAsio::startThread() {
-  _isRunning.store(true, std::memory_order_relaxed);
-  _acceptThd = std::make_unique<std::thread>([this] {
+Status NetworkAsio::startAcceptThread(std::shared_ptr<std::thread>& acceptThd,
+  std::shared_ptr<asio::io_context>& acceptCtx) {
+  acceptThd = std::make_shared<std::thread>([this, &acceptCtx] {
     std::string threadName = _name + "-accept";
     threadName.resize(15);
     INVARIANT(!pthread_setname_np(pthread_self(), threadName.c_str()));
     while (_isRunning.load(std::memory_order_relaxed)) {
       // if no work-gurad, the run() returns immediately if no other tasks
-      asio::io_context::work work(*_acceptCtx);
+      asio::io_context::work work(*acceptCtx);
       try {
-        _acceptCtx->run();
+        acceptCtx->run();
       } catch (const std::exception& ex) {
         LOG(FATAL) << "accept failed:" << ex.what();
       } catch (...) {
@@ -314,6 +353,14 @@ Status NetworkAsio::startThread() {
       }
     }
   });
+  return {ErrorCodes::ERR_OK, ""};
+}
+Status NetworkAsio::startThread() {
+  _isRunning.store(true, std::memory_order_relaxed);
+  startAcceptThread(_acceptThd, _acceptCtx);
+  if (_ip2 != "") {
+    startAcceptThread(_acceptThd2, _acceptCtx2);
+  }
 
   LOG(INFO) << "NetworkAsio::run netIO _netIoThreadNum:" << _netIoThreadNum;
   for (size_t i = 0; i < _netIoThreadNum; ++i) {
@@ -349,9 +396,12 @@ Status NetworkAsio::run(bool forGossip) {
   // but only through listen can we configure backlog.
   // _acceptor->listen(BACKLOG);
   if (!forGossip) {
-    doAccept<NetSession>();
+    doAccept<NetSession>(_acceptor);
+    if (_ip2 != "") {
+      doAccept<NetSession>(_acceptor2);
+    }
   } else {
-    doAccept<ClusterSession>();
+    doAccept<ClusterSession>(_acceptor);
   }
   return {ErrorCodes::ERR_OK, ""};
 }

@@ -4080,7 +4080,7 @@ Status ClusterManager::initNetWork() {
       "cluster");
 
   Status s =
-    _clusterNetwork->prepare(cfg->bindIp, cfg->port + CLUSTER_PORT_INCR, 1);
+    _clusterNetwork->prepare(cfg->bindIp, "", cfg->port + CLUSTER_PORT_INCR, 1);
   if (!s.ok()) {
     return s;
   }

@@ -349,6 +349,7 @@ Status rewriteConfigState::rewriteConfigOverwriteFile(
 
 ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME("bind", bindIp);
+  REGISTER_VARS_DIFF_NAME("bind2", bindIp2);
   REGISTER_VARS_FULL("port", port, nullptr, nullptr, 1, 65535, false);
   REGISTER_VARS_FULL("logLevel",
                      logLevel,
