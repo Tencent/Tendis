@@ -327,7 +327,7 @@ start_server {tags {"hash"}} {
         set e
     } {*overflow*}
 
-	test {HINCRBY 1.2 bug: http://tapd.oa.com/IEG_Redis_Cluster/bugtrace/bugs/view?bug_id=1010095231053705891 } {
+	test {HINCRBY bug of TRedis 1.2 } {
    		r del hash
    		r hset hash a 0
    		r hset hash b 0
