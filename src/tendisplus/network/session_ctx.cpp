@@ -41,11 +41,11 @@ SessionCtx::SessionCtx(Session* sess)
 }
 
 void SessionCtx::setProcessPacketStart(uint64_t start) {
-  _processPacketStart = start;
+  _processPacketStart.store(start, std::memory_order_relaxed);
 }
 
 uint64_t SessionCtx::getProcessPacketStart() const {
-  return _processPacketStart;
+  return _processPacketStart.load(std::memory_order_relaxed);
 }
 
 void SessionCtx::setReadPacketTs(uint64_t ts) {
@@ -356,7 +356,7 @@ std::string SessionCtx::generateRocksdbRecordLogIfNeeded(
 }
 
 void SessionCtx::resetStatisticInfo() {
-  _processPacketStart = 0;
+  _processPacketStart.store(0, std::memory_order_relaxed);
 
   for (auto& lr : _lockRecord) {
     lr.reset();

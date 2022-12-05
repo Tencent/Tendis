@@ -1710,6 +1710,7 @@ void ServerEntry::stop() {
   LOG(INFO) << "server begins to stop...";
   _isRunning.store(false, std::memory_order_relaxed);
   _eventCV.notify_all();
+  _cronThd->join();
 
   // NOTE(takenliu): _scriptMgr need stop earlier than _executorList
   _scriptMgr->stop();
@@ -1775,7 +1776,6 @@ void ServerEntry::stop() {
     }
   }
 
-  _cronThd->join();
   _slowlogStat.closeSlowlogFile();
   LOG(INFO) << "server stops complete...";
   _isStopped.store(true, std::memory_order_relaxed);
