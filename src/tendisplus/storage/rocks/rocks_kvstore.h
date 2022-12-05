@@ -277,6 +277,7 @@ class RocksKVStore : public KVStore {
   RocksKVStore(const std::string& id,
                const std::shared_ptr<ServerParams>& cfg,
                std::shared_ptr<rocksdb::Cache> blockCache,
+               std::shared_ptr<rocksdb::Cache> rowCache = nullptr,
                std::shared_ptr<rocksdb::RateLimiter> rateLimiter = nullptr,
                std::shared_ptr<rocksdb::SstFileManager>
                  sstFileManager = nullptr,
@@ -519,6 +520,7 @@ class RocksKVStore : public KVStore {
 
   std::shared_ptr<rocksdb::Statistics> _stats;
   std::shared_ptr<rocksdb::Cache> _blockCache;
+  std::shared_ptr<rocksdb::Cache> _rowCache;
   std::shared_ptr<rocksdb::RateLimiter> _rateLimiter;
   std::shared_ptr<rocksdb::SstFileManager> _sstFileManager;
 

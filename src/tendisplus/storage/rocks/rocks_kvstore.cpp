@@ -1248,6 +1248,7 @@ rocksdb::CompressionType rocksGetCompressType(const std::string& typeStr) {
 RocksKVStore::RocksKVStore(const std::string& id,
                            const std::shared_ptr<ServerParams>& cfg,
                            std::shared_ptr<rocksdb::Cache> blockCache,
+                           std::shared_ptr<rocksdb::Cache> rowCache,
                            std::shared_ptr<rocksdb::RateLimiter> rateLimiter,
                            std::shared_ptr<rocksdb::SstFileManager>
                              sstFileManager,
@@ -1267,6 +1268,7 @@ RocksKVStore::RocksKVStore(const std::string& id,
     _pesdb(nullptr),
     _stats(rocksdb::CreateDBStatistics()),
     _blockCache(blockCache),
+    _rowCache(rowCache),
     _rateLimiter(rateLimiter),
     _sstFileManager(sstFileManager),
     _nextTxnSeq(0),
@@ -1293,6 +1295,7 @@ rocksdb::Options RocksKVStore::options() {
   // let index and filters pining in mem forever
   table_options.cache_index_and_filter_blocks = false;
 
+  options.row_cache = _rowCache;
   options.write_buffer_size = 64 * 1024 * 1024;  // 64MB
   // level_0 files don't have a fixed file size.
   options.level0_slowdown_writes_trigger = 20;

@@ -240,6 +240,9 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   std::shared_ptr<rocksdb::Cache> getBlockCache() const {
     return _blockCache;
   }
+  std::shared_ptr<rocksdb::Cache> getRowCache() const {
+    return _rowCache;
+  }
 
   void toggleFtmc(bool enable);
   void appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer>&,
@@ -407,6 +410,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   std::unique_ptr<ScriptManager> _scriptMgr;
 
   std::shared_ptr<rocksdb::Cache> _blockCache;
+  std::shared_ptr<rocksdb::Cache> _rowCache;
   std::shared_ptr<rocksdb::RateLimiter> _rateLimiter;
   std::shared_ptr<rocksdb::SstFileManager> _sstFileManager;
   std::vector<PStore> _kvstores;

@@ -568,6 +568,7 @@ TEST(RocksKVStore, OptCursorVisible) {
                                                 blockCache,
                                                 nullptr,
                                                 nullptr,
+                                                nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
                                                 TxnMode::TXN_OPT);
@@ -587,6 +588,7 @@ TEST(RocksKVStore, PesCursorVisible) {
   auto kvstore = std::make_unique<RocksKVStore>("0",
                                                 cfg,
                                                 blockCache,
+                                                nullptr,
                                                 nullptr,
                                                 nullptr,
                                                 true,
@@ -981,6 +983,7 @@ TEST(RocksKVStore, OptCommon) {
                                                 blockCache,
                                                 nullptr,
                                                 nullptr,
+                                                nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
                                                 TxnMode::TXN_OPT);
@@ -1003,6 +1006,7 @@ TEST(RocksKVStore, PesCommon) {
                                                 blockCache,
                                                 nullptr,
                                                 nullptr,
+                                                nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
                                                 TxnMode::TXN_PES);
@@ -1023,6 +1027,7 @@ TEST(RocksKVStore, WBCommon) {
   auto kvstore = std::make_unique<RocksKVStore>("0",
                                                 cfg,
                                                 blockCache,
+                                                nullptr,
                                                 nullptr,
                                                 nullptr,
                                                 true,
@@ -1082,6 +1087,7 @@ TEST(RocksKVStore, PesTruncateBinlog) {
   auto kvstore = std::make_unique<RocksKVStore>("0",
                                                 cfg,
                                                 blockCache,
+                                                nullptr,
                                                 nullptr,
                                                 nullptr,
                                                 true,
@@ -1301,6 +1307,7 @@ TEST(RocksKVStore, Compaction) {
                                                 blockCache,
                                                 nullptr,
                                                 nullptr,
+                                                nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
                                                 TxnMode::TXN_PES);
@@ -1379,6 +1386,7 @@ TEST(RocksKVStore, CompactionWithNoexpire) {
   auto kvstore = std::make_unique<RocksKVStore>("0",
                                                 cfg,
                                                 blockCache,
+                                                nullptr,
                                                 nullptr,
                                                 nullptr,
                                                 true,

@@ -2438,6 +2438,14 @@ class InfoCommand : public Command {
       ss << "rocksdb.blockcache.capacity:" << blockCapacity << "\r\n";
       ss << "rocksdb.blockcache.usage:" << blockUsage << "\r\n";
       ss << "rocksdb.blockcache.pinnedusage:" << blockPinnedUsage << "\r\n";
+      if (server->getRowCache() != nullptr) {
+        uint64_t rowUsage = server->getRowCache()->GetUsage();
+        uint64_t rowPinnedUsage = server->getRowCache()->GetPinnedUsage();
+        uint64_t rowCapacity = server->getRowCache()->GetCapacity();
+        ss << "rocksdb.rowcache.capacity:" << rowCapacity << "\r\n";
+        ss << "rocksdb.rowcache.usage:" << rowUsage << "\r\n";
+        ss << "rocksdb.rowcache.pinnedusage:" << rowPinnedUsage << "\r\n";
+      }
       ss << "rocksdb.mem-table-flush-pending:" << mem_pending << "\r\n";
       ss << "rocksdb.estimate-pending-compaction-bytes:" << compaction_pending
          << "\r\n";
