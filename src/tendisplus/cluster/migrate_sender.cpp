@@ -23,6 +23,7 @@ ChunkMigrateSender::ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
     _cfg(cfg),
     _isRunning(false),
     _isFake(is_fake),
+    _sess(std::make_unique<LocalSession>(svr)),
     _taskid(taskid),
     _clusterState(svr->getClusterMgr()->getClusterState()),
     _sendstate(MigrateSenderStatus::SNAPSHOT_BEGIN),
@@ -347,7 +348,7 @@ Status ChunkMigrateSender::sendRangeByBatch(Transaction* txn,
 Status ChunkMigrateSender::sendSnapshot() {
   Status s;
   auto expdb =
-    _svr->getSegmentMgr()->getDb(NULL, _storeid, mgl::LockMode::LOCK_IS);
+    _svr->getSegmentMgr()->getDb(_sess.get(), _storeid, mgl::LockMode::LOCK_IS);
   if (!expdb.ok()) {
     return expdb.status();
   }

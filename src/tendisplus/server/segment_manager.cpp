@@ -32,6 +32,7 @@ uint32_t SegmentMgrFnvHash64::getStoreid(uint32_t chunkid) {
 
 Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
   Session* sess, const std::string& key, mgl::LockMode mode) {
+  INVARIANT(sess != nullptr && sess->getServerEntry() != nullptr);
   uint32_t hash = uint32_t(redis_port::keyHashSlot(key.c_str(), key.size()));
   INVARIANT_D(hash < _chunkSize);
   uint32_t chunkId = hash % _chunkSize;
@@ -43,18 +44,16 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
   bool clusterEnabled = false;
   bool isSessionReplOnly = true;
   std::shared_ptr<ClusterState> clusterState;
-  if (sess && sess->getServerEntry()) {
-    const auto& cfg = sess->getServerEntry()->getParams();
-    lockTimeoutMs = (uint64_t)cfg->lockWaitTimeOut * 1000;
-    clusterEnabled = sess->getServerEntry()->isClusterEnabled();
-    clusterState = clusterEnabled
-      ? sess->getServerEntry()->getClusterMgr()->getClusterState()
-      : nullptr;
-    /* NOTE(wayenchen) if aofPsync is enable and it is the master session, the
-     * session should be able to run command */
-    if (cfg->psyncEnabled && sess->getCtx()->isMaster()) {
-      isSessionReplOnly = false;
-    }
+  const auto& cfg = sess->getServerEntry()->getParams();
+  lockTimeoutMs = (uint64_t)cfg->lockWaitTimeOut * 1000;
+  clusterEnabled = sess->getServerEntry()->isClusterEnabled();
+  clusterState = clusterEnabled
+    ? sess->getServerEntry()->getClusterMgr()->getClusterState()
+    : nullptr;
+  /* NOTE(wayenchen) if aofPsync is enable and it is the master session, the
+   * session should be able to run command */
+  if (cfg->psyncEnabled && sess->getCtx()->isMaster()) {
+    isSessionReplOnly = false;
   }
 
   if (!_instances[segId]->isOpen()) {
@@ -75,7 +74,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
     return {ErrorCodes::ERR_INTERNAL, ss.str()};
   }
 
-  if (sess && sess->getCtx() &&
+  if (sess->getCtx() &&
       _instances[segId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
     sess->getCtx()->setReplOnly(isSessionReplOnly);
   }
@@ -86,9 +85,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
                                       key,
                                       mode,
                                       sess,
-                                      (sess && sess->getServerEntry())
-                                        ? sess->getServerEntry()->getMGLockMgr()
-                                        : nullptr,
+                                      sess->getServerEntry()->getMGLockMgr(),
                                       lockTimeoutMs);
     if (!elk.ok()) {
       return elk.status();
@@ -156,6 +153,7 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
                                       const std::vector<int>& index,
                                       mgl::LockMode mode,
                                       int cmdFlag) {
+  INVARIANT(sess != nullptr && sess->getServerEntry() != nullptr);
   std::list<std::unique_ptr<KeyLock>> locklist;
 
   if (mode == mgl::LockMode::LOCK_NONE) {
@@ -170,19 +168,17 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
     sess->getServerEntry()->getParams()->allowCrossSlot &&
     ((cmdFlag & CMD_ALLOW_CROSS_SLOT) != 0);
   std::shared_ptr<ClusterState> clusterState;
-  if (sess && sess->getServerEntry()) {
-    const auto& cfg = sess->getServerEntry()->getParams();
-    lockTimeoutMs = uint64_t(cfg->lockWaitTimeOut * 1000);
-    clusterEnabled = sess->getServerEntry()->isClusterEnabled();
-    clusterSingle = cfg->clusterSingleNode;
-    clusterState = clusterEnabled
-      ? sess->getServerEntry()->getClusterMgr()->getClusterState()
-      : nullptr;
-    /* NOTE(wayenchen) if aofPsync is enable and it is the master session, the
-     * session should be able to run command */
-    if (cfg->psyncEnabled && sess->getCtx()->isMaster()) {
-      isSessionReplOnly = false;
-    }
+  const auto& cfg = sess->getServerEntry()->getParams();
+  lockTimeoutMs = uint64_t(cfg->lockWaitTimeOut * 1000);
+  clusterEnabled = sess->getServerEntry()->isClusterEnabled();
+  clusterSingle = cfg->clusterSingleNode;
+  clusterState = clusterEnabled
+    ? sess->getServerEntry()->getClusterMgr()->getClusterState()
+    : nullptr;
+  /* NOTE(wayenchen) if aofPsync is enable and it is the master session, the
+   * session should be able to run command */
+  if (cfg->psyncEnabled && sess->getCtx()->isMaster()) {
+    isSessionReplOnly = false;
   }
   bool clusterHasMultiNodes = clusterEnabled && !clusterSingle;
 
@@ -210,10 +206,10 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
   }
 
   // only need to check whether the first involved kvstore is REPLICATE_ONLY
-  if (sess && sess->getCtx() && !chunkSet.empty() &&
+  if (sess->getCtx() && !chunkSet.empty() &&
       _instances[getStoreid(*chunkSet.begin())]->getMode() ==
-      KVStore::StoreMode::REPLICATE_ONLY) {
-      sess->getCtx()->setReplOnly(isSessionReplOnly);
+        KVStore::StoreMode::REPLICATE_ONLY) {
+    sess->getCtx()->setReplOnly(isSessionReplOnly);
   }
 
   if (clusterHasMultiNodes) {  // clusterEnabled && !clusterSingle
@@ -238,25 +234,17 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
   for (const auto& element : segList) {
     uint32_t segId = element.first;
     auto keysvec = element.second;
-    std::sort(keysvec.begin(),
-              keysvec.end(),
-              [](const std::pair<uint32_t, std::string>& a,
-                 const std::pair<uint32_t, std::string>& b) {
-                return a.first < b.first ||
-                  (a.first == b.first && a.second < b.second);
-              });
+    std::sort(keysvec.begin(), keysvec.end(), [](const auto& a, const auto& b) {
+      return a.first < b.first || (a.first == b.first && a.second < b.second);
+    });
     for (const auto& pair : keysvec) {
-      uint32_t chunkId = pair.first;
-      auto elk =
-        KeyLock::AquireKeyLock(segId,
-                               chunkId,
-                               pair.second,
-                               mode,
-                               sess,
-                               (sess && sess->getServerEntry())
-                                 ? sess->getServerEntry()->getMGLockMgr()
-                                 : nullptr,
-                               lockTimeoutMs);
+      auto elk = KeyLock::AquireKeyLock(segId,
+                                        pair.first,
+                                        pair.second,
+                                        mode,
+                                        sess,
+                                        sess->getServerEntry()->getMGLockMgr(),
+                                        lockTimeoutMs);
       if (!elk.ok()) {
         return elk.status();
       }
@@ -285,6 +273,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session* sess,
                                                 mgl::LockMode mode,
                                                 bool canOpenStoreNoneDB,
                                                 uint64_t lock_wait_timeout) {
+  INVARIANT(sess != nullptr && sess->getServerEntry() != nullptr);
   if (insId >= _instances.size()) {
     return {ErrorCodes::ERR_INTERNAL, "invalid instance id"};
   }
@@ -302,9 +291,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session* sess,
 
   // a duration of 49 days.
   uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
-  std::shared_ptr<ServerParams> cfg = (sess && sess->getServerEntry())
-    ? sess->getServerEntry()->getParams()
-    : nullptr;
+  auto cfg = sess->getServerEntry()->getParams();
   if (lock_wait_timeout == (uint64_t)-1) {
     if (mode == mgl::LockMode::LOCK_X) {
       /* *
@@ -329,8 +316,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session* sess,
       insId,
       mode,
       sess,
-      (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr()
-                                       : nullptr,
+      sess->getServerEntry()->getMGLockMgr(),
       lockTimeoutMs);
     if (!elk.ok()) {
       LOG(WARNING) << "store id " << insId
@@ -340,7 +326,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session* sess,
     lk = std::move(elk.value());
   }
 
-  if (sess && sess->getCtx() &&
+  if (sess->getCtx() &&
       _instances[insId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
     sess->getCtx()->setReplOnly(true);
   }

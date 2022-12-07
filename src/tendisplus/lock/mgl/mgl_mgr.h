@@ -71,7 +71,6 @@ class MGLockMgr {
   MGLockMgr() = default;
   void lock(MGLock* core);
   void unlock(MGLock* core);
-  static MGLockMgr& getInstance();
   std::string toString();
   std::vector<std::string> getLockList();
 

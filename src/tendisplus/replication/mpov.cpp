@@ -594,11 +594,12 @@ void ReplManager::AddFakeFullPushStatus(
   std::lock_guard<std::mutex> lk(_mutex);
   string slaveNode = ip + ":" + to_string(port);
 
+  LocalSessionGuard g(_svr.get());
   for (uint32_t storeId = 0; storeId < _svr->getKVStoreCount(); storeId++) {
     if (_fullPushStatus[storeId].find(slaveNode)
       == _fullPushStatus[storeId].end()) {
       auto expdb = _svr->getSegmentMgr()->getDb(
-              nullptr, storeId, mgl::LockMode::LOCK_NONE);
+              g.getSession(), storeId, mgl::LockMode::LOCK_NONE);
       if (!expdb.ok()) {
         LOG(ERROR) << "slave offset get db error:" << expdb.status().toString();
         continue;

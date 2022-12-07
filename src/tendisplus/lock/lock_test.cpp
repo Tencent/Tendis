@@ -48,41 +48,6 @@ TEST(Lock, Common) {
   thd2.join();
 }
 
-TEST(Lock, DefaultMgr) {
-  std::atomic<bool> runFlag1{true}, runFlag2{true};
-  std::atomic<bool> locked1{false}, locked2{false};
-
-  mgl::MGLockMgr::getInstance();
-
-  std::thread thd1([&runFlag1, &locked1]() {
-    StoresLock v(mgl::LockMode::LOCK_IS, nullptr, nullptr);
-    locked1 = true;
-    while (runFlag1) {
-      std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-  });
-
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
-  std::thread thd2([&runFlag2, &locked2]() {
-    StoresLock v(mgl::LockMode::LOCK_X, nullptr, nullptr);
-    locked2 = true;
-    while (runFlag2) {
-      std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-  });
-
-  EXPECT_TRUE(locked1);
-  EXPECT_FALSE(locked2);
-  runFlag1 = false;
-  thd1.join();
-
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-  EXPECT_TRUE(locked2);
-  runFlag2 = false;
-  thd2.join();
-}
-
 TEST(Lock, DiffMgr) {
   std::atomic<bool> runFlag1{true}, runFlag2{true}, runFlag3{true};
   std::atomic<bool> locked1{false}, locked2{false}, locked3{false};

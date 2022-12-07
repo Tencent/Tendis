@@ -183,11 +183,6 @@ std::vector<std::string> LockSchedCtx::getShardLocks() {
   return tempLocks;
 }
 
-MGLockMgr& MGLockMgr::getInstance() {
-  static MGLockMgr mgr;
-  return mgr;
-}
-
 void MGLockMgr::lock(MGLock* core) {
   uint64_t hash = core->getHash();
   LockShard& shard = _shards[hash % SHARD_NUM];

@@ -28,6 +28,7 @@ class MGLock {
     explicit MGLock(MGLockMgr* mgr);
     MGLock(const MGLock&) = delete;
     MGLock(MGLock&&) = delete;
+    MGLock& operator=(const MGLock&) const = delete;
     ~MGLock();
     LockRes lock(const std::string& target, LockMode mode,
                  uint64_t timeoutMs);

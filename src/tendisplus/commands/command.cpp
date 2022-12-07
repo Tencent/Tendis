@@ -482,7 +482,7 @@ Expected<string> Command::delSubkeysRange(Session* sess,
   auto server = sess->getServerEntry();
   INVARIANT(server != nullptr);
   auto expdb =
-    server->getSegmentMgr()->getDb(nullptr, storeId, mgl::LockMode::LOCK_NONE);
+    server->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_NONE);
   RET_IF_ERR_EXPECTED(expdb);
 
   PStore kvstore = expdb.value().store;
@@ -621,7 +621,7 @@ Expected<uint32_t> Command::partialDelSubKeys(Session* sess,
   auto server = sess->getServerEntry();
   INVARIANT(server != nullptr);
   auto expdb =
-    server->getSegmentMgr()->getDb(nullptr, storeId, mgl::LockMode::LOCK_NONE);
+    server->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_NONE);
   RET_IF_ERR_EXPECTED(expdb);
 
   PStore kvstore = expdb.value().store;

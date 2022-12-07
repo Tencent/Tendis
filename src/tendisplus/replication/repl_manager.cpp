@@ -186,10 +186,11 @@ Status ReplManager::startup() {
   DLOG(INFO) << "init last sync time:"
              << epochToDatetime(nsSinceEpoch(tp) / 1000000);
 
+  LocalSessionGuard g(_svr.get());
   for (uint32_t i = 0; i < _svr->getKVStoreCount(); i++) {
     // here we are starting up, dont acquire a storelock.
-    auto expdb =
-      _svr->getSegmentMgr()->getDb(nullptr, i, mgl::LockMode::LOCK_NONE, true);
+    auto expdb = _svr->getSegmentMgr()->getDb(
+      g.getSession(), i, mgl::LockMode::LOCK_NONE, true);
     if (!expdb.ok()) {
       return expdb.status();
     }
@@ -413,8 +414,9 @@ Expected<uint32_t> ReplManager::maxDumpFileSeq(uint32_t storeId) {
 
 Status ReplManager::resetRecycleState(uint32_t storeId) {
   // set _logRecycStatus::firstBinlogId with MinBinlog get from rocksdb
-  auto expdb =
-    _svr->getSegmentMgr()->getDb(nullptr, storeId, mgl::LockMode::LOCK_NONE);
+  LocalSessionGuard g(_svr.get());
+  auto expdb = _svr->getSegmentMgr()->getDb(
+    g.getSession(), storeId, mgl::LockMode::LOCK_NONE);
   if (!expdb.ok()) {
     return expdb.status();
   }
@@ -1108,7 +1110,8 @@ Status ReplManager::changeReplSourceInDBLock(uint32_t storeId,
   }
   auto segMgr = _svr->getSegmentMgr();
   INVARIANT(segMgr != nullptr);
-  auto expdb = segMgr->getDb(nullptr, storeId, mgl::LockMode::LOCK_NONE);
+  LocalSessionGuard g(_svr.get());
+  auto expdb = segMgr->getDb(g.getSession(), storeId, mgl::LockMode::LOCK_NONE);
   if (!expdb.ok()) {
     return expdb.status();
   }
@@ -1634,9 +1637,10 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
   }
   // master point of view
   std::map<std::string, ReplMPovStatus> pstatus;
+  LocalSessionGuard g(_svr.get());
   for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
-    auto expdb =
-      _svr->getSegmentMgr()->getDb(nullptr, i, mgl::LockMode::LOCK_IS, true, 0);
+    auto expdb = _svr->getSegmentMgr()->getDb(
+      g.getSession(), i, mgl::LockMode::LOCK_IS, true, 0);
     if (!expdb.ok()) {
       continue;
     }
@@ -1715,9 +1719,10 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
       ss << "\r\n";
     }
   }
+  LocalSessionGuard g(_svr.get());
   for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
-    auto expdb =
-      _svr->getSegmentMgr()->getDb(nullptr, i, mgl::LockMode::LOCK_IS, true, 0);
+    auto expdb = _svr->getSegmentMgr()->getDb(
+      g.getSession(), i, mgl::LockMode::LOCK_IS, true, 0);
     if (!expdb.ok()) {
       continue;
     }
