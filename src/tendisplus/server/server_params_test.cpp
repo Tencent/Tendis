@@ -131,7 +131,6 @@ TEST(ServerParams, DynamicSet) {
   myfile << "port 8903\n";
   myfile << "masterauth testpw\n";
   myfile << "truncateBinlogNum 10000\n";
-  myfile << "binlogDelRange 20000\n";
   myfile << "truncateBinlogNum 30000\n";
   myfile.close();
 
@@ -148,13 +147,7 @@ TEST(ServerParams, DynamicSet) {
   EXPECT_TRUE(cfg->setVar("maxBinlogKeepNum", "100", false).ok());
   EXPECT_EQ(cfg->maxBinlogKeepNum, 100);
 
-  // check params
-  EXPECT_FALSE(cfg->setVar("binlogDelRange", "60000", false).ok());
-  EXPECT_EQ(cfg->binlogDelRange, 20000);
-  EXPECT_TRUE(cfg->setVar("binlogDelRange", "25000", false).ok());
-  EXPECT_EQ(cfg->binlogDelRange, 25000);
-
-  EXPECT_FALSE(cfg->setVar("truncateBinlogNum", "20000", false).ok());
+  EXPECT_TRUE(cfg->setVar("truncateBinlogNum", "20000", false).ok());
 }
 
 TEST(ServerParams, RocksOption) {

@@ -134,13 +134,11 @@ Expected<MinbinlogInfo> RepllogCursorV2::getMinBinlogByCursor(
 }
 
 Expected<MinbinlogInfo> RepllogCursorV2::getMinBinlog(Transaction* txn) {
-  if (gParams != nullptr && gParams->saveMinBinlogId) {
-    auto binlogInfo = getMinBinlogMeta(txn);
-    if (binlogInfo.ok()) {
-      return binlogInfo;
-    }
-    DLOG(WARNING) << "binlog META is not exists, will use seek.";
+  auto minBinlogInfo = getMinBinlogMeta(txn);
+  if (minBinlogInfo.ok()) {
+    return minBinlogInfo;
   }
+  DLOG(WARNING) << "binlog META is not exists, will use seek.";
 
   auto binlogInfo = getMinBinlogByCursor(txn);
   if (!binlogInfo.ok()

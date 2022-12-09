@@ -1083,7 +1083,6 @@ TEST(RocksKVStore, PesTruncateBinlog) {
   uint64_t keepBinlog = 1;
   cfg->maxBinlogKeepNum = keepBinlog;
   cfg->minBinlogKeepSec = 0;
-  cfg->binlogDelRange = 1;
   auto kvstore = std::make_unique<RocksKVStore>("0",
                                                 cfg,
                                                 blockCache,

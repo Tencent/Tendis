@@ -3978,14 +3978,6 @@ class deleteFilesInRangeGenericCommand : public Command {
   // deleteFilesInRange binlog in [start, end]
   Expected<std::string> deleteOnBinLogCF(Session* sess) {
     const auto server = sess->getServerEntry();
-    if (!server->getParams()->saveMinBinlogId) {
-      std::string err(
-        "saveMinBinlogId should be set true"
-        "when do deleteFilesInRange on binlog");
-      LOG(ERROR) << err;
-      return {ErrorCodes::ERR_INTERNAL, err};
-    }
-
     const auto& args = sess->getArgs();
     if (args.size() < 5) {
       return {ErrorCodes::ERR_PARSEOPT,

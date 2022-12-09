@@ -233,7 +233,10 @@ type NodeInfo struct {
     migrateEndSlot int
 }
 
-func startCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) (*[]util.RedisServer, *util.Predixy, *[]NodeInfo) {
+func startCluster(
+    clusterIp string, clusterPortStart int,
+    clusterNodeNum int, externalArgs map[string]string,
+) (*[]util.RedisServer, *util.Predixy, *[]NodeInfo) {
     var nodeInfoArray []NodeInfo
     for i := 0; i <= clusterNodeNum; i++ {
         var startSlot = CLUSTER_SLOTS / clusterNodeNum * i;
@@ -269,6 +272,9 @@ func startCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) (*
         cfgArgs["masterauth"] = "tendis+test"
         cfgArgs["generalLog"] = "true"
         cfgArgs["cluster-migration-slots-num-per-task"] = "10000"
+        for k, v := range externalArgs {
+            cfgArgs[k] = v
+        }
         if err := server.Setup(false, &cfgArgs); err != nil {
             log.Fatalf("setup failed,port:%s err:%v", port, err)
         }

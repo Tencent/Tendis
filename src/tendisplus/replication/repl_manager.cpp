@@ -277,27 +277,25 @@ Status ReplManager::startup() {
         recBinlogStat->timestamp = explog.value().ts;
         recBinlogStat->lastFlushBinlogId = Transaction::TXNID_UNINITED;
         recBinlogStat->saveBinlogId = recBinlogStat->firstBinlogId;
-        if (_cfg->binlogDelRange > 1) {
-          uint64_t save = recBinlogStat->firstBinlogId;
-          auto expid = getSaveBinlogId(i, fileSeq);
-          if (!expid.ok() &&
-              expid.status().code() != ErrorCodes::ERR_NOTFOUND) {
-            LOG(ERROR) << "recycleBinlog get save binlog id failed:"
-                       << expid.status().toString();
-          }
-          if (expid.ok()) {
-            save = expid.value();
-            save++;
-            if (recBinlogStat->firstBinlogId > save) {
-              LOG(ERROR) << "recycleBinlog get an incorrect save binlog "
-                            "id."
-                         << "save id:" << save
-                         << " firstBinlogId:" << recBinlogStat->firstBinlogId;
-              save = recBinlogStat->firstBinlogId;
-            }
-          }
-          recBinlogStat->saveBinlogId = save;
+
+        uint64_t save = recBinlogStat->firstBinlogId;
+        auto expid = getSaveBinlogId(i, fileSeq);
+        if (!expid.ok() && expid.status().code() != ErrorCodes::ERR_NOTFOUND) {
+          LOG(ERROR) << "recycleBinlog get save binlog id failed:"
+                     << expid.status().toString();
         }
+        if (expid.ok()) {
+          save = expid.value();
+          save++;
+          if (recBinlogStat->firstBinlogId > save) {
+            LOG(ERROR) << "recycleBinlog get an incorrect save binlog "
+                          "id."
+                       << "save id:" << save
+                       << " firstBinlogId:" << recBinlogStat->firstBinlogId;
+            save = recBinlogStat->firstBinlogId;
+          }
+        }
+        recBinlogStat->saveBinlogId = save;
       } else {
         if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
           // void compiler ud-link about static constexpr

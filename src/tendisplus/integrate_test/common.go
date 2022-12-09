@@ -7,8 +7,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/mediocregopher/radix.v2/redis"
-	"github.com/ngaut/log"
 	"os"
 	"os/exec"
 	"path"
@@ -19,6 +17,9 @@ import (
 	"syscall"
 	"tendisplus/integrate_test/util"
 	"time"
+
+	"github.com/mediocregopher/radix.v2/redis"
+	"github.com/ngaut/log"
 )
 
 var (

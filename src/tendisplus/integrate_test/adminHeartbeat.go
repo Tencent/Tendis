@@ -33,7 +33,6 @@ func testAutoGenerateHeartbeatTimestamp() {
 	cfgArgs["requirepass"] = "tendis+test"
 	cfgArgs["masterauth"] = "tendis+test"
 	cfgArgs["compactrange-after-deleterange"] = "false"
-	cfgArgs["deletefilesinrange-for-binlog"] = "false"
 	cfgArgs["maxbinlogkeepnum"] = "10"
 	cfgArgs["rocks.write_buffer_size"] = "1048576"
 	cfgArgs["rocks.target_file_size_base"] = "1048576"
