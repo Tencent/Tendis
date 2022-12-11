@@ -163,8 +163,9 @@ func testClusterShutdownFailoverIncrSync() {
 	cfg["requirepass"] = "tendis+test"
 	cfg["cluster-enabled"] = "yes"
 	cfg["masterauth"] = "tendis+test"
+    cfg["minBinlogKeepSec"] = "3600"
 
-    var servers, predixy, _ = startCluster("127.0.0.1", *mport, 3, map[string]string{})
+    var servers, predixy, _ = startCluster("127.0.0.1", *mport, 3, map[string]string{"minBinlogKeepSec": "3600"})
 
 	master := (*servers)[0]
 	// defer shutdownServer(master, *shutdown, *clear)
