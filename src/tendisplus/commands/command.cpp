@@ -312,6 +312,17 @@ Expected<std::string> Command::runSessionCmd(Session* sess) {
   return v;
 }
 
+bool Command::useDeleteRange(uint64_t eleCount, RecordType valueType,
+                             const std::shared_ptr<ServerParams>& cfg) {
+  if (valueType == RecordType::RT_KV) {
+    return false;
+  } else if (valueType == RecordType::RT_ZSET_META) {
+    return eleCount >= cfg->elementLimitForSingleDeleteZset;
+  } else {
+    return eleCount >= cfg->elementLimitForSingleDelete;
+  }
+}
+
 // should be called with store locked
 // bool Command::isKeyLocked(Session *sess,
 //                           uint32_t storeId,
@@ -803,8 +814,7 @@ Status Command::delKey(Session* sess,
 
     TTLIndex ictx(
       key, valueType, sess->getCtx()->getDbId(), eValue.value().getTtl());
-    if (cnt.value() >= 2048 ||
-        (valueType == RecordType::RT_ZSET_META && cnt.value() >= 1024)) {
+    if (useDeleteRange(cnt.value(), valueType, server->getParams())) {
       LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
                 << ",rcdType:" << rt2Char(valueType) << ",size:" << cnt.value();
       return Command::delKeyPessimisticInLock(
@@ -906,7 +916,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
     }
 
     TTLIndex ictx(key, valueType, sess->getCtx()->getDbId(), targetTtl);
-    if (cnt.value() >= 2048) {
+    if (useDeleteRange(cnt.value(), valueType, server->getParams())) {
       LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
                 << ",rcdType:" << rt2Char(valueType) << ",size:" << cnt.value();
       Status s = Command::delKeyPessimisticInLock(

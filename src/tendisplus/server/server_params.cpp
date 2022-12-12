@@ -360,6 +360,11 @@ ServerParams::ServerParams() {
   REGISTER_VARS_SAME_NAME(delJobCntIndexMgr, nullptr, nullptr, 1, 200, true);
   REGISTER_VARS_SAME_NAME(
     pauseTimeIndexMgr, nullptr, nullptr, 1, INT_MAX, true);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("element-limit-for-single-delete",
+                                  elementLimitForSingleDelete);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("element-limit-for-single-delete-zset",
+                                  elementLimitForSingleDeleteZset);
+
 
   REGISTER_VARS_DIFF_NAME("proto-max-bulk-len", protoMaxBulkLen);
   REGISTER_VARS_DIFF_NAME("databases", dbNum);

@@ -1,0 +1,118 @@
+From 93086086f7145556725ae75fe267646ef2ee2ab7 Mon Sep 17 00:00:00 2001
+From: takenliu <takenliu@tencent.com>
+Date: Mon, 12 Dec 2022 16:04:52 +0800
+Subject: [PATCH 3/3] add property "rocksdb.levelstatsex" in rocksdb
+
+---
+ db/compaction/compaction.cc | 8 ++++++++
+ db/compaction/compaction.h  | 1 +
+ db/internal_stats.cc        | 5 +++--
+ db/version_edit.h           | 1 +
+ db/version_set.cc           | 8 +++++++-
+ db/version_set.h            | 2 ++
+ 6 files changed, 22 insertions(+), 3 deletions(-)
+
+diff --git a/db/compaction/compaction.cc b/db/compaction/compaction.cc
+index b172eaf..5d014b0 100644
+--- a/db/compaction/compaction.cc
++++ b/db/compaction/compaction.cc
+@@ -81,6 +81,14 @@ uint64_t TotalNumDeletions(const std::vector<FileMetaData*>& files) {
+   return sum;
+ }
+ 
++uint64_t TotalNumRangeDeletions(const std::vector<FileMetaData*>& files) {
++  uint64_t sum = 0;
++  for (size_t i = 0; i < files.size() && files[i]; i++) {
++    sum += files[i]->num_range_deletions;
++  }
++  return sum;
++}
++
+ void Compaction::SetInputVersion(Version* _input_version) {
+   input_version_ = _input_version;
+   cfd_ = input_version_->cfd();
+diff --git a/db/compaction/compaction.h b/db/compaction/compaction.h
+index f5cfe52..a6a9ab6 100644
+--- a/db/compaction/compaction.h
++++ b/db/compaction/compaction.h
+@@ -406,5 +406,6 @@ class Compaction {
+ extern uint64_t TotalFileSize(const std::vector<FileMetaData*>& files);
+ extern uint64_t TotalNumEntries(const std::vector<FileMetaData*>& files);
+ extern uint64_t TotalNumDeletions(const std::vector<FileMetaData*>& files);
++extern uint64_t TotalNumRangeDeletions(const std::vector<FileMetaData*>& files);
+ 
+ }  // namespace ROCKSDB_NAMESPACE
+diff --git a/db/internal_stats.cc b/db/internal_stats.cc
+index 4cd96c0..c877bbb 100644
+--- a/db/internal_stats.cc
++++ b/db/internal_stats.cc
+@@ -784,10 +784,11 @@ bool InternalStats::HandleLevelStatsEx(std::string* value, Slice /*suffix*/) {
+     if (numFiles > 0) {
+       snprintf(buf, sizeof(buf),
+                "rocksdb.level-%d:bytes=%" PRIu64 ",num_entries=%" PRIu64
+-               ",num_deletions=%" PRIu64 ",num_files=%d\n",
++               ",num_deletions=%" PRIu64 ",num_range_deletions=%" PRIu64 ",num_files=%d\n",
+                level, vstorage->NumLevelBytes(level),
+                vstorage->NumLevelEntires(level),
+-               vstorage->NumLevelDeletions(level), numFiles);
++               vstorage->NumLevelDeletions(level),
++               vstorage->NumLevelRangeDeletions(level), numFiles);
+       value->append(buf);
+     }
+   }
+diff --git a/db/version_edit.h b/db/version_edit.h
+index 6006349..7c15cad 100644
+--- a/db/version_edit.h
++++ b/db/version_edit.h
+@@ -178,6 +178,7 @@ struct FileMetaData {
+   // single-threaded LogAndApply thread
+   uint64_t num_entries = 0;     // the number of entries.
+   uint64_t num_deletions = 0;   // the number of deletion entries.
++  uint64_t num_range_deletions = 0;   // the number of deletion entries.
+   uint64_t raw_key_size = 0;    // total uncompressed key size.
+   uint64_t raw_value_size = 0;  // total uncompressed value size.
+ 
+diff --git a/db/version_set.cc b/db/version_set.cc
+index 2a9de04..bc45bd7 100644
+--- a/db/version_set.cc
++++ b/db/version_set.cc
+@@ -2328,9 +2328,9 @@ bool Version::MaybeInitializeFileMetaData(FileMetaData* file_meta) {
+   if (tp.get() == nullptr) return false;
+   file_meta->num_entries = tp->num_entries;
+   file_meta->num_deletions = tp->num_deletions;
++  file_meta->num_range_deletions = tp->num_range_deletions;
+   file_meta->raw_value_size = tp->raw_value_size;
+   file_meta->raw_key_size = tp->raw_key_size;
+-
+   return true;
+ }
+ 
+@@ -3346,6 +3346,12 @@ uint64_t VersionStorageInfo::NumLevelDeletions(int level) const {
+   return TotalNumDeletions(files_[level]);
+ }
+ 
++uint64_t VersionStorageInfo::NumLevelRangeDeletions(int level) const {
++  assert(level >= 0);
++  assert(level < num_levels());
++  return TotalNumRangeDeletions(files_[level]);
++}
++
+ const char* VersionStorageInfo::LevelSummary(
+     LevelSummaryStorage* scratch) const {
+   int len = 0;
+diff --git a/db/version_set.h b/db/version_set.h
+index 6497f13..63f553e 100644
+--- a/db/version_set.h
++++ b/db/version_set.h
+@@ -290,6 +290,8 @@ class VersionStorageInfo {
+   // Return the combined deleted entires of all files at the specified level.
+   uint64_t NumLevelDeletions(int level) const;
+ 
++  uint64_t NumLevelRangeDeletions(int level) const;
++
+   // REQUIRES: This version has been saved (see VersionSet::SaveTo)
+   const std::vector<FileMetaData*>& LevelFiles(int level) const {
+     return files_[level];
+-- 
+1.8.3.1
+
