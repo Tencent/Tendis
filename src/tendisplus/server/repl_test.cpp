@@ -665,6 +665,129 @@ TEST(Repl, SlaveCantModify) {
   }
 }
 
+TEST(Repl, repairSyncErrorForOneStore) {
+  size_t i = 10;  // kvStoreCount
+  {
+    LOG(INFO) << ">>>>>> test store count:" << i;
+    const auto guard = MakeGuard([] {
+      destroyEnv(master_dir);
+      destroyEnv(slave_dir);
+      std::this_thread::sleep_for(std::chrono::seconds(5));
+    });
+
+    EXPECT_TRUE(setupEnv(master_dir));
+    EXPECT_TRUE(setupEnv(slave_dir));
+
+    auto cfg1 = makeServerParam(master_port, i, master_dir, false);
+    auto cfg2 = makeServerParam(slave_port, i, slave_dir, false);
+    cfg1->maxBinlogKeepNum = 1;
+    cfg1->minBinlogKeepSec = 0;
+    cfg1->binlogDelRange = 1;
+
+
+    auto master = std::make_shared<ServerEntry>(cfg1);
+    auto s = master->startup(cfg1);
+    INVARIANT(s.ok());
+
+    auto slave = std::make_shared<ServerEntry>(cfg2);
+    s = slave->startup(cfg2);
+    INVARIANT(s.ok());
+
+    {
+      runCmd(slave, {"slaveof", "127.0.0.1", std::to_string(master_port)});
+      // slaveof need about 3 seconds to transfer file.
+      std::this_thread::sleep_for(std::chrono::seconds(5));
+
+      auto ctx1 = std::make_shared<asio::io_context>();
+      auto session1 = makeSession(master, ctx1);
+      session1->setArgs({"set", "a", "1"});
+      auto expect = Command::runSessionCmd(session1.get());
+      EXPECT_TRUE(expect.ok());
+
+      waitSlaveCatchup(master, slave);
+
+      // We try to simulate the following situation:
+      //   slave appear "incrsync master bad return:-ERR invalid binlogPos"
+      //   storeid of key "a" is 5
+      //   storeid of key "b" is 0
+#ifdef TENDIS_DEBUG
+      LOG(INFO) << "setSyncStatusError";
+      slave->getReplManager()->setSyncStatusError(5);
+#endif
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+
+      session1->setArgs({"set", "a", "2"});
+      expect = Command::runSessionCmd(session1.get());
+      EXPECT_TRUE(expect.ok());
+      session1->setArgs({"set", "a", "3"});
+      expect = Command::runSessionCmd(session1.get());
+      EXPECT_TRUE(expect.ok());
+
+      session1->setArgs({"set", "b", "1"});
+      expect = Command::runSessionCmd(session1.get());
+      EXPECT_TRUE(expect.ok());
+
+      // slaveChkSyncStatus discover error need at least
+      //   gBinlogHeartbeatTimeout=10 seconds
+      std::this_thread::sleep_for(std::chrono::seconds(15));
+
+      session1->setArgs({"info", "replication"});
+      expect = Command::runSessionCmd(session1.get());
+      EXPECT_TRUE(expect.ok());
+      LOG(INFO) << "master info replication:" << expect.value();
+
+      // will appear "incrsync master bad return:-ERR invalid binlogPos"
+      auto ctx2 = std::make_shared<asio::io_context>();
+      auto session2 = makeSession(slave, ctx2);
+      session2->setArgs({"info", "replication"});
+      expect = Command::runSessionCmd(session2.get());
+      EXPECT_TRUE(expect.ok());
+      LOG(INFO) << "slave info replication:" << expect.value();
+
+      // step of repairing sync error for one store only:
+      //   1.slaveof no one storeid
+      //   2.flushonestore storeid
+      //   3.slaveof m_ip m_port storeid storeid
+      session2->setArgs({"slaveof", "no", "one", "5"});
+      expect = Command::runSessionCmd(session2.get());
+      EXPECT_TRUE(expect.ok());
+
+      session2->setArgs({"flushonestore", "5"});
+      expect = Command::runSessionCmd(session2.get());
+      EXPECT_TRUE(expect.ok());
+
+      session2->setArgs({"slaveof", "127.0.0.1", std::to_string(master_port),
+                         "5", "5"});
+      expect = Command::runSessionCmd(session2.get());
+      EXPECT_TRUE(expect.ok());
+
+      std::this_thread::sleep_for(std::chrono::seconds(5));
+
+      session2->setArgs({"info", "replication"});
+      expect = Command::runSessionCmd(session2.get());
+      EXPECT_TRUE(expect.ok());
+      LOG(INFO) << "slave info replication:" << expect.value();
+
+      session2->setArgs({"get", "a"});
+      expect = Command::runSessionCmd(session2.get());
+      EXPECT_EQ(expect.value(), "$1\r\n3\r\n");
+      session2->setArgs({"get", "b"});
+      expect = Command::runSessionCmd(session2.get());
+      EXPECT_EQ(expect.value(), "$1\r\n1\r\n");
+    }
+
+#ifndef _WIN32
+    slave->stop();
+    master->stop();
+
+    ASSERT_EQ(slave.use_count(), 1);
+    ASSERT_EQ(master.use_count(), 1);
+#endif
+
+    LOG(INFO) << ">>>>>> test store count:" << i << " end;";
+  }
+}
+
 TEST(Repl, slaveofBenchmarkingMaster) {
   size_t i = 0;
   {

@@ -2967,13 +2967,19 @@ class FlushGeneric : public Command {
     }
   }
 
-  Status runGeneric(Session* sess, int flags) {
+  Status runGeneric(Session* sess, int flags, uint32_t storeId = UINT32_MAX) {
     auto server = sess->getServerEntry();
     auto replMgr = server->getReplManager();
     INVARIANT(replMgr != nullptr);
     auto binlogEnabled = server->getParams()->binlogEnabled;
-
-    for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
+    uint32_t storeidStart = 0;
+    uint32_t storeidEnd = server->getKVStoreCount();
+    if (storeId != UINT32_MAX) {
+      storeidStart = storeId;
+      storeidEnd = storeId + 1;
+    }
+    for (ssize_t i = storeidStart; i < storeidEnd; i++) {
+      LOG(INFO) << "Flush Store:" << i;
       auto expdb =
         server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_X);
       if (!expdb.ok()) {
@@ -3006,6 +3012,44 @@ class FlushGeneric : public Command {
     return {ErrorCodes::ERR_OK, ""};
   }
 };
+
+// NOTE(takenliu): forbidden call flush command in lua.
+class FlushOneStoreCommand : public FlushGeneric {
+ public:
+  FlushOneStoreCommand() : FlushGeneric("flushonestore", "ws") {}
+
+  ssize_t arity() const {
+    return 2;
+  }
+
+  int32_t firstkey() const {
+    return 0;
+  }
+
+  int32_t lastkey() const {
+    return 0;
+  }
+
+  int32_t keystep() const {
+    return 0;
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    int flags = 0;
+
+    Expected<uint64_t> storeId = ::tendisplus::stoul(sess->getArgs()[1]);
+    if (!storeId.ok()) {
+      return storeId.status();
+    }
+    LOG(INFO) << "Flush one Store:" << storeId.value();
+    auto s = runGeneric(sess, flags, storeId.value());
+    if (!s.ok()) {
+      return s;
+    }
+
+    return Command::fmtOK();
+  }
+} flushonestoreCmd;
 
 // NOTE(takenliu): forbidden call flush command in lua.
 class FlushAllCommand : public FlushGeneric {
