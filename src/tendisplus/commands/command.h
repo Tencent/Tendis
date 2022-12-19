@@ -146,6 +146,8 @@ class Command {
                                      RecordType valueType,
                                      Transaction* txn,
                                      const TTLIndex* ictx = nullptr);
+  static bool useDeleteRange(uint64_t eleCount, RecordType type,
+                             const std::shared_ptr<ServerParams>& cfg);
 
   static Expected<string> delSubkeysRange(Session* sess,
                                           uint32_t storeId,

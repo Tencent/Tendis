@@ -453,6 +453,8 @@ class ServerParams {
   uint32_t delCntIndexMgr = 10000;
   uint32_t delJobCntIndexMgr = 1;
   uint32_t pauseTimeIndexMgr = 1;
+  uint64_t elementLimitForSingleDelete = 2048;
+  uint64_t elementLimitForSingleDeleteZset = 1024;
 
   uint32_t protoMaxBulkLen = CONFIG_DEFAULT_PROTO_MAX_BULK_LEN;
   uint32_t dbNum = CONFIG_DEFAULT_DBNUM;
