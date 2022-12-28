@@ -130,8 +130,6 @@ TEST(ServerParams, DynamicSet) {
   myfile.open("gtest_serverparams_dynamicset.cfg");
   myfile << "port 8903\n";
   myfile << "masterauth testpw\n";
-  myfile << "truncateBinlogNum 10000\n";
-  myfile << "truncateBinlogNum 30000\n";
   myfile.close();
 
   const auto guard =
@@ -146,8 +144,6 @@ TEST(ServerParams, DynamicSet) {
   EXPECT_EQ(cfg->port, 8903);
   EXPECT_TRUE(cfg->setVar("maxBinlogKeepNum", "100", false).ok());
   EXPECT_EQ(cfg->maxBinlogKeepNum, 100);
-
-  EXPECT_TRUE(cfg->setVar("truncateBinlogNum", "20000", false).ok());
 }
 
 TEST(ServerParams, RocksOption) {
@@ -259,7 +255,6 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->fullReceiveThreadnum, 5);
   EXPECT_EQ(cfg->logRecycleThreadnum, 5);
   EXPECT_EQ(cfg->truncateBinlogIntervalMs, 1000);
-  EXPECT_EQ(cfg->truncateBinlogNum, 100000);
   EXPECT_EQ(cfg->binlogFileSizeMB, 64);
   EXPECT_EQ(cfg->binlogFileSecs, 20 * 60);
   EXPECT_EQ(cfg->lockWaitTimeOut, 3600);

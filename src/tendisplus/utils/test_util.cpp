@@ -148,23 +148,6 @@ void destroyEnv(const std::string& v) {
   // EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
 }
 
-bool setupReplEnv() {
-  auto vec = {"master", "slave"};
-
-  for (auto v : vec) {
-    setupEnv(v);
-  }
-  return true;
-}
-
-void destroyReplEnv() {
-  auto vec = {"master", "slave"};
-
-  for (auto v : vec) {
-    destroyEnv(v);
-  }
-}
-
 std::string getBulkValue(const std::string& reply, uint32_t index) {
   INVARIANT(index == 0);
   auto ptr = reply.c_str();

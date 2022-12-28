@@ -827,14 +827,6 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     return;
   }
 
-  auto ptxn = kvstore->createTransaction(sg.getSession());
-  if (!ptxn.ok()) {
-    LOG(ERROR) << "recycleBinlog create txn failed:"
-               << ptxn.status().toString();
-    return;
-  }
-  auto txn = std::move(ptxn.value());
-
   uint64_t newStart = 0;
   {
     std::ofstream* fs = nullptr;
@@ -855,7 +847,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     DLOG(INFO) << "store:" << storeId << " "
                << _logRecycStatus[storeId]->toString();
     auto s = kvstore->truncateBinlogV2(
-      start, end, save, txn.get(), fs, maxWriteLen, tailSlave);
+      start, end, save, fs, maxWriteLen, tailSlave);
     if (!s.ok()) {
       LOG(ERROR) << "kvstore->truncateBinlogV2 store:" << storeId
                  << "failed:" << s.status().toString();
@@ -869,12 +861,6 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     save = s.value().newSave;
   }
 
-  auto commitStat = txn->commit();
-  if (!commitStat.ok()) {
-    LOG(ERROR) << "truncate binlog store:" << storeId
-               << "commit failed:" << commitStat.status().toString();
-    return;
-  }
   // DLOG(INFO) << "storeid:" << storeId << " truncate binlog from:" << start
   //    << " to end:" << newStart << " success."
   //    << "addr:" << _svr->getNetwork()->getIp()

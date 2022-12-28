@@ -1574,7 +1574,7 @@ int64_t RocksKVStore::saveBinlogV2(std::ofstream* fs, const ReplLogRawV2& log) {
 }
 
 Expected<bool> RocksKVStore::deleteBinlog(uint64_t start) {
-  auto ptxn = const_cast<RocksKVStore*>(this)->createTransaction(nullptr);
+  auto ptxn = createTransaction(nullptr);
   if (!ptxn.ok()) {
     LOG(ERROR) << "deleteBinlog create txn failed:" << ptxn.status().toString();
     return false;
@@ -1622,18 +1622,15 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
   uint64_t start,
   uint64_t end,
   uint64_t save,
-  Transaction* txn,
   std::ofstream* fs,
   int64_t maxWritelen,
   bool tailSlave) {
   // DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
   //    << " getHighestBinlogId:" << getHighestBinlogId()
   //    << " start:"<<start <<" end:"<< end;
-  TruncateBinlogResult result;
-  int err = 0;
-  uint64_t ts = 0;
-  uint64_t written = 0;
-  uint64_t deleten = 0;
+  auto ptxn = createTransaction(nullptr);
+  RET_IF_ERR_EXPECTED(ptxn);
+  auto txn = ptxn.value().get();
 #ifdef TENDIS_DEBUG
   Expected<uint64_t> minBinlogid = RepllogCursorV2::getMinBinlogId(txn);
   // When binlogSaveLogs is enabled
@@ -1649,76 +1646,40 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     save = start;
   }
 
-  uint64_t nextStart;
-  uint64_t nextSave;
-  nextStart = start;
-  nextSave = save;
-  uint64_t max_cnt = _cfg->truncateBinlogNum;
-  uint64_t size = 0;
+  TruncateBinlogResult result{start, save, 0, 0, 0, 0};
   uint64_t cur_ts = msSinceEpoch();
+  uint64_t minKeepLogMs = static_cast<uint64_t>(_cfg->minBinlogKeepSec) * 1000;
+  bool shouldCheckBinlogTime = minKeepLogMs != 0;
+  Status s{ErrorCodes::ERR_OK, ""};
 
-  const auto guard = MakeGuard([this, &nextStart, &start, &ts, &txn] {
-    if (nextStart != start) {
-      INVARIANT_D(ts != 0);
-      // NOTE(takenliu): as we keep at least one binlog,
-      //   so nextStart must be in db.
-      // NOTE(takenliu): be care of not in the same transaction.
-      saveMinBinlogId(nextStart, ts, txn);
-    }
-  });
-
-  // TODO(zakzheng) always use deleteRange quickly,
-  // delete range is defined by truncateBinlogNum
   if (fs == nullptr) {
-    uint64_t range_end = start + _cfg->truncateBinlogNum;
-    // the while loop only execute once time, and will break
-    while (true) {
-      if (end < nextStart) {
-        break;
-      }
-
-      if (range_end > end + 1) {
-        range_end = end + 1;
-      }
-
-      auto cursor = txn->createRepllogCursorV2(range_end - 1);
-      auto explog = cursor->next();
-      if (!explog.ok()) {
-        return explog.status();
-      }
-      // NOTE(takenliu) binlogid maybe has lag, so we need check again.
-      if (explog.value().getBinlogId() > end) {
-        break;
-      }
-      uint64_t minKeepLogMs =
-        static_cast<uint64_t>(_cfg->minBinlogKeepSec) * 1000;
-      if (minKeepLogMs != 0 &&
-        explog.value().getTimestamp() >= cur_ts - minKeepLogMs) {
-        break;
-      }
-      ts = explog.value().getTimestamp();
-      DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
-                 << " delete:" << nextStart << " to "
-                 << explog.value().getBinlogId()
-                 << " time:" << (cur_ts - ts) / 1000 << " sec ago.";
-
-      auto s = deleteRangeBinlog(0, range_end);  // [start, end)
-      if (!s.ok()) {
-        LOG(ERROR) << "deleteRangeBinlog error:" << s.toString();
-        return s;
-      }
-      deleten += range_end - nextStart;
-      nextStart = range_end;
-      break;
+    auto cursor = txn->createRepllogCursorV2(end);
+    auto explog = cursor->next();
+    RET_IF_ERR_EXPECTED(explog);
+    // NOTE(takenliu) binlogid maybe has lag, so we need check again.
+    if (explog.value().getBinlogId() > end) {
+      return result;
     }
-    result.deleten = deleten;
-    result.written = written;
-    result.timestamp = ts;
-    result.newStart = nextStart;
-    nextSave = nextStart;
-    result.newSave = nextSave;
-    result.err = err;
+    if (shouldCheckBinlogTime &&
+        explog.value().getTimestamp() >= cur_ts - minKeepLogMs) {
+      return result;
+    }
+    result.timestamp = explog.value().getTimestamp();
+    DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId() << " delete:" << start
+               << " to " << explog.value().getBinlogId()
+               << " time:" << (cur_ts - result.timestamp) / 1000 << " sec ago.";
 
+    INVARIANT_D(result.timestamp != 0);
+    auto newMinbinlogID = end + 1;
+    s = saveMinBinlogId(newMinbinlogID, result.timestamp);
+    RET_IF_ERR(s);
+    result.deleten = newMinbinlogID - start;
+    result.newStart = newMinbinlogID;
+    result.newSave = newMinbinlogID;
+    s = deleteRangeBinlog(0, newMinbinlogID);
+    if (!s.ok()) {
+      LOG(ERROR) << "deleteRangeBinlog error:" << s.toString();
+    }
     return result;
   }
 
@@ -1730,21 +1691,13 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
       if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
         break;
       }
-      return explog.status();
-    }
-
-    if (explog.value().getBinlogId() > end || size >= max_cnt) {
-      break;
-    }
-    uint64_t minKeepLogMs =
-      static_cast<uint64_t>(_cfg->minBinlogKeepSec) * 1000;
-    if (!tailSlave && minKeepLogMs != 0 &&
-      explog.value().getTimestamp() >= cur_ts - minKeepLogMs) {
       break;
     }
 
-    size++;
-    if ((int64_t)written >= maxWritelen) {
+    if (explog.value().getBinlogId() > end ||
+        (!tailSlave && shouldCheckBinlogTime &&
+         explog.value().getTimestamp() >= cur_ts - minKeepLogMs) ||
+        (int64_t)result.written >= maxWritelen) {
       break;
     }
     // save binlog
@@ -1753,34 +1706,32 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
       LOG(ERROR) << "saveBinlogV2 failed, break.";
       // NOTE(takenliu): maybe write part of explog, so the binlog file's last
       // binlog will be error. then we change a new binlog file.
-      err = -1;
+      result.err = -1;
       break;
     }
-    written += len;
-    nextSave = explog.value().getBinlogId() + 1;
-    ts = explog.value().getTimestamp();
+    result.written += len;
+    result.newSave = explog.value().getBinlogId() + 1;
+    result.timestamp = explog.value().getTimestamp();
   }
 
-  if (nextSave > nextStart) {
-    DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
-               << " delete:" << nextStart << " to " << nextSave
-               << " time:" << (cur_ts - ts) / 1000 << " sec ago.";
-    auto s = deleteRangeBinlog(0, nextSave);
+  if (result.newSave > start) {
+    DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId() << " delete:" << start
+               << " to " << (result.newSave - 1)
+               << " time:" << (cur_ts - result.timestamp) / 1000 << " sec ago.";
+
+    INVARIANT_D(result.timestamp != 0);
+    s = saveMinBinlogId(result.newSave, result.timestamp);
+    if (!s.ok()) {
+      LOG(ERROR) << "saveMinBinlogID failed:" << s.toString();
+      return result;
+    }
+    result.deleten = result.newSave - start;
+    result.newStart = result.newSave;
+    s = deleteRangeBinlog(0, result.newSave);
     if (!s.ok()) {
       LOG(ERROR) << "deleteRangeBinlog error:" << s.toString();
-      return s;
     }
-    deleten += nextSave - nextStart;
-    nextStart = nextSave;
   }
-
-  result.deleten = deleten;
-  result.written = written;
-  result.timestamp = ts;
-  result.newStart = nextStart;
-  result.newSave = nextSave;
-  result.err = err;
-
   return result;
 }
 
@@ -2812,8 +2763,7 @@ Status RocksKVStore::deleteFilesInRangeWithoutBinlog(
   return {ErrorCodes::ERR_OK, ""};
 }
 
-Status RocksKVStore::saveMinBinlogId(uint64_t id, uint64_t ts,
-        Transaction* txn) {
+Status RocksKVStore::saveMinBinlogId(uint64_t id, uint64_t ts) {
   RecordKey key(REPLLOGKEYV2_META_CHUNKID,
                 REPLLOGKEYV2_META_DBID,
                 RecordType::RT_META,
@@ -2829,13 +2779,17 @@ Status RocksKVStore::saveMinBinlogId(uint64_t id, uint64_t ts,
 
   RecordValue value(std::move(val), RecordType::RT_META, -1);
 
-  INVARIANT(txn != nullptr);
+  auto ptxn = createTransaction(nullptr);
+  RET_IF_ERR_EXPECTED(ptxn);
+  auto txn = std::move(ptxn.value());
   auto s = txn->setKVWithoutBinlog(key.encode(), value.encode());
   if (!s.ok()) {
     LOG(ERROR) << "setKV failed:" << s.toString();
     return s;
   }
-  return s;
+  auto commitRes = txn->commit();
+  RET_IF_ERR_EXPECTED(commitRes);
+  return {ErrorCodes::ERR_OK, ""};
 }
 
 // [begin, end)
@@ -2843,7 +2797,6 @@ Status RocksKVStore::deleteRangeBinlog(uint64_t begin, uint64_t end) {
   auto s = deleteFilesInRangeBinlog(0, end, false);
   if (!s.ok()) {
     LOG(ERROR) << "call deleteFilesInRangeBinlog failed, end:" << end;
-    return s;
   }
   return s;
 }

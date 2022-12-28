@@ -86,14 +86,11 @@ string gMappingCmdList = "";  // NOLINT
   else                                                                        \
     INVARIANT(0);  // NOTE(takenliu): if other type is needed, change here.
 
-#define REGISTER_VARS_NOUSE(str)       \
-  _mapServerParams.insert(             \
-      make_pair(toLower(str),          \
-                new NoUseVar(str,      \
-                            NULL,      \
-                            NULL,      \
-                            NULL,      \
-                            false)));
+static const char* NO_USE_VALUE = "NO_USE";
+#define REGISTER_VARS_NOUSE(str)     \
+  _mapServerParams.insert(make_pair( \
+    toLower(str),                    \
+    new NoUseVar(str, const_cast<char*>(NO_USE_VALUE), NULL, NULL, false)));
 
 #define REGISTER_VARS(var) \
   REGISTER_VARS_FULL(#var, var, NULL, NULL, 0, INT_MAX, false)
@@ -150,16 +147,6 @@ bool aofEnabledCheck(const std::string& val, bool startup, string* errinfo) {
     if (errinfo != NULL) {
       *errinfo = "can't disable aofEnabled when psyncEnabled is yes";
     }
-    return false;
-  }
-
-  return true;
-}
-
-bool truncateBinlogNumCheck(
-        const std::string& val, bool startup, string* errinfo) {
-  auto num = std::strtoull(val.c_str(), nullptr, 10);
-  if (num < 1) {
     return false;
   }
 
@@ -413,8 +400,7 @@ ServerParams::ServerParams() {
                      10,
                      5000,
                      true);
-  REGISTER_VARS_SAME_NAME(
-    truncateBinlogNum, truncateBinlogNumCheck, nullptr, 1, INT_MAX, true);
+  REGISTER_VARS_NOUSE("truncateBinlogNum");
   REGISTER_VARS_ALLOW_DYNAMIC_SET(binlogFileSizeMB);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(binlogFileSecs);
   REGISTER_VARS_NOUSE("binlogDelRange");

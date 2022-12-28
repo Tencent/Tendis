@@ -326,7 +326,7 @@ class RocksKVStore : public KVStore {
                       const std::string* end) override;
   Status fullCompact() override;
 
-  Status saveMinBinlogId(uint64_t id, uint64_t ts, Transaction* txn = nullptr);
+  Status saveMinBinlogId(uint64_t id, uint64_t ts);
   Status handleRocksdbError(rocksdb::Status s) const;
 
 #ifdef BINLOG_V1
@@ -341,7 +341,6 @@ class RocksKVStore : public KVStore {
   Expected<TruncateBinlogResult> truncateBinlogV2(uint64_t start,
                                                   uint64_t end,
                                                   uint64_t save,
-                                                  Transaction* txn,
                                                   std::ofstream* fs,
                                                   int64_t maxWritelen,
                                                   bool tailSlave) final;
