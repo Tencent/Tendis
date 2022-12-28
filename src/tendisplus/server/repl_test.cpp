@@ -682,7 +682,6 @@ TEST(Repl, repairSyncErrorForOneStore) {
     auto cfg2 = makeServerParam(slave_port, i, slave_dir, false);
     cfg1->maxBinlogKeepNum = 1;
     cfg1->minBinlogKeepSec = 0;
-    cfg1->binlogDelRange = 1;
 
 
     auto master = std::make_shared<ServerEntry>(cfg1);
