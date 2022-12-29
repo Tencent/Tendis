@@ -445,21 +445,6 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME("rocks.skip_concurrency_control",
                           skipConcurrencyControl);
 #endif
-#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 18)
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.enable_blob_files",
-                                  rocksEnableBlobFiles);
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.binlog_enable_blob_files",
-                                  rocksBinlogEnableBlobFiles);
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.min_blob_size", rocksMinBlobSize);
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.blob_file_size", rocksBlobFileSize);
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.blob_garbage_collection_age_cutoff",
-                                  rocksBlobGarbageCollectionAgeCutoff);
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.enable_blob_garbage_collection",
-                          rocksEnableBlobGarbageCollection);
-  REGISTER_VARS_FULL("rocks.blob_compress_type", rocksBlobCompressType,
-                     compressTypeParamCheck, removeQuotesAndToLower,
-                     -1, -1, true);
-#endif
 
   REGISTER_VARS_FULL("rocks.compress_type",
                      rocksCompressType,
@@ -695,6 +680,41 @@ Status ServerParams::checkParams() {
   return {ErrorCodes::ERR_OK, ""};
 }
 
+Status ServerParams::setRocksOption(const string& argname,
+                            const string& value) {
+  string errinfo;
+  auto argArray = tendisplus::stringSplit(argname, ".");
+  if (argArray.size() !=2 && argArray.size() !=3) {
+    errinfo = "not found arg:" + argname;
+    return {ErrorCodes::ERR_PARSEOPT, errinfo};
+  }
+  if (argArray[0] !="rocks") {
+    errinfo = "not found arg:" + argname;
+    return {ErrorCodes::ERR_PARSEOPT, errinfo};
+  }
+  if (argArray.size() == 2) {
+    // pass configured RocksdbOptions when server starup
+    _rocksdbOptions[toLower(argArray[1])] = value;
+    return {ErrorCodes::ERR_OK, ""};
+  } else {
+    // pass configured RocksdbOptions when server starup
+    const string & cfname = toLower(argArray[1]);
+    auto cfOption = _rocksdbCFOptions.find(cfname);
+    if (cfOption == _rocksdbCFOptions.end()) {
+      auto ret = _rocksdbCFOptions.insert(
+        std::pair<string, ParamsMap>(cfname, ParamsMap()));
+      INVARIANT_D(ret.second);
+      if (!ret.second) {
+        LOG(ERROR) << "insert failed:" << cfname;
+        errinfo = "invalid rocksdb options:" + argname + " value:" + value;
+        return {ErrorCodes::ERR_PARSEOPT, errinfo};
+      }
+      cfOption = ret.first;
+    }
+    cfOption->second[toLower(argArray[2])] = value;
+    return {ErrorCodes::ERR_OK, ""};
+  }
+}
 Status ServerParams::setVar(const string& name,
                             const string& value,
                             bool startup) {
@@ -705,20 +725,7 @@ Status ServerParams::setVar(const string& name,
   if (startup) {
     // load serverparam and rocksoptions when startup
     if (iter == _mapServerParams.end()) {
-      if (argname.substr(0, 6) == "rocks.") {
-        auto ed = tendisplus::stoll(value);
-        if (!ed.ok()) {
-          errinfo = "invalid rocksdb options:" + argname + " value:" + value +
-            " " + ed.status().toString();
-          return {ErrorCodes::ERR_PARSEOPT, errinfo};
-        }
-        // pass configured RocksdbOptions when server starup
-        _rocksdbOptions[toLower(argname.substr(6, argname.length()))] =
-          ed.value();
-        return {ErrorCodes::ERR_OK, ""};
-      }
-      errinfo = "not found arg:" + argname;
-      return {ErrorCodes::ERR_PARSEOPT, errinfo};
+      return setRocksOption(argname, value);
     } else {
       if (argname == "rocks.latency-limit") {
         auto ed = tendisplus::stoll(value);
@@ -733,50 +740,42 @@ Status ServerParams::setVar(const string& name,
     }
   } else {
     // change serverparam and rocksoptions when running
-    if (iter != _mapServerParams.end()) {
-      if (argname.substr(0, 6) == "rocks.") {
-        if (argname == "rocks.latency-limit") {
-          auto ed = tendisplus::stoll(value);
-          if (!ed.ok()) {
-            errinfo = "invalid rocksdb options:" + argname + " value:" + value +
-              " " + ed.status().toString();
-            return {ErrorCodes::ERR_PARSEOPT, errinfo};
-          }
-          rocksdb::G_ROCKSDB_LATENCY_LIMIT = ed.value();
-          return {ErrorCodes::ERR_OK, ""};
+    if (argname.substr(0, 6) == "rocks.") {
+      if (argname == "rocks.latency-limit") {
+        auto ed = tendisplus::stoll(value);
+        if (!ed.ok()) {
+          errinfo = "invalid rocksdb options:" + argname + " value:" + value +
+            " " + ed.status().toString();
+          return {ErrorCodes::ERR_PARSEOPT, errinfo};
         }
-        // make sure changed RocksdbOptions take effect when KVstore is running
-        auto server = getGlobalServer();
-        LocalSessionGuard sg(server.get());
-        for (uint64_t i = 0; i < server->getKVStoreCount(); i++) {
-          auto expStore = server->getSegmentMgr()->getDb(
-            sg.getSession(), i, mgl::LockMode::LOCK_IS);
-          RET_IF_ERR_EXPECTED(expStore);
-
-          Status s;
-          // change rocksdb options dynamically
-          if (argname.substr(0, 25) == "rocks.compaction_deletes_") {
-            // change rockdb options.CompactOnDeletionTableFactory
-            s = expStore.value().store->setCompactOnDeletionCollectorFactory(
-              argname, value);
-          } else {
-            // change rocksdb mutableOptions by calling
-            // rocksdb::DBImpl::SetDBOptions()
-            auto ed = tendisplus::stoll(value);
-            if (!ed.ok()) {
-              errinfo = "invalid rocksdb options:" + argname +
-                " value:" + value + " " + ed.status().toString();
-              return {ErrorCodes::ERR_PARSEOPT, errinfo};
-            }
-
-            s = expStore.value().store->setOption(argname, ed.value());
-          }
-          RET_IF_ERR(s);
-        }
+        rocksdb::G_ROCKSDB_LATENCY_LIMIT = ed.value();
+        return {ErrorCodes::ERR_OK, ""};
       }
+      // make sure changed RocksdbOptions take effect when KVstore is running
+      auto server = getGlobalServer();
+      LocalSessionGuard sg(server.get());
+      for (uint64_t i = 0; i < server->getKVStoreCount(); i++) {
+        auto expStore = server->getSegmentMgr()->getDb(
+          sg.getSession(), i, mgl::LockMode::LOCK_IS);
+        RET_IF_ERR_EXPECTED(expStore);
 
-      LOG(INFO) << "ServerParams setVar dynamic," << argname << " : " << value;
+        Status s;
+        // change rocksdb options dynamically
+        if (argname.substr(0, 25) == "rocks.compaction_deletes_") {
+          // change rockdb options.CompactOnDeletionTableFactory
+          s = expStore.value().store->setCompactOnDeletionCollectorFactory(
+            argname, value);
+        } else {
+          s = expStore.value().store->setOptionDynamic(argname, value);
+        }
+        RET_IF_ERR(s);
+      }
+    }
 
+    LOG(INFO) << "ServerParams setVar dynamic," << argname << " : " << value;
+    if (iter == _mapServerParams.end()) {
+      return setRocksOption(argname, value);
+    } else {
       return iter->second->setVar(value, startup);
     }
   }
@@ -808,7 +807,7 @@ string ServerParams::showAll() const {
   }
 
   for (auto iter : _rocksdbOptions) {
-    ret += "  rocks." + iter.first + ":" + std::to_string(iter.second) + "\n";
+    ret += "  rocks." + iter.first + ":" + iter.second + "\n";
   }
 
   ret.resize(ret.size() - 1);
@@ -834,6 +833,33 @@ bool ServerParams::showVar(const string& key, vector<string>* info) const {
                                    1)) {
       info->push_back(iter->first);
       info->push_back(iter->second->show());
+    }
+  }
+  for (auto iter = _rocksdbOptions.begin(); iter != _rocksdbOptions.end();
+    iter++) {
+    string hole_param = "rocks." + iter->first;
+    if (redis_port::stringmatchlen(key.c_str(),
+                                   key.size(),
+                                   hole_param.c_str(),
+                                   hole_param.size(),
+                                   1)) {
+      info->push_back(hole_param);
+      info->push_back(iter->second);
+    }
+  }
+  for (auto cf = _rocksdbCFOptions.begin(); cf != _rocksdbCFOptions.end();
+    cf++) {
+    for (auto iter = cf->second.begin(); iter != cf->second.end();
+    iter++) {
+      string hole_param = "rocks." + cf->first + "." + iter->first;
+      if (redis_port::stringmatchlen(key.c_str(),
+                                     key.size(),
+                                     hole_param.c_str(),
+                                     hole_param.size(),
+                                     1)) {
+        info->push_back(hole_param);
+        info->push_back(iter->second);
+      }
     }
   }
   if (info->empty())
