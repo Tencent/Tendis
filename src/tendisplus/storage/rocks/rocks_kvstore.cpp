@@ -1363,8 +1363,12 @@ rocksdb::Options RocksKVStore::options() {
   options.enable_blob_files = _cfg->rocksEnableBlobFiles;
   options.min_blob_size = _cfg->rocksMinBlobSize;
   options.blob_file_size = _cfg->rocksBlobFileSize;
+  options.blob_compression_type =
+    rocksGetCompressType(_cfg->rocksBlobCompressType);;
   options.enable_blob_garbage_collection =
     _cfg->rocksEnableBlobGarbageCollection;
+  options.blob_garbage_collection_age_cutoff =
+    _cfg->rocksBlobGarbageCollectionAgeCutoff;
 #endif
 
   options.table_factory.reset(
@@ -1395,6 +1399,7 @@ rocksdb::Options RocksKVStore::binlogColumnOptions() {
     columOpts.compression_per_level[i] =
       rocksGetCompressType(_cfg->rocksCompressType);
   }
+  columOpts.enable_blob_files = _cfg->rocksBinlogEnableBlobFiles;
   return columOpts;
 }
 
@@ -3018,20 +3023,60 @@ Status RocksKVStore::setOption(const std::string& option, int64_t value) {
   }
 
   static std::set<std::string> rocksdb_dynamic_options = {
-    "rocks.max_background_jobs", "rocks.max_open_files"};
+    "rocks.max_background_jobs",
+    "rocks.max_open_files",
+  };
+  static std::set<std::string> rocksdb_cf_dynamic_options = {
+    "rocks.enable_blob_files",
+    "rocks.binlog_enable_blob_files",
+    "rocks.min_blob_size",
+    "rocks.blob_file_size",
+    "rocks.blob_garbage_collection_age_cutoff",
+    "rocks.enable_blob_garbage_collection",
+    "rocks.blob_compress_type"
+  };
+  bool isDbOption = rocksdb_dynamic_options.count(option);
+  bool isCfOption = rocksdb_cf_dynamic_options.count(option);
 
-  if (rocksdb_dynamic_options.count(option) <= 0) {
+  if (!isDbOption && !isCfOption) {
     return {ErrorCodes::ERR_INTERNAL, option + " can't change dynamically"};
   }
 
   auto real_option = option.substr(6, option.size() - 6);
-  map[real_option] = std::to_string(value);
 
-  auto s = getBaseDB()->SetDBOptions(map);
-  if (!s.ok()) {
-    return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+  auto cf = ColumnFamilyNumber::ColumnFamily_All;
+  if (option == "rocks.enable_blob_files") {
+    cf = ColumnFamilyNumber::ColumnFamily_Default;
+  } else if (option == "rocks.binlog_enable_blob_files") {
+    cf = ColumnFamilyNumber::ColumnFamily_Binlog;
+    real_option = "enable_blob_files";
   }
 
+  map[real_option] = std::to_string(value);
+
+  if (isDbOption) {
+    auto s = getBaseDB()->SetDBOptions(map);
+    if (!s.ok()) {
+      return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+    }
+  } else {
+    if (cf == ColumnFamilyNumber::ColumnFamily_All ||
+      cf == ColumnFamilyNumber::ColumnFamily_Default) {
+      auto s = getBaseDB()->SetOptions(
+        getColumnFamilyHandle(ColumnFamilyNumber::ColumnFamily_Default), map);
+      if (!s.ok()) {
+        return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+      }
+    }
+    if (cf == ColumnFamilyNumber::ColumnFamily_All ||
+      cf == ColumnFamilyNumber::ColumnFamily_Binlog) {
+      auto s = getBaseDB()->SetOptions(
+        getColumnFamilyHandle(ColumnFamilyNumber::ColumnFamily_Binlog), map);
+      if (!s.ok()) {
+        return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+      }
+    }
+  }
   return {ErrorCodes::ERR_OK, ""};
 }
 

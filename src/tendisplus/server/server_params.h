@@ -54,7 +54,7 @@ class BaseVar {
   virtual ~BaseVar() {}
   Status setVar(const string& value, bool startup = true) {
     if (!allowDynamicSet && !startup) {
-      return {ErrorCodes::ERR_PARSEOPT, name + "can't change dynamically"};
+      return {ErrorCodes::ERR_PARSEOPT, name + " can't change dynamically"};
     }
     return set(value, startup);
   }
@@ -531,9 +531,12 @@ class ServerParams {
   // Uncomment next line macro will cause link error
   // #if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 18)
   bool rocksEnableBlobFiles = false;
+  bool rocksBinlogEnableBlobFiles = false;
   uint32_t rocksMinBlobSize = 2048;
   uint64_t rocksBlobFileSize = 1ULL << 28;
+  string rocksBlobCompressType = "none";
   bool rocksEnableBlobGarbageCollection = true;
+  float rocksBlobGarbageCollectionAgeCutoff = 0.25;
   // #endif
 
   // WriteOptions
