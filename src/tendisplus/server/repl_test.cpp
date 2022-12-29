@@ -103,7 +103,8 @@ TEST(Repl, Common) {
 #endif
     LOG(INFO) << ">>>>>> test store count:" << i;
     const auto guard = MakeGuard([] {
-      destroyReplEnv();
+      destroyEnv(master_dir);
+      destroyEnv(slave_dir);
       destroyEnv(slave1_dir);
       destroyEnv(slave2_dir);
       destroyEnv(slave_slave_dir);
@@ -246,7 +247,8 @@ TEST(Repl, KVTtlCompactionFilter) {
 #endif
     LOG(INFO) << ">>>>>> test store count:" << i;
     const auto guard = MakeGuard([] {
-      destroyReplEnv();
+      destroyEnv(master_dir);
+      destroyEnv(slave_dir);
       destroyEnv(slave1_dir);
       std::this_thread::sleep_for(std::chrono::seconds(5));
     });

@@ -1072,10 +1072,7 @@ uint64_t getBinlogCount(Transaction* txn) {
 TEST(RocksKVStore, PesTruncateBinlog) {
   auto cfg = genParams();
   EXPECT_TRUE(filesystem::create_directory("db"));
-  // EXPECT_TRUE(filesystem::create_directory("db/0"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
     filesystem::remove_all("./db");
   });
   auto blockCache =
@@ -1143,15 +1140,12 @@ TEST(RocksKVStore, PesTruncateBinlog) {
     EXPECT_EQ(currentCnt.value(), 2U);
   }
   {
-    auto eTxn1 = kvstore->createTransaction(sg.getSession());
-    EXPECT_EQ(eTxn1.ok(), true);
-    std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
     uint64_t ts = 0;
     uint64_t written = 0;
     uint64_t deleten = 0;
     // TODO(takenliu): save binlog
     auto s = kvstore->truncateBinlogV2(
-      firstBinlog, firstBinlog, firstBinlog, txn1.get(), nullptr, 0, false);
+      firstBinlog, firstBinlog, firstBinlog, nullptr, 0, false);
     EXPECT_TRUE(s.ok());
     ts = s.value().timestamp;
     written = s.value().written;
@@ -1162,12 +1156,11 @@ TEST(RocksKVStore, PesTruncateBinlog) {
     EXPECT_EQ(s.value().newStart, 2U);
     EXPECT_EQ(deleten, s.value().newStart - firstBinlog);
     firstBinlog = s.value().newStart;
+    auto eTxn1 = kvstore->createTransaction(sg.getSession());
+    EXPECT_EQ(eTxn1.ok(), true);
+    auto txn1 = std::move(eTxn1.value());
     uint64_t currentCnt = kvstore->getBinlogCnt(txn1.get()).value();
     EXPECT_EQ(currentCnt, keepBinlog);
-
-
-    Expected<uint64_t> exptCommitId = txn1->commit();
-    EXPECT_EQ(exptCommitId.ok(), true);
   }
   {
     auto eTxn = kvstore->createTransaction(sg.getSession());
@@ -1239,15 +1232,10 @@ TEST(RocksKVStore, PesTruncateBinlog) {
 
     while (firstBinlog != lastFirstBinlog) {
       lastFirstBinlog = firstBinlog;
-
-      auto eTxn2 = kvstore->createTransaction(sg.getSession());
-      EXPECT_EQ(eTxn2.ok(), true);
-      std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
       // TODO(takenliu): save binlog
       auto s = kvstore->truncateBinlogV2(firstBinlog,
                                          endBinlog - keepBinlog,
                                          firstBinlog,
-                                         txn2.get(),
                                          nullptr,
                                          0,
                                          false);
@@ -1265,9 +1253,6 @@ TEST(RocksKVStore, PesTruncateBinlog) {
       EXPECT_GT(s.value().newStart, firstBinlog);
       EXPECT_EQ(deleten, s.value().newStart - firstBinlog);
       firstBinlog = s.value().newStart;
-
-      Expected<uint64_t> exptCommitId2 = txn2->commit();
-      EXPECT_EQ(exptCommitId2.ok(), true);
     }
     {
       auto eTxn2 = kvstore->createTransaction(sg.getSession());

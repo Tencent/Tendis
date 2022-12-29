@@ -86,13 +86,6 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
 std::string runCommandFromNetwork(std::shared_ptr<ServerEntry> svr,
                                   const std::string& cmd);
 
-/* remain api to get command string of primary key */
-std::string getAofStr(const std::shared_ptr<ServerEntry>& svr,
-                      const RecordKey& v);
-
-bool setupReplEnv();
-void destroyReplEnv();
-
 int genRand();
 std::string randomIp();
 std::string randomStr(size_t s, bool maybeEmpty);
