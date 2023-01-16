@@ -121,3 +121,44 @@ done
 # runOne "tclsh tests/cluster/run.tcl --single 22"
 # runOne "tclsh tests/cluster/run.tcl --single 23"
 # runOne "tclsh tests/cluster/run.tcl --single 61"
+
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/type/hash"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/type/incr"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/type/list-2"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/type/list-3"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/type/list"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/type/set"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/type/string"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/type/zset"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/auth"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/bitfield"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/bitops"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/dump"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/expire"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/hyperloglog"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/other"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/protocol"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/quit"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/scan"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/scripting"
+# runOne "tclsh tests/test_helper.tcl --single unit_4.0/sort"
+
+# tests=(bitfield dump keyspace other protocol quit sort auth bitops expire hyperloglog limits scan slowlog badkey)
+# for i in ${tests[@]}
+# do
+#     if [ $valgrind -eq 1 ]; then
+#         runOne "tclsh tests/test_helper.tcl --valgrind --single cluster_test_4.0/$i"
+#     else
+#         runOne "tclsh tests/test_helper.tcl --single cluster_test/$i"
+#     fi
+# done
+
+# tests=(hash incr list-2 list-3 list set string zset)
+# for i in ${tests[@]}
+# do
+#     if [ $valgrind -eq 1 ]; then
+#         runOne "tclsh tests/test_helper.tcl --valgrind --single cluster_test_4.0/type/$i"
+#     else
+#         runOne "tclsh tests/test_helper.tcl --single cluster_test/type/$i"
+#     fi
+# done
