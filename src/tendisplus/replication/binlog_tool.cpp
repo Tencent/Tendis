@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <set>
 #include "tendisplus/commands/command.h"
 #include "tendisplus/commands/release.h"
 #include "tendisplus/commands/version.h"
@@ -34,6 +35,27 @@ class BinlogScanner {
     } else if (pm.getString("mode") == "aof") {
       _mode = TOOL_MODE ::AOF_SHOW;
     }
+    _matchKey = pm.getString("match-key", "");
+    _matchField = pm.getString("match-field", "");
+    if ((_matchKey != "" || _matchField != "")
+        && _mode != TEXT_SHOW) {
+      std::cout << "param error, match-key and match-filed need mode=text."
+                << std::endl;
+      exit(-1);
+    }
+    std::string keyList = pm.getString("match-key-list", "");
+    if (keyList != "") {
+      auto keys = stringSplit(keyList, ",");
+      for (auto key : keys) {
+        _matchKeySet.insert(key);
+      }
+    }
+    std::string detail = pm.getString("detail", "");
+    if (detail == "true") {
+      _detail = true;
+    } else if (detail == "false") {
+      _detail = false;
+    }
   }
 
   bool isFiltered(const ReplLogKeyV2& logkey, const ReplLogValueV2& logValue) {
@@ -46,6 +68,99 @@ class BinlogScanner {
       return true;
     }
     return false;
+  }
+
+  std::string scanLogEntries(const Expected<ReplLogKeyV2>& logkey,
+                                Expected<ReplLogValueV2>& logValue,
+                                uint32_t storeId) {
+    std::stringstream binlogInfo;
+    binlogInfo << "ts:" << logValue.value().getTimestamp()
+      << " tsv:" << epochToDatetimeInOneStr(
+      logValue.value().getTimestamp() / 1000)
+      << " cmdstr:" << logValue.value().getCmd();
+    if (_detail) {
+      binlogInfo << " storeid:" << storeId
+      << " binlogid:" << logkey.value().getBinlogId()
+      << " txnid:" << logValue.value().getTxnId()
+      << " chunkid:" << logValue.value().getChunkId();
+    }
+    binlogInfo << std::endl;
+
+    if (logValue.value().getChunkId() == Transaction::CHUNKID_FLUSH) {
+      std::cout << binlogInfo.str();
+      std::cout << "  op:"
+        << "FLUSH"
+        << " cmd:" << logValue.value().getCmd() << std::endl;
+      return "";
+    } else if (logValue.value().getChunkId() ==
+      Transaction::CHUNKID_MIGRATE) {
+      std::cout << binlogInfo.str();
+      std::cout << "  op:"
+        << "MIGRATE"
+        << " cmd:" << logValue.value().getCmd() << std::endl;
+      return "";
+    }
+
+    bool needOutputBinlogInfo = true;
+    if (_matchKey == "" && _matchField == "" && _matchKeySet.empty()) {
+      std::cout << binlogInfo.str();
+      needOutputBinlogInfo = false;
+    }
+    size_t offset = logValue.value().getHdrSize();
+    auto data = logValue.value().getData();
+    size_t dataSize = logValue.value().getDataSize();
+    while (offset < dataSize) {
+      size_t size = 0;
+      auto entry = ReplLogValueEntryV2::decode(
+        (const char*)data + offset, dataSize - offset, &size);
+      if (!entry.ok()) {
+        return "ReplLogValueEntryV2::decode failed";
+      }
+      offset += size;
+
+      Expected<RecordKey> opkey =
+        RecordKey::decode(entry.value().getOpKey());
+      if (!opkey.ok()) {
+        std::cerr << "decode opkey failed, err:" << opkey.status().toString()
+          << std::endl;
+        return "RecordKey::decode failed.";
+      }
+      auto pkey = opkey.value().getPrimaryKey();
+      auto skey = opkey.value().getSecondaryKey();
+      if (_matchKey != "" && _matchKey != pkey) {
+        continue;
+      }
+      if (_matchField != "" && _matchField != skey) {
+        continue;
+      }
+      if (!_matchKeySet.empty() && !_matchKeySet.count(pkey)) {
+        continue;
+      }
+      if (needOutputBinlogInfo) {
+        std::cout << binlogInfo.str();
+        needOutputBinlogInfo = false;
+      }
+      if (entry.value().getOp() == ReplOp::REPL_OP_DEL) {
+        std::cout << "  op:" << entry.value().getOpStr()
+          << " key:" << pkey
+          << " field:" << skey
+          << std::endl;
+      } else {
+        Expected<RecordValue> opvalue =
+          RecordValue::decode(entry.value().getOpValue());
+        if (!opvalue.ok()) {
+          std::cerr << "decode opvalue failed, err:"
+            << opvalue.status().toString() << std::endl;
+          return "RecordValue::decode failed.";
+        }
+        std::cout << "  op:" << entry.value().getOpStr()
+          << " key:" << pkey
+          << " field:" << skey
+          << " opvalue:" << opvalue.value().getValue()
+          << std::endl;
+      }
+    }
+    return "";
   }
 
   std::string process(const std::string& key,
@@ -66,65 +181,7 @@ class BinlogScanner {
     }
 
     if (_mode == TOOL_MODE::TEXT_SHOW) {
-      std::cout << "storeid:" << storeId
-                << " binlogid:" << logkey.value().getBinlogId()
-                << " txnid:" << logValue.value().getTxnId()
-                << " chunkid:" << logValue.value().getChunkId()
-                << " ts:" << logValue.value().getTimestamp()
-                << " cmdstr:" << logValue.value().getCmd() << std::endl;
-
-      if (logValue.value().getChunkId() == Transaction::CHUNKID_FLUSH) {
-        std::cout << "  op:"
-                  << "FLUSH"
-                  << " cmd:" << logValue.value().getCmd() << std::endl;
-        return "";
-      } else if (logValue.value().getChunkId() ==
-                 Transaction::CHUNKID_MIGRATE) {
-        std::cout << "  op:"
-                  << "MIGRATE"
-                  << " cmd:" << logValue.value().getCmd() << std::endl;
-        return "";
-      }
-
-      size_t offset = logValue.value().getHdrSize();
-      auto data = logValue.value().getData();
-      size_t dataSize = logValue.value().getDataSize();
-      while (offset < dataSize) {
-        size_t size = 0;
-        auto entry = ReplLogValueEntryV2::decode(
-          (const char*)data + offset, dataSize - offset, &size);
-        if (!entry.ok()) {
-          return "ReplLogValueEntryV2::decode failed";
-        }
-        offset += size;
-
-        Expected<RecordKey> opkey =
-            RecordKey::decode(entry.value().getOpKey());
-        if (!opkey.ok()) {
-          std::cerr << "decode opkey failed, err:" << opkey.status().toString()
-            << std::endl;
-          return "RecordKey::decode failed.";
-        }
-        if (entry.value().getOp() == ReplOp::REPL_OP_DEL) {
-          std::cout << "  op:" << (uint32_t)entry.value().getOp()
-            << " fkey:" << opkey.value().getPrimaryKey()
-            << " skey:" << opkey.value().getSecondaryKey()
-            << std::endl;
-        } else {
-          Expected<RecordValue> opvalue =
-              RecordValue::decode(entry.value().getOpValue());
-          if (!opvalue.ok()) {
-            std::cerr << "decode opvalue failed, err:"
-              << opvalue.status().toString() << std::endl;
-            return "RecordValue::decode failed.";
-          }
-          std::cout << "  op:" << (uint32_t)entry.value().getOp()
-            << " fkey:" << opkey.value().getPrimaryKey()
-            << " skey:" << opkey.value().getSecondaryKey()
-            << " opvalue:" << opvalue.value().getValue()
-            << std::endl;
-        }
-      }
+      return scanLogEntries(logkey, logValue, storeId);
     } else if (_mode == TOOL_MODE::BASE64_SHOW) {
       std::string baseKey =
         Base64::Encode((unsigned char*)key.c_str(), key.size());
@@ -239,6 +296,10 @@ class BinlogScanner {
  private:
   std::string _logfile;
   TOOL_MODE _mode;
+  std::string _matchKey;
+  std::string _matchField;
+  std::set<std::string> _matchKeySet;
+  bool _detail = false;
   uint64_t _startDatetime = 0;
   uint64_t _endDatetime = UINT64_MAX;
   uint64_t _startPosition = 0;
@@ -253,10 +314,13 @@ class BinlogScanner {
 }  // namespace tendisplus
 
 void usage() {
-  std::cerr << "binlog_tool --logfile=binlog.log --mode=text|base64|scope"
+  std::cerr << "binlog_tool --logfile=binlog.log --mode=text|base64|scope|aof"
             << " --start-datetime=1111 --end-datetime=22222"
             << " --start-position=333333 --end-position=55555"
-            << /*" --keys=1,2,4,5,6,7,8,9" <<*/ std::endl;
+            << " [--match-key=testKey --match-filed=testFiled]"
+            << " [--match-key-list=testKey1,testKey2...]"
+            << " [--detail=true/false]"
+            << std::endl;
 }
 
 int main(int argc, char** argv) {

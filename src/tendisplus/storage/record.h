@@ -325,7 +325,10 @@ enum class ReplOp : std::uint8_t {
   REPL_OP_DEL_RANGE = 5,
   REPL_OP_DEL_FILES_INCLUDE_END = 6,
   REPL_OP_DEL_FILES_EXCLUDE_END = 7,
+  REPL_OP_MAX = 8
 };
+
+extern const char* ReplOpStr[static_cast<int>(ReplOp::REPL_OP_MAX)];
 
 class ReplLogKeyV2 {
  public:
@@ -382,7 +385,9 @@ class ReplLogValueEntryV2 {
   ReplOp getOp() const {
     return _op;
   }
-
+  std::string getOpStr() const {
+    return ReplOpStr[static_cast<int>(_op)];
+  }
   static Expected<ReplLogValueEntryV2> decode(const char* rawVal,
                                               size_t maxSize,
                                               size_t* decodeSize);

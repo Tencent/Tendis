@@ -85,6 +85,16 @@ std::string epochToDatetime(uint64_t epoch) {
   return std::string(buffer);
 }
 
+// timestamp in second
+std::string epochToDatetimeInOneStr(uint64_t epoch) {
+  struct tm* dt, rt;
+  char buffer[64];
+  const time_t t = epoch;
+  dt = localtime_r(&t, &rt);
+  strftime(buffer, sizeof(buffer), "%y/%m/%d-%H:%M:%S", dt);
+  return std::string(buffer);
+}
+
 std::string msEpochToDatetime(uint64_t msEpoch) {
   return epochToDatetime(msEpoch / 1000);
 }

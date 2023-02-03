@@ -19,6 +19,18 @@
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
 namespace tendisplus {
+
+const char* ReplOpStr[static_cast<int>(ReplOp::REPL_OP_MAX)] = {
+  "none",
+  "set",
+  "del",
+  "statement",
+  "special",
+  "del_range",
+  "del_files_include_end",
+  "del_files_exclude_end"
+};
+
 bool isDataMetaType(RecordType t) {
   switch (t) {
     case RecordType::RT_HASH_META:
