@@ -747,7 +747,7 @@ Expected<std::list<std::pair<double, std::string>>> SkipList::scanByScore(
     if (rev) {
       auto nxt = ln->getBackward();
       if (nxt == 0) {
-        break;
+        return result;
       }
       auto tmp = getNode(nxt, txn);
       if (!tmp.ok()) {
@@ -757,7 +757,7 @@ Expected<std::list<std::pair<double, std::string>>> SkipList::scanByScore(
     } else {
       auto nxt = ln->getForward(1);
       if (nxt == 0) {
-        break;
+        return result;
       }
       auto tmp = getNode(nxt, txn);
       if (!tmp.ok()) {
@@ -832,7 +832,7 @@ Expected<std::list<std::pair<double, std::string>>> SkipList::scanByLex(
     if (rev) {
       auto nxt = ln->getBackward();
       if (nxt == 0) {
-        break;
+        return result;
       }
       auto tmp = getNode(nxt, txn);
       if (!tmp.ok()) {
@@ -842,7 +842,7 @@ Expected<std::list<std::pair<double, std::string>>> SkipList::scanByLex(
     } else {
       auto nxt = ln->getForward(1);
       if (nxt == 0) {
-        break;
+        return result;
       }
       auto tmp = getNode(nxt, txn);
       if (!tmp.ok()) {
