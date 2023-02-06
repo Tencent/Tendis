@@ -425,7 +425,8 @@ class RocksKVStore : public KVStore {
   std::string getBgError() const override;
   Status recoveryFromBgError() override;
   void resetStatistics();
-  Status setOption(const std::string& option, int64_t value) override;
+  Status setOptionDynamic(const std::string& option,
+                          const std::string& value) override;
   Status setCompactOnDeletionCollectorFactory(
     const std::string& option, const std::string& value) override;
   int64_t getOption(const std::string& option) override;
@@ -487,7 +488,7 @@ class RocksKVStore : public KVStore {
  private:
   void addUnCommitedTxnInLock(uint64_t txnId);
   void markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId);
-  rocksdb::Options options();
+  rocksdb::Options options(const string cf = "");
   rocksdb::Options binlogColumnOptions();
   rocksdb::Options defaultColumnOptions();
   Expected<bool> deleteBinlog(uint64_t start);

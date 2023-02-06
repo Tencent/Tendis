@@ -2252,10 +2252,38 @@ void testRocksOptionCommand(std::shared_ptr<ServerEntry> svr) {
   asio::ip::tcp::socket socket(ioContext);
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
+
+  sess.setArgs({"CONFIG", "GET", "rocks.enable_blob_files"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ("*2\r\n$23\r\nrocks.enable_blob_files\r\n$1\r\n1\r\n",
+            expect.value());
+
+  sess.setArgs({"CONFIG", "GET", "rocks.binlogcf.enable_blob_files"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(
+    "*2\r\n$32\r\nrocks.binlogcf.enable_blob_files\r\n$1\r\n1\r\n",
+    expect.value());
+
+  sess.setArgs({"CONFIG", "GET", "rocks.blob_garbage_collection_age_cutoff"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(
+    "*2\r\n$40\r\nrocks.blob_garbage_collection_age_cutoff\r\n$4\r\n0.12\r\n",
+    expect.value());
+
+  sess.setArgs({"CONFIG", "GET", "rocks.blob_compression_type"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(
+    "*2\r\n$27\r\nrocks.blob_compression_type\r\n$3\r\nlz4\r\n",
+    expect.value());
+
   std::stringstream ss;
 
   sess.setArgs({"CONFIG", "GET", "rocks.max_background_jobs"});
-  auto expect = Command::runSessionCmd(&sess);
+  expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
   Command::fmtMultiBulkLen(ss, 2);
   Command::fmtBulk(ss, "rocks.max_background_jobs");
@@ -2401,6 +2429,67 @@ void testRocksOptionCommand(std::shared_ptr<ServerEntry> svr) {
   sess.setArgs({"CONFIG", "SET", "rocks.abc", "-1"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_FALSE(expect.ok());
+}
+
+void testConfigSetAndGet(std::shared_ptr<ServerEntry> master) {
+  auto ctx = std::make_shared<asio::io_context>();
+  auto session = makeSession(master, ctx);
+  session->setArgs({"set", "aaa", "2"});
+  auto expect = Command::runSessionCmd(session.get());
+  EXPECT_EQ(expect.ok(), true);
+
+  session->setArgs({"config", "set", "slowlog-log-slower-than", "2000000"});
+  expect = Command::runSessionCmd(session.get());
+  EXPECT_EQ(expect.ok(), true);
+
+  session->setArgs({"config", "get", "slowlog-log-slower-than"});
+  expect = Command::runSessionCmd(session.get());
+  EXPECT_EQ(expect.value(),
+            "*2\r\n$23\r\nslowlog-log-slower-than\r\n$7\r\n2000000\r\n");
+
+  session->setArgs({"config", "set", "not_exist_param", "2"});
+  expect = Command::runSessionCmd(session.get());
+  EXPECT_EQ(expect.ok(), false);
+
+  session->setArgs({"config", "get", "not_exist_param"});
+  expect = Command::runSessionCmd(session.get());
+  EXPECT_EQ(expect.value(),
+            "*0\r\n");
+
+  session->setArgs({"config", "set", "rocks.max_open_files", "2"});
+  expect = Command::runSessionCmd(session.get());
+  EXPECT_EQ(expect.ok(), true);
+
+  session->setArgs({"config", "get", "rocks.max_open_files"});
+  expect = Command::runSessionCmd(session.get());
+  EXPECT_EQ(expect.value(),
+            "*2\r\n$20\r\nrocks.max_open_files\r\n$1\r\n2\r\n");
+
+  session->setArgs({"config", "set", "rocks.not_exist_param", "2"});
+  expect = Command::runSessionCmd(session.get());
+  EXPECT_EQ(expect.ok(), false);
+
+  session->setArgs({"config", "get", "rocks.not_exist_param"});
+  expect = Command::runSessionCmd(session.get());
+  EXPECT_EQ(expect.value(), "*0\r\n");
+
+  session->setArgs({"config", "set", "rocks.binlogcf.enable_blob_files", "1"});
+  expect = Command::runSessionCmd(session.get());
+  EXPECT_EQ(expect.ok(), true);
+
+  session->setArgs({"config", "get", "rocks.binlogcf.enable_blob_files"});
+  expect = Command::runSessionCmd(session.get());
+  EXPECT_EQ(expect.value(),
+            "*2\r\n$32\r\nrocks.binlogcf.enable_blob_files\r\n$1\r\n1\r\n");
+
+  session->setArgs({"config", "set", "rocks.not_exist_cf.enable_blob_files",
+                    "1"});
+  expect = Command::runSessionCmd(session.get());
+  EXPECT_EQ(expect.ok(), false);
+
+  session->setArgs({"config", "get", "rocks.not_exist_cf.enable_blob_files"});
+  expect = Command::runSessionCmd(session.get());
+  EXPECT_EQ(expect.value(), "*0\r\n");
 }
 
 void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
@@ -2733,11 +2822,17 @@ TEST(Command, tbitmap) {
 TEST(Command, rocksdbOptionsCommand) {
   const auto guard = MakeGuard([]() { destroyEnv(); });
   EXPECT_TRUE(setupEnv());
-  auto cfg = makeServerParam();
+  std::map<std::string, std::string> configMap = {
+    {"rocks.enable_blob_files", "1"},
+    {"rocks.binlogcf.enable_blob_files", "1"},
+    {"rocks.blob_garbage_collection_age_cutoff", "0.12"},
+    {"rocks.blob_compression_type", "lz4"}};
+  auto cfg = makeServerParam(8811, 0, "", true, configMap);
 
   getGlobalServer() = makeServerEntry(cfg);
 
   testRocksOptionCommand(getGlobalServer());
+  testConfigSetAndGet(getGlobalServer());
 
 #ifndef _WIN32
   getGlobalServer()->stop();

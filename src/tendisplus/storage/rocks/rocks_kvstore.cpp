@@ -966,9 +966,38 @@ rocksdb::Iterator* RocksWBTxn::getIterator(
   return _store->newIterator(readOpts, columnFamily);
 }
 
+rocksdb::CompressionType rocksGetCompressType(const std::string& typeStr) {
+  if (typeStr == "snappy") {
+    return rocksdb::CompressionType::kSnappyCompression;
+  } else if (typeStr == "lz4") {
+    return rocksdb::CompressionType::kLZ4Compression;
+  } else if (typeStr == "none") {
+    return rocksdb::CompressionType::kNoCompression;
+  } else {
+    INVARIANT_D(0);
+    return rocksdb::CompressionType::kNoCompression;
+  }
+}
+
 Status rocksdbOptionsSet(rocksdb::Options& options,
                          const std::string& key,
-                         int64_t value) {  // NOLINT(runtime/references)
+                         const std::string& rawValue) {
+  // TODO(takenliu): not int params need change two place, resolve it
+  static std::set<std::string> notIntParams = {
+    "blob_compression_type",
+    "blob_garbage_collection_age_cutoff",
+    };
+
+  int64_t value = 0;
+  if (!notIntParams.count(key)) {
+    auto ed = tendisplus::stoll(rawValue);
+    if (ed.ok()) {
+      value = ed.value();
+    } else {
+      LOG(ERROR) << "param need to be int64_t, " << key << ":" << rawValue;
+      return {ErrorCodes::ERR_PARSEOPT, "invalid rocksdb option :" + key};
+    }
+  }
   // AdvancedColumnFamilyOptions
   if (key == "max_write_buffer_number") {
     options.max_write_buffer_number = static_cast<int>(value);
@@ -1168,6 +1197,28 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
     options.atomic_flush = static_cast<bool>(value);
   }
 #endif
+#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 18)
+  else if (key == "enable_blob_files") {  // NOLINT
+    options.enable_blob_files = static_cast<bool>(value);
+  } else if (key == "min_blob_size") {
+    options.min_blob_size = static_cast<uint32_t>(value);
+  } else if (key == "blob_file_size") {
+    options.blob_file_size = static_cast<uint64_t>(value);
+  } else if (key == "blob_compression_type") {
+    options.blob_compression_type = rocksGetCompressType(rawValue);
+  } else if (key == "enable_blob_garbage_collection") {
+    options.enable_blob_garbage_collection = static_cast<bool>(value);
+  } else if (key == "blob_garbage_collection_age_cutoff") {
+    double data = 0.0;
+    auto ed = tendisplus::stod(rawValue);
+    if (ed.ok()) {
+      data = ed.value();
+      options.blob_garbage_collection_age_cutoff = static_cast<double>(data);
+    } else {
+      LOG(ERROR) << "error param, not double, " << key << ":" << rawValue;
+    }
+  }
+#endif
   else {  // NOLINT
     return {ErrorCodes::ERR_PARSEOPT, "invalid rocksdb option :" + key};
   }
@@ -1176,8 +1227,22 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
 }
 
 Status rocksdbTableOptionsSet(rocksdb::BlockBasedTableOptions& options,
-                              const std::string key,
-                              int64_t value) {
+                              const std::string& key,
+                              const std::string& rawValue) {
+  // TODO(takenliu): not int params need change two place, resolve it
+  static std::set<std::string> notIntParams = {
+    };
+
+  int64_t value = 0;
+  if (notIntParams.find(key) == notIntParams.end()) {
+    auto ed = tendisplus::stoll(rawValue);
+    if (ed.ok()) {
+      value = ed.value();
+    } else {
+      LOG(ERROR) << "param need to be int64_t, " << key << ":" << rawValue;
+      return {ErrorCodes::ERR_PARSEOPT, "invalid rocksdb option :" + key};
+    }
+  }
   if (key == "cache_index_and_filter_blocks") {
     options.cache_index_and_filter_blocks = static_cast<bool>(value);
   } else if (key == "cache_index_and_filter_blocks_with_high_priority") {
@@ -1232,18 +1297,7 @@ Status rocksdbTableOptionsSet(rocksdb::BlockBasedTableOptions& options,
   return {ErrorCodes::ERR_OK, ""};
 }
 
-rocksdb::CompressionType rocksGetCompressType(const std::string& typeStr) {
-  if (typeStr == "snappy") {
-    return rocksdb::CompressionType::kSnappyCompression;
-  } else if (typeStr == "lz4") {
-    return rocksdb::CompressionType::kLZ4Compression;
-  } else if (typeStr == "none") {
-    return rocksdb::CompressionType::kNoCompression;
-  } else {
-    INVARIANT_D(0);
-    return rocksdb::CompressionType::kNoCompression;
-  }
-}
+
 
 RocksKVStore::RocksKVStore(const std::string& id,
                            const std::shared_ptr<ServerParams>& cfg,
@@ -1285,7 +1339,7 @@ RocksKVStore::RocksKVStore(const std::string& id,
   initRocksProperties();
 }
 
-rocksdb::Options RocksKVStore::options() {
+rocksdb::Options RocksKVStore::options(const string cf) {
   rocksdb::Options options;
   rocksdb::BlockBasedTableOptions table_options;
   table_options.block_cache = _blockCache;
@@ -1341,6 +1395,10 @@ rocksdb::Options RocksKVStore::options() {
     options.sst_file_manager = _sstFileManager;
   }
 
+  // TODO(takenliu): if rocksdbOptions config error,
+  //    erase it from ServerParams::_rocksdbOptions,
+  //    otherwise "config get" will return the error configure.
+  //    RocksdbCFOptions is the same.
   for (const auto& iter : _cfg->getRocksdbOptions()) {
     auto status = rocksdbOptionsSet(options, iter.first, iter.second);
     if (!status.ok()) {
@@ -1351,25 +1409,26 @@ rocksdb::Options RocksKVStore::options() {
     }
   }
 
+  // example: binlogcf
+  if (cf != "") {
+    auto cfOptions = _cfg->getRocksdbCFOptions(cf);
+    if (cfOptions != nullptr) {
+      for (const auto& iter : *cfOptions) {
+        auto status = rocksdbOptionsSet(options, iter.first, iter.second);
+        if (!status.ok()) {
+          status =
+            rocksdbTableOptionsSet(table_options, iter.first, iter.second);
+          if (!status.ok()) {
+            LOG(ERROR) << status.toString();
+          }
+        }
+      }
+    }
+  }
   if (!_cfg->binlogUsingDefaultCF) {
     // TODO(takenliu): make memory usage of binlog cf correct
     options.write_buffer_size /= 2;
   }
-
-#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 18)
-  // TODO(jingjunli):
-  // configurable: blob_compression_type blob_garbage_collection_age_cutoff
-  // maybe not nesscessary
-  options.enable_blob_files = _cfg->rocksEnableBlobFiles;
-  options.min_blob_size = _cfg->rocksMinBlobSize;
-  options.blob_file_size = _cfg->rocksBlobFileSize;
-  options.blob_compression_type =
-    rocksGetCompressType(_cfg->rocksBlobCompressType);;
-  options.enable_blob_garbage_collection =
-    _cfg->rocksEnableBlobGarbageCollection;
-  options.blob_garbage_collection_age_cutoff =
-    _cfg->rocksBlobGarbageCollectionAgeCutoff;
-#endif
 
   options.table_factory.reset(
     rocksdb::NewBlockBasedTableFactory(table_options));
@@ -1394,12 +1453,11 @@ rocksdb::Options RocksKVStore::defaultColumnOptions() {
 
 // Binlog Column different from default
 rocksdb::Options RocksKVStore::binlogColumnOptions() {
-  auto columOpts = defaultColumnOptions();
+  auto columOpts = options("binlogcf");
   for (int i = 0; i < ROCKSDB_NUM_LEVELS; ++i) {
     columOpts.compression_per_level[i] =
       rocksGetCompressType(_cfg->rocksCompressType);
   }
-  columOpts.enable_blob_files = _cfg->rocksBinlogEnableBlobFiles;
   return columOpts;
 }
 
@@ -3016,10 +3074,12 @@ Status RocksKVStore::recoveryFromBgError() {
   return {ErrorCodes::ERR_OK, ""};
 }
 
-Status RocksKVStore::setOption(const std::string& option, int64_t value) {
+Status RocksKVStore::setOptionDynamic(const std::string& option,
+                               const std::string& value) {
   std::unordered_map<std::string, std::string> map;
   if (option.substr(0, 6) != "rocks.") {
-    return {ErrorCodes::ERR_INTERNAL, option + " is not rocksdb option"};
+    return {ErrorCodes::ERR_INTERNAL,
+            option + " is not rocksdb option"};
   }
 
   static std::set<std::string> rocksdb_dynamic_options = {
@@ -3028,31 +3088,48 @@ Status RocksKVStore::setOption(const std::string& option, int64_t value) {
   };
   static std::set<std::string> rocksdb_cf_dynamic_options = {
     "rocks.enable_blob_files",
-    "rocks.binlog_enable_blob_files",
     "rocks.min_blob_size",
     "rocks.blob_file_size",
     "rocks.blob_garbage_collection_age_cutoff",
     "rocks.enable_blob_garbage_collection",
-    "rocks.blob_compress_type"
+    "rocks.blob_compression_type"
   };
-  bool isDbOption = rocksdb_dynamic_options.count(option);
-  bool isCfOption = rocksdb_cf_dynamic_options.count(option);
+  // option, example: "rocks.binlogcf.enable_blob_files"
+  // new_option, example: "rocks.enable_blob_files"
+  // short_option, example: "enable_blob_files"
+  string new_option = option;
+  string short_option = "";
+  auto argArray = tendisplus::stringSplit(option, ".");
+  string specialCf = "";
+  if (argArray.size() == 2) {
+    // example: "rocks.enable_blob_files"
+    short_option = argArray[1];
+  } else if (argArray.size() == 3) {
+    // example: "rocks.binlogcf.enable_blob_files"
+    specialCf = argArray[1];
+    short_option = argArray[2];
+    new_option = argArray[0] + "." + argArray[2];
+  }
+  bool isDbOption = rocksdb_dynamic_options.count(new_option);
+  bool isCfOption = rocksdb_cf_dynamic_options.count(new_option);
 
   if (!isDbOption && !isCfOption) {
     return {ErrorCodes::ERR_INTERNAL, option + " can't change dynamically"};
   }
 
-  auto real_option = option.substr(6, option.size() - 6);
-
   auto cf = ColumnFamilyNumber::ColumnFamily_All;
-  if (option == "rocks.enable_blob_files") {
-    cf = ColumnFamilyNumber::ColumnFamily_Default;
-  } else if (option == "rocks.binlog_enable_blob_files") {
-    cf = ColumnFamilyNumber::ColumnFamily_Binlog;
-    real_option = "enable_blob_files";
+  if (isCfOption) {
+    if (specialCf == "") {
+      cf = ColumnFamilyNumber::ColumnFamily_Default;
+    } else if (specialCf == "binlogcf") {
+      cf = ColumnFamilyNumber::ColumnFamily_Binlog;
+    } else {
+      return {ErrorCodes::ERR_INTERNAL,
+              "ColumnFamily " + specialCf + " not exist"};
+    }
   }
 
-  map[real_option] = std::to_string(value);
+  map[short_option] = value;
 
   if (isDbOption) {
     auto s = getBaseDB()->SetDBOptions(map);
