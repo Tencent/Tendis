@@ -280,7 +280,8 @@ Status ReplManager::startup() {
 
         uint64_t dump = recBinlogStat->minValidBinlogID;
         auto expid = getDumpBinlogID(i, fileSeq);
-        if (!expid.ok() && expid.status().code() != ErrorCodes::ERR_NOTFOUND) {
+        if (!expid.ok() && expid.status().code() != ErrorCodes::ERR_NOTFOUND
+          && expid.status().code() != ErrorCodes::ERR_NO_KEY) {
           LOG(ERROR) << "recycleBinlog get save binlog id failed:"
                      << expid.status().toString();
         }
@@ -956,6 +957,7 @@ Expected<uint64_t> ReplManager::getDumpBinlogID(uint32_t storeId,
   fs.read(&readBuf[0], strlen(BINLOG_HEADER_V2) + sizeof(uint32_t));
   if (!fs.good()) {
     if (fs.eof()) {
+      LOG(INFO) << "read file head failed, it maybe null:" << maxPath;
       return {ErrorCodes::ERR_NO_KEY, ""};
     }
     LOG(ERROR) << "read file:" << maxPath
