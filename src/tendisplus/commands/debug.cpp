@@ -4215,7 +4215,7 @@ class compactSlotsCommand : public Command {
     for (uint32_t storeid = 0; storeid < server->getKVStoreCount(); storeid++) {
       uint32_t myBegin = UINT32_MAX;
       uint32_t myEnd = UINT32_MAX;
-      for (uint32_t chunkid = beginChunkid; chunkid <= beginChunkid;
+      for (uint32_t chunkid = beginChunkid; chunkid <= endChunkid;
            chunkid++) {
         if (server->getSegmentMgr()->getStoreid(chunkid) == storeid) {
           if (myBegin == UINT32_MAX) {
