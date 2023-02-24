@@ -965,7 +965,14 @@ void checkBinlogKeepNum(std::shared_ptr<ServerEntry> svr, uint32_t num) {
               << " binlogstart:" << binlogstart << " num:" << num
               << " binlogmeta:" << binlogmeta;
 
-    EXPECT_EQ(binlogstart + num, binlogpos + 1);
+    // if data not full, binlogpos-binlogstart may be smaller than num.
+    if (svr->getParams()->truncateBinlogNum == 1 ||
+        svr->getParams()->truncateBinlogNum == 0) {
+      EXPECT_EQ(binlogpos - binlogstart + 1, num);
+    } else {
+      EXPECT_LT(binlogpos - binlogstart + 1,
+                num + svr->getParams()->truncateBinlogNum);
+    }
   }
 }
 
@@ -999,6 +1006,10 @@ TEST(Repl, BinlogKeepNum_Test) {
     cfg3->minBinlogKeepSec = 0;
     cfg4->maxBinlogKeepNum = masterBinlogNum;
     cfg4->minBinlogKeepSec = 0;
+    cfg1->truncateBinlogNum = 1;
+    cfg2->truncateBinlogNum = 1;
+    cfg3->truncateBinlogNum = 1;
+    cfg4->truncateBinlogNum = 1;
 
     // NOTE(takenliu) be care of gParams set by cfg1.
     gParams = cfg1;
@@ -1194,6 +1205,7 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
     uint64_t masterBinlogNum = 10;
     cfg->maxBinlogKeepNum = masterBinlogNum;
     cfg->minBinlogKeepSec = 0;
+    cfg->truncateBinlogNum = 5000;
     gParams = cfg;
 
     {

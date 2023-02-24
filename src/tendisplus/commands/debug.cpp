@@ -1584,6 +1584,42 @@ class BinlogMetaCommand : public Command {
   }
 } binlogmetaCommand;
 
+class RecycleStatusCommand : public Command {
+ public:
+  RecycleStatusCommand() : Command("recyclestatus", "as") {}
+
+  ssize_t arity() const {
+    return 2;
+  }
+
+  int32_t firstkey() const {
+    return 1;
+  }
+
+  int32_t lastkey() const {
+    return 1;
+  }
+
+  int32_t keystep() const {
+    return 1;
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    const auto& args = sess->getArgs();
+    auto storeId = ::tendisplus::stoul(args[1]);
+    if (!storeId.ok()) {
+      return storeId.status();
+    }
+
+    auto server = sess->getServerEntry();
+    if (storeId.value() >= server->getKVStoreCount()) {
+      return {ErrorCodes::ERR_PARSEOPT, "invalid instance num"};
+    }
+
+    return server->getReplManager()->getRecycleStatus(storeId.value());
+  }
+} recyclestatusCommand;
+
 class BinlogFlushCommand : public Command {
  public:
   BinlogFlushCommand() : Command("binlogflush", "as") {}
@@ -3784,6 +3820,7 @@ class reshapeCommand : public Command {
       if (!status.ok()) {
         return status;
       }
+      LOG(INFO) << "full compact on store:" << storeid << " succ.";
     } else {
       server->getCompactionStat().isRunning = true;
       server->getCompactionStat().startTime = sinceEpoch();
@@ -3802,6 +3839,7 @@ class reshapeCommand : public Command {
         if (!status.ok()) {
           return status;
         }
+        LOG(INFO) << "full compact on store:" << i << " succ.";
       }
     }
     return Command::fmtOK();
@@ -3858,19 +3896,23 @@ class compactRangeCommand : public Command {
               args[3] + " must be bigger than " + args[2]};
     }
 
-    std::string str_start, str_end;
+    std::string str_start, str_end, target;
     if (cf == ColumnFamilyNumber::ColumnFamily_Default) {
       RecordKey tmplRk(start, 0, RecordType::RT_DATA_META, "", "");
       str_start = tmplRk.prefixChunkid();
 
       RecordKey tmplRk2(end, 0, RecordType::RT_DATA_META, "", "");
       str_end = tmplRk2.prefixChunkid();
+
+      target = "slots";
     } else {
       ReplLogKeyV2 tmplRk(start);
       str_start = tmplRk.encode();
 
       ReplLogKeyV2 tmplRk2(end);
       str_end = tmplRk2.encode();
+
+      target = "binlogs";
     }
 
     uint64_t i = 0;
@@ -3893,6 +3935,8 @@ class compactRangeCommand : public Command {
       if (!status.ok()) {
         return status;
       }
+      LOG(INFO) << "compactRange on store:" << i << " " << target << ": ["
+                << start << ", " << end << ")";
     }
     return Command::fmtOK();
   }
@@ -4013,6 +4057,8 @@ class deleteFilesInRangeGenericCommand : public Command {
       RET_IF_ERR_EXPECTED(expDb);
       auto s = expDb.value().store->deleteFilesInRangeWithoutBinlog(
         ColumnFamilyNumber::ColumnFamily_Default, rkStart, rkEnd);
+      LOG(INFO) << "deleteFilesInRange on store:" << i << " slots: [" << start
+                << ", " << end << "]";
       RET_IF_ERR(s);
       i++;
     }
@@ -4063,9 +4109,11 @@ class deleteFilesInRangeGenericCommand : public Command {
 
     // binlog in [start, end]
     auto rlkStart = ReplLogKeyV2(start).encode();
-    auto rlkEnd = ReplLogKeyV2(end).encode();
+    auto rlkEnd = ReplLogKeyV2(end + 1).encode();
     auto ret = kvStore->deleteFilesInRangeWithoutBinlog(
       ColumnFamilyNumber::ColumnFamily_Binlog, rlkStart, rlkEnd);
+    LOG(INFO) << "deleteFilesInRange on store:" << storeID << " binlogs: ["
+              << start << ", " << end << "]";
     RET_IF_ERR(ret);
     return Command::fmtOK();
   }
@@ -4227,8 +4275,6 @@ class compactSlotsCommand : public Command {
       if (myBegin == UINT32_MAX) {
         continue;
       }
-      LOG(INFO) << "compactSlots storeid:" << storeid
-                << " beginChunk:" << myBegin << " endChunk:" << myEnd;
 
       auto expdb =
         server->getSegmentMgr()->getDb(sess, storeid, mgl::LockMode::LOCK_IS);
@@ -4254,8 +4300,8 @@ class compactSlotsCommand : public Command {
                    << " err:" << s.toString();
         return s;
       }
-      LOG(INFO) << "compactSlots end storeid:" << storeid
-                << " beginChunk:" << myBegin << " endChunk:" << myEnd;
+      LOG(INFO) << "compactSlots on store:" << storeid << " slots: [" << myBegin
+                << ", " << myEnd << "]";
     }
     return Command::fmtOK();
   }

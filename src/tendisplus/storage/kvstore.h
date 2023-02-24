@@ -333,25 +333,22 @@ struct KVStoreStat {
 
 struct TruncateBinlogResult {
   TruncateBinlogResult()
-    : newStart(0), newSave(0), timestamp(0), written(0), deleten(0), err(0) {}
+    : newStart(0), newDump(0), timestamp(0), written(0), err(0) {}
   TruncateBinlogResult(uint64_t newStart,
-                       uint64_t newSave,
+                       uint64_t newDump,
                        uint64_t timestamp,
                        uint64_t written,
-                       uint64_t deleten,
                        int32_t err)
     : newStart(newStart),
-      newSave(newSave),
+      newDump(newDump),
       timestamp(timestamp),
       written(written),
-      deleten(deleten),
       err(err) {}
 
   uint64_t newStart;
-  uint64_t newSave;
+  uint64_t newDump;
   uint64_t timestamp;
   uint64_t written;
-  uint64_t deleten;
   int32_t err;
 };
 
@@ -424,7 +421,7 @@ class KVStore {
                                          uint32_t storeId);
   virtual Expected<TruncateBinlogResult> truncateBinlogV2(uint64_t start,
                                                           uint64_t end,
-                                                          uint64_t save,
+                                                          uint64_t dump,
                                                           std::ofstream* fs,
                                                           int64_t maxWritelen,
                                                           bool tailSlave) = 0;

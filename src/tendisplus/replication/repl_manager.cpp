@@ -273,47 +273,47 @@ Status ReplManager::startup() {
       auto txn = std::move(ptxn.value());
       auto explog = RepllogCursorV2::getMinBinlog(txn.get());
       if (explog.ok()) {
-        recBinlogStat->firstBinlogId = explog.value().id;
+        recBinlogStat->minValidBinlogID = explog.value().id;
         recBinlogStat->timestamp = explog.value().ts;
         recBinlogStat->lastFlushBinlogId = Transaction::TXNID_UNINITED;
-        recBinlogStat->saveBinlogId = recBinlogStat->firstBinlogId;
+        recBinlogStat->dumpBinlogID = recBinlogStat->minValidBinlogID;
 
-        uint64_t save = recBinlogStat->firstBinlogId;
-        auto expid = getSaveBinlogId(i, fileSeq);
+        uint64_t dump = recBinlogStat->minValidBinlogID;
+        auto expid = getDumpBinlogID(i, fileSeq);
         if (!expid.ok() && expid.status().code() != ErrorCodes::ERR_NOTFOUND) {
           LOG(ERROR) << "recycleBinlog get save binlog id failed:"
                      << expid.status().toString();
         }
         if (expid.ok()) {
-          save = expid.value();
-          save++;
-          if (recBinlogStat->firstBinlogId > save) {
-            LOG(ERROR) << "recycleBinlog get an incorrect save binlog "
+          dump = expid.value();
+          dump++;
+          if (recBinlogStat->minValidBinlogID > dump) {
+            LOG(ERROR) << "recycleBinlog get an incorrect dump binlog "
                           "id."
-                       << "save id:" << save
-                       << " firstBinlogId:" << recBinlogStat->firstBinlogId;
-            save = recBinlogStat->firstBinlogId;
+                       << "dump id:" << dump << " minValidBinlogID:"
+                       << recBinlogStat->minValidBinlogID;
+            dump = recBinlogStat->minValidBinlogID;
           }
         }
-        recBinlogStat->saveBinlogId = save;
+        recBinlogStat->dumpBinlogID = dump;
       } else {
         if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
           // void compiler ud-link about static constexpr
           // TODO(takenliu): fix the relative logic
-          recBinlogStat->firstBinlogId = Transaction::MIN_VALID_TXNID;
+          recBinlogStat->minValidBinlogID = Transaction::MIN_VALID_TXNID;
           recBinlogStat->timestamp = 0;
           recBinlogStat->lastFlushBinlogId = Transaction::TXNID_UNINITED;
-          recBinlogStat->saveBinlogId = recBinlogStat->firstBinlogId;
+          recBinlogStat->dumpBinlogID = recBinlogStat->minValidBinlogID;
         } else {
           return explog.status();
         }
       }
     }
     _logRecycStatus.emplace_back(std::move(recBinlogStat));
-    LOG(INFO) << "store:" << i
-              << ",firstBinlogId:" << _logRecycStatus.back()->firstBinlogId
+    LOG(INFO) << "store:" << i << ",minValidBinlogID:"
+              << _logRecycStatus.back()->minValidBinlogID
               << ",timestamp:" << _logRecycStatus.back()->timestamp
-              << ",saveBinlogId:" << _logRecycStatus.back()->saveBinlogId;
+              << ",dumpBinlogID:" << _logRecycStatus.back()->dumpBinlogID;
   }
 
   INVARIANT(_logRecycStatus.size() == _svr->getKVStoreCount());
@@ -411,7 +411,7 @@ Expected<uint32_t> ReplManager::maxDumpFileSeq(uint32_t storeId) {
 
 
 Status ReplManager::resetRecycleState(uint32_t storeId) {
-  // set _logRecycStatus::firstBinlogId with MinBinlog get from rocksdb
+  // set _logRecycStatus::minValidBinlogID with MinBinlog get from rocksdb
   LocalSessionGuard g(_svr.get());
   auto expdb = _svr->getSegmentMgr()->getDb(
     g.getSession(), storeId, mgl::LockMode::LOCK_NONE);
@@ -429,14 +429,15 @@ Status ReplManager::resetRecycleState(uint32_t storeId) {
   auto explog = RepllogCursorV2::getMinBinlog(txn);
   if (explog.ok()) {
     std::lock_guard<std::mutex> lk(_mutex);
-    _logRecycStatus[storeId]->firstBinlogId = explog.value().id;
+    _logRecycStatus[storeId]->minValidBinlogID = explog.value().id;
     /* NOTE(wayenchen) saveBinlog should be reset */
-    _logRecycStatus[storeId]->saveBinlogId = explog.value().id;
+    _logRecycStatus[storeId]->dumpBinlogID = explog.value().id;
     _logRecycStatus[storeId]->timestamp = explog.value().ts;
     _logRecycStatus[storeId]->lastFlushBinlogId = Transaction::TXNID_UNINITED;
     LOG(INFO) << "resetRecycleState"
-              << " firstBinlogId:" << _logRecycStatus[storeId]->firstBinlogId
-              << " saveBinlogId:" << _logRecycStatus[storeId]->saveBinlogId
+              << " minValidBinlogID:"
+              << _logRecycStatus[storeId]->minValidBinlogID
+              << " dumpBinlogID:" << _logRecycStatus[storeId]->dumpBinlogID
               << " timestamp:" << _logRecycStatus[storeId]->timestamp
               << " lastFlushBinlogId:"
               << _logRecycStatus[storeId]->lastFlushBinlogId;
@@ -445,13 +446,15 @@ Status ReplManager::resetRecycleState(uint32_t storeId) {
       // void compiler ud-link about static constexpr
       // TODO(takenliu): fix the relative logic
       std::lock_guard<std::mutex> lk(_mutex);
-      _logRecycStatus[storeId]->firstBinlogId = store->getHighestBinlogId() + 1;
-      _logRecycStatus[storeId]->saveBinlogId = store->getHighestBinlogId() + 1;
+      _logRecycStatus[storeId]->minValidBinlogID =
+        store->getHighestBinlogId() + 1;
+      _logRecycStatus[storeId]->dumpBinlogID = store->getHighestBinlogId() + 1;
       _logRecycStatus[storeId]->timestamp = 0;
       _logRecycStatus[storeId]->lastFlushBinlogId = Transaction::TXNID_UNINITED;
       LOG(INFO) << "resetRecycleState"
-                << " firstBinlogId:" << _logRecycStatus[storeId]->firstBinlogId
-                << " saveBinlogId:" << _logRecycStatus[storeId]->saveBinlogId
+                << " minValidBinlogID:"
+                << _logRecycStatus[storeId]->minValidBinlogID
+                << " dumpBinlogID:" << _logRecycStatus[storeId]->dumpBinlogID
                 << " timestamp:" << _logRecycStatus[storeId]->timestamp
                 << " lastFlushBinlogId:"
                 << _logRecycStatus[storeId]->lastFlushBinlogId;
@@ -599,16 +602,17 @@ void ReplManager::recycleFullPushStatus() {
     }
   }
 }
+
 void ReplManager::onFlush(uint32_t storeId, uint64_t binlogid) {
   std::lock_guard<std::mutex> lk(_mutex);
   auto& v = _logRecycStatus[storeId];
   LOG(INFO) << "ReplManager::onFlush before, storeId:" << storeId << " "
             << v->toString();
-  v->firstBinlogId = binlogid;
-  v->saveBinlogId = binlogid;
+  v->minValidBinlogID = binlogid;
+  v->dumpBinlogID = binlogid;
   v->lastFlushBinlogId = binlogid;
-  INVARIANT_D(v->lastFlushBinlogId >= v->firstBinlogId);
-  INVARIANT_D(v->lastFlushBinlogId >= v->saveBinlogId);
+  INVARIANT_D(v->lastFlushBinlogId >= v->minValidBinlogID);
+  INVARIANT_D(v->lastFlushBinlogId >= v->dumpBinlogID);
   LOG(INFO) << "ReplManager::onFlush, storeId:" << storeId << " "
             << v->toString();
 }
@@ -706,6 +710,15 @@ void ReplManager::clearPushStatus() {
 #endif
 }
 
+std::string ReplManager::getRecycleStatus(uint32_t storeId) {
+  std::stringstream ss;
+  std::lock_guard<std::mutex> lk(_mutex);
+  ss << "minValidBinlogID: " << _logRecycStatus[storeId]->minValidBinlogID
+     << " dumpBinlogID: " << _logRecycStatus[storeId]->dumpBinlogID
+     << " ts:" << _logRecycStatus[storeId]->timestamp;
+  return ss.str();
+}
+
 // check if fullsync has done
 uint64_t ReplManager::getfullsyncSuccTime() {
   uint64_t maxSucc = 0;
@@ -728,11 +741,11 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
 
   uint64_t start = Transaction::MIN_VALID_TXNID;
   uint64_t end = Transaction::MIN_VALID_TXNID;
-  uint64_t save = Transaction::MIN_VALID_TXNID;
+  uint64_t dump = Transaction::MIN_VALID_TXNID;
   uint32_t fileSeq = 0;
-  bool saveLogs;
+  bool dumpLogs;
 
-  auto guard = MakeGuard([this, &nextSched, &start, &save, storeId] {
+  auto guard = MakeGuard([this, &nextSched, &start, &dump, storeId] {
     std::lock_guard<std::mutex> lk(_mutex);
     auto& v = _logRecycStatus[storeId];
     INVARIANT_D(v->isRunning);
@@ -742,12 +755,12 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
       v->nextSchedTime = nextSched;
     }
     if (start != Transaction::MIN_VALID_TXNID) {
-      v->firstBinlogId = start;
+      v->minValidBinlogID = start;
     }
-    if (save != Transaction::MIN_VALID_TXNID) {
-      v->saveBinlogId = save;
+    if (dump != Transaction::MIN_VALID_TXNID) {
+      v->dumpBinlogID = dump;
     }
-    // DLOG(INFO) << "_logRecycStatus[" << storeId << "].firstBinlogId
+    // DLOG(INFO) << "_logRecycStatus[" << storeId << "].minValidBinlogID
     // reset:" << start;
 
     _recyclCv.notify_all();
@@ -781,15 +794,15 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
   {
     std::unique_lock<std::mutex> lk(_mutex);
 
-    start = _logRecycStatus[storeId]->firstBinlogId;
-    save = _logRecycStatus[storeId]->saveBinlogId;
+    start = _logRecycStatus[storeId]->minValidBinlogID;
+    dump = _logRecycStatus[storeId]->dumpBinlogID;
     fileSeq = _logRecycStatus[storeId]->fileSeq;
 
-    saveLogs = _syncMeta[storeId]->syncFromHost != "";  // REPLICATE_ONLY
+    dumpLogs = _syncMeta[storeId]->syncFromHost != "";  // REPLICATE_ONLY
     // single node
     if (_syncMeta[storeId]->syncFromHost == "" &&
         _pushStatus[storeId].empty()) {
-      saveLogs = true;
+      dumpLogs = true;
     }
     for (auto& mpov : _fullPushStatus[storeId]) {
       end = std::min(end, mpov.second->binlogPos);
@@ -832,9 +845,9 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     std::ofstream* fs = nullptr;
     int64_t maxWriteLen = 0;
     if (!_svr->getParams()->binlogSaveLogs) {
-      saveLogs = false;
+      dumpLogs = false;
     }
-    if (saveLogs) {
+    if (dumpLogs) {
       fs = getCurBinlogFs(storeId);
       if (!fs) {
         LOG(ERROR) << "getCurBinlogFs() store;" << storeId << "failed:";
@@ -847,7 +860,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     DLOG(INFO) << "store:" << storeId << " "
                << _logRecycStatus[storeId]->toString();
     auto s = kvstore->truncateBinlogV2(
-      start, end, save, fs, maxWriteLen, tailSlave);
+      start, end, dump, fs, maxWriteLen, tailSlave);
     if (!s.ok()) {
       LOG(ERROR) << "kvstore->truncateBinlogV2 store:" << storeId
                  << "failed:" << s.status().toString();
@@ -858,7 +871,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
       storeId, s.value().written, s.value().timestamp, changeNewFile);
     // TODO(vinchen): stat for binlog deleted
     newStart = s.value().newStart;
-    save = s.value().newSave;
+    dump = s.value().newDump;
   }
 
   // DLOG(INFO) << "storeid:" << storeId << " truncate binlog from:" << start
@@ -872,8 +885,8 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
 // TODO(takenliu):
 //  1. if the last file is empty, it will return error
 //  2. shouldn't use the fileSeq get from maxDumpFileSeq()
-//  3. maxDumpFileSeq() getSaveBinlogId() has too many same codes
-Expected<uint64_t> ReplManager::getSaveBinlogId(uint32_t storeId,
+//  3. maxDumpFileSeq() getDumpBinlogID() has too many same codes
+Expected<uint64_t> ReplManager::getDumpBinlogID(uint32_t storeId,
                                                 uint32_t fileSeq) {
   if (fileSeq == 0) {
     return {ErrorCodes::ERR_NOTFOUND, ""};
@@ -1393,11 +1406,11 @@ std::string ReplManager::getRecycleBinlogStr(Session* sess) const {
 
     std::lock_guard<std::mutex> lk(_mutex);
     ss << "rocksdb" + kvstore->dbId() << ":"
-       << "min=" << _logRecycStatus[i]->firstBinlogId
-       << ",save=" << _logRecycStatus[i]->saveBinlogId
+       << "min=" << _logRecycStatus[i]->minValidBinlogID
+       << ",save=" << _logRecycStatus[i]->dumpBinlogID
        << ",BLWM=" << kvstore->getHighestBinlogId()
        << ",BHWM=" << kvstore->getNextBinlogSeq() << ",remain="
-       << kvstore->getHighestBinlogId() - _logRecycStatus[i]->firstBinlogId
+       << kvstore->getHighestBinlogId() - _logRecycStatus[i]->minValidBinlogID
        << "\r\n";
   }
   return ss.str();
@@ -1769,7 +1782,7 @@ void ReplManager::appendJSONStat(
     w.StartObject();
 
     w.Key("first_binlog");
-    w.Uint64(_logRecycStatus[i]->firstBinlogId);
+    w.Uint64(_logRecycStatus[i]->minValidBinlogID);
 
     w.Key("timestamp");
     w.Uint64(_logRecycStatus[i]->timestamp);

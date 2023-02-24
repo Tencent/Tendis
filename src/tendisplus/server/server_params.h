@@ -507,6 +507,7 @@ class ServerParams {
   uint32_t fullReceiveThreadnum = 5;
   uint32_t logRecycleThreadnum = 5;
   uint32_t truncateBinlogIntervalMs = 1000;
+  uint32_t truncateBinlogNum = 10000;
   uint32_t binlogFileSizeMB = 64;
   uint32_t binlogFileSecs = 20 * 60;
 

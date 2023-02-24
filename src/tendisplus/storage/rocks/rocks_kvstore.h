@@ -51,13 +51,8 @@ class RocksTxn : public Transaction {
   RocksTxn(const RocksTxn&) = delete;
   RocksTxn(RocksTxn&&) = delete;
   virtual ~RocksTxn();
-#ifdef BINLOG_V1
-  std::unique_ptr<BinlogCursor> createBinlogCursor(
-    uint64_t begin, bool ignoreReadBarrier) final;
-#else
   std::unique_ptr<RepllogCursorV2> createRepllogCursorV2(
     uint64_t begin, bool ignoreReadBarrier) final;
-#endif
   std::unique_ptr<TTLIndexCursor> createTTLIndexCursor(uint64_t until) final;
   std::unique_ptr<SlotCursor> createSlotCursor(uint32_t slot) final;
   std::unique_ptr<SlotsCursor> createSlotsCursor(uint32_t start,
@@ -82,10 +77,6 @@ class RocksTxn : public Transaction {
   Status addDeleteFilesInRangeBinlog(const std::string& begin,
                                      const std::string& end,
                                      bool include_end = false) final;
-#ifdef BINLOG_V1
-  Status applyBinlog(const std::list<ReplLog>& txnLog) final;
-  Status truncateBinlog(const std::list<ReplLog>& txnLog) final;
-#else
   Status flushall() final;
   Status migrate(const std::string& logKey, const std::string& logValue) final;
 
@@ -102,7 +93,6 @@ class RocksTxn : public Transaction {
     return _chunkId;
   }
   void setChunkId(uint32_t chunkId) final;
-#endif
   uint64_t getTxnId() const final;
   bool isReplOnly() const {
     return _replOnly;
@@ -153,12 +143,7 @@ class RocksTxn : public Transaction {
   // NOTE(deyukong): not owned by me
   RocksKVStore* _store;
 
-#ifdef BINLOG_V1
-  // TODO(deyukong): it's double buffered in rocks, optimize
-  std::vector<ReplLog> _binlogs;
-#else
   std::vector<ReplLogValueEntryV2> _replLogValues;
-#endif
 
   // if rollback/commit has been explicitly called
   bool _done;
@@ -329,25 +314,18 @@ class RocksKVStore : public KVStore {
   Status saveMinBinlogId(uint64_t id, uint64_t ts);
   Status handleRocksdbError(rocksdb::Status s) const;
 
-#ifdef BINLOG_V1
-  Status applyBinlog(const std::list<ReplLog>& txnLog, Transaction* txn) final;
-  Expected<std::pair<uint64_t, std::list<ReplLog>>> getTruncateLog(
-    uint64_t start, uint64_t end, Transaction* txn) final;
-  Status truncateBinlog(const std::list<ReplLog>&, Transaction* txn) final;
-#else
   Status assignBinlogIdIfNeeded(Transaction* txn) final;
   void setNextBinlogSeq(uint64_t binlogId, Transaction* txn) final;
   uint64_t getNextBinlogSeq() const final;
   Expected<TruncateBinlogResult> truncateBinlogV2(uint64_t start,
                                                   uint64_t end,
-                                                  uint64_t save,
+                                                  uint64_t dump,
                                                   std::ofstream* fs,
                                                   int64_t maxWritelen,
                                                   bool tailSlave) final;
-  int64_t saveBinlogV2(std::ofstream* fs, const ReplLogRawV2& log);
+  int64_t dumpBinlogV2(std::ofstream* fs, const ReplLogRawV2& log);
   Expected<uint64_t> getBinlogCnt(Transaction* txn) const final;
   Expected<bool> validateAllBinlog(Transaction* txn) const final;
-#endif
   Status setLogObserver(std::shared_ptr<BinlogObserver>) final;
   // RocksDB::DestroyDB
   Status clear() final;
@@ -526,7 +504,6 @@ class RocksKVStore : public KVStore {
 
   uint64_t _nextTxnSeq;
 // Protected by _mutex
-#ifdef BINLOG_V1
   // NOTE(deyukong): sorted data-structure is required here.
   // we rely on the data order to maintain active txns' watermark.
   // txnid -> committed|uncommited
@@ -538,8 +515,6 @@ class RocksKVStore : public KVStore {
   // changes from uncommitted to committed, we have a chance to
   // remove all the continous committed txnIds follows it, and
   // push _highestVisible forward.
-  std::map<uint64_t, std::pair<bool, uint64_t>> _aliveTxns;
-#else
   uint64_t _nextBinlogSeq;  // high water level for binlog id
   // <txnId, <commit_or_not, binlogId>>
   std::unordered_map<uint64_t, std::pair<bool, uint64_t>> _aliveTxns;
@@ -550,7 +525,6 @@ class RocksKVStore : public KVStore {
   // binlogIds follows it, and push _highestVisible forward.
   // <binlogId, <commit_or_not, txnId>>
   std::map<uint64_t, std::pair<bool, uint64_t>> _aliveBinlogs;
-#endif
 
   // NOTE(deyukong): _highestVisible is the largest committed binlog
   // before _aliveTxns.begin()

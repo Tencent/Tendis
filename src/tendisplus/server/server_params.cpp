@@ -400,7 +400,8 @@ ServerParams::ServerParams() {
                      10,
                      5000,
                      true);
-  REGISTER_VARS_NOUSE("truncateBinlogNum");
+  REGISTER_VARS_SAME_NAME(
+    truncateBinlogNum, nullptr, nullptr, 1, INT_MAX, true);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(binlogFileSizeMB);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(binlogFileSecs);
   REGISTER_VARS_NOUSE("binlogDelRange");

@@ -244,7 +244,7 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
       return false;
     }
     _logRecycStatus[storeId]->isRunning = true;
-    firstPos = _logRecycStatus[storeId]->firstBinlogId;
+    firstPos = _logRecycStatus[storeId]->minValidBinlogID;
     lastFlushBinlogId = _logRecycStatus[storeId]->lastFlushBinlogId;
   }
 
@@ -306,14 +306,14 @@ bool ReplManager::registerIncrSyncStatus(uint32_t storeId,
     std::shared_ptr<BlockingTcpClient> client) {
   std::lock_guard<std::mutex> lk(_mutex);
   // takenliu: recycleBinlog use firstPos, and incrSync use binlogPos+1
-  if (_logRecycStatus[storeId]->firstBinlogId > (binlogPos + 1) &&
-      _logRecycStatus[storeId]->firstBinlogId !=
+  if (_logRecycStatus[storeId]->minValidBinlogID > (binlogPos + 1) &&
+      _logRecycStatus[storeId]->minValidBinlogID !=
         _logRecycStatus[storeId]->lastFlushBinlogId) {
     std::stringstream ss;
     ss << "-ERR invalid binlogPos,storeId:" << storeId
-       << ",master firstPos:" << _logRecycStatus[storeId]->firstBinlogId
-       << ",slave binlogPos:" << binlogPos << ",lastFlushBinlogId:"
-       << _logRecycStatus[storeId]->lastFlushBinlogId;
+       << ",master firstPos:" << _logRecycStatus[storeId]->minValidBinlogID
+       << ",slave binlogPos:" << binlogPos
+       << ",lastFlushBinlogId:" << _logRecycStatus[storeId]->lastFlushBinlogId;
     LOG(ERROR) << ss.str();
     client->writeLine(ss.str());
     return false;

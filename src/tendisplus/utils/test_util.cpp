@@ -87,11 +87,9 @@ bool setupEnv() {
   std::error_code ec;
 
   filesystem::remove_all("./log", ec);
-  // EXPECT_EQ(ec.value(), 0);
   EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
 
   filesystem::remove_all("./db", ec);
-  // EXPECT_EQ(ec.value(), 0);
   EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
 
   EXPECT_TRUE(filesystem::create_directory("./db"));
@@ -104,6 +102,7 @@ void destroyEnv() {
   std::error_code ec;
   filesystem::remove_all("./log", ec);
   filesystem::remove_all("./db", ec);
+  filesystem::remove_all("./dump", ec);
 }
 
 bool setupEnv(const std::string& v) {
