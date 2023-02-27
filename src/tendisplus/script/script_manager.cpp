@@ -119,6 +119,7 @@ Expected<std::string> ScriptManager::flush(Session* sess) {
   auto s = kvstore->deleteRange(min_sha_rk.prefixChunkid(),
                                 max_sha_rk.prefixChunkid());
   RET_IF_ERR(s);
+  LOG(INFO) << "script flush done.";
 
   // stop and reset all LuaState to clear script cache in lua vm.
   _mapLuaState.clear();

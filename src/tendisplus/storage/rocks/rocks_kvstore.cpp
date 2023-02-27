@@ -35,7 +35,6 @@
 
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/storage/rocks/rocks_kvttlcompactfilter.h"
-#include "tendisplus/utils/base64.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/invariant.h"
@@ -1602,7 +1601,7 @@ TxnMode RocksKVStore::getTxnMode() const {
 }
 
 // keylen(4) + key + vallen(4) + value
-int64_t RocksKVStore::saveBinlogV2(std::ofstream* fs, const ReplLogRawV2& log) {
+int64_t RocksKVStore::dumpBinlogV2(std::ofstream* fs, const ReplLogRawV2& log) {
   uint64_t written = 0;
   INVARIANT_D(fs != nullptr);
 
@@ -1684,7 +1683,7 @@ Expected<bool> RocksKVStore::deleteBinlog(uint64_t start) {
 Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
   uint64_t start,
   uint64_t end,
-  uint64_t save,
+  uint64_t dump,
   std::ofstream* fs,
   int64_t maxWritelen,
   bool tailSlave) {
@@ -1702,98 +1701,89 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     INVARIANT_COMPARE_D(minBinlogid.value(), >=, start);
   }
 #endif
-  INVARIANT_COMPARE_D(start, <=, save);
-  if (start > save) {
-    LOG(WARNING) << "truncateBinlogV2 start:" << start << " > save:" << save
-                 << ", set save=start";
-    save = start;
+  INVARIANT_COMPARE_D(start, <=, dump);
+  if (start > dump) {
+    LOG(WARNING) << "truncateBinlogV2 start:" << start << " > dump:" << dump
+                 << ", set dump=start";
+    dump = start;
   }
 
-  TruncateBinlogResult result{start, save, 0, 0, 0, 0};
+  TruncateBinlogResult result;
   uint64_t cur_ts = msSinceEpoch();
   uint64_t minKeepLogMs = static_cast<uint64_t>(_cfg->minBinlogKeepSec) * 1000;
   bool shouldCheckBinlogTime = minKeepLogMs != 0;
   Status s{ErrorCodes::ERR_OK, ""};
+  uint64_t newStart = start;
+  uint64_t newEnd = end;
+  uint64_t newDump = dump;
+  uint64_t written = 0;
+  uint64_t ts = 0;
+  int err = 0;
 
-  if (fs == nullptr) {
-    auto cursor = txn->createRepllogCursorV2(end);
-    auto explog = cursor->next();
-    RET_IF_ERR_EXPECTED(explog);
+  if (fs != nullptr) {
+    auto cursor = txn->createRepllogCursorV2(dump);
+    while (true) {
+      auto explog = cursor->next();
+      if (!explog.ok() || explog.value().getBinlogId() > end ||
+          (!tailSlave && shouldCheckBinlogTime &&
+           explog.value().getTimestamp() >= cur_ts - minKeepLogMs) ||
+          int64_t(written) >= maxWritelen) {
+        break;
+      }
+      // dump binlog
+      int len = dumpBinlogV2(fs, explog.value());
+      if (len < 0) {
+        LOG(ERROR) << "dumpBinlogV2 failed, break.";
+        // NOTE(takenliu): maybe write part of explog, so the binlog file's last
+        // binlog will be error. then we change a new binlog file.
+        err = -1;
+        break;
+      }
+      written += len;
+      newDump = explog.value().getBinlogId() + 1;
+    }
+
+    result.err = err;
+    result.written = written;
+    result.newDump = newDump;
+    newEnd = newDump - 1;
+  }
+
+  auto nextTry = start;
+  while (true) {
+    nextTry += _cfg->truncateBinlogNum;
+    if (nextTry - 1 > newEnd) {
+      break;
+    }
+    auto explog = txn->createRepllogCursorV2(nextTry - 1)->next();
+    if (!explog.ok()) {
+      break;
+    }
     // NOTE(takenliu) binlogid maybe has lag, so we need check again.
-    if (explog.value().getBinlogId() > end) {
-      return result;
+    if (explog.value().getBinlogId() > newEnd ||
+        (shouldCheckBinlogTime &&
+         explog.value().getTimestamp() >= cur_ts - minKeepLogMs)) {
+      break;
     }
-    if (shouldCheckBinlogTime &&
-        explog.value().getTimestamp() >= cur_ts - minKeepLogMs) {
-      return result;
-    }
-    result.timestamp = explog.value().getTimestamp();
-    DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId() << " delete:" << start
-               << " to " << explog.value().getBinlogId()
-               << " time:" << (cur_ts - result.timestamp) / 1000 << " sec ago.";
+    newStart = nextTry;
+    ts = explog.value().getTimestamp();
+  }
+  result.newStart = newStart;
+  result.timestamp = ts;
+  if (fs == nullptr) {
+    result.newDump = result.newStart;
+  }
 
-    INVARIANT_D(result.timestamp != 0);
-    auto newMinbinlogID = end + 1;
-    s = saveMinBinlogId(newMinbinlogID, result.timestamp);
-    RET_IF_ERR(s);
-    result.deleten = newMinbinlogID - start;
-    result.newStart = newMinbinlogID;
-    result.newSave = newMinbinlogID;
-    s = deleteRangeBinlog(0, newMinbinlogID);
-    if (!s.ok()) {
-      LOG(ERROR) << "deleteRangeBinlog error:" << s.toString();
-    }
+  if (start == newStart) {
     return result;
   }
 
-  // otherwise check binlog one by one, it will be much slower
-  auto cursor = txn->createRepllogCursorV2(save);
-  while (true) {
-    auto explog = cursor->next();
-    if (!explog.ok()) {
-      if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
-        break;
-      }
-      break;
-    }
-
-    if (explog.value().getBinlogId() > end ||
-        (!tailSlave && shouldCheckBinlogTime &&
-         explog.value().getTimestamp() >= cur_ts - minKeepLogMs) ||
-        (int64_t)result.written >= maxWritelen) {
-      break;
-    }
-    // save binlog
-    int len = saveBinlogV2(fs, explog.value());
-    if (len < 0) {
-      LOG(ERROR) << "saveBinlogV2 failed, break.";
-      // NOTE(takenliu): maybe write part of explog, so the binlog file's last
-      // binlog will be error. then we change a new binlog file.
-      result.err = -1;
-      break;
-    }
-    result.written += len;
-    result.newSave = explog.value().getBinlogId() + 1;
-    result.timestamp = explog.value().getTimestamp();
-  }
-
-  if (result.newSave > start) {
-    DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId() << " delete:" << start
-               << " to " << (result.newSave - 1)
-               << " time:" << (cur_ts - result.timestamp) / 1000 << " sec ago.";
-
-    INVARIANT_D(result.timestamp != 0);
-    s = saveMinBinlogId(result.newSave, result.timestamp);
-    if (!s.ok()) {
-      LOG(ERROR) << "saveMinBinlogID failed:" << s.toString();
-      return result;
-    }
-    result.deleten = result.newSave - start;
-    result.newStart = result.newSave;
-    s = deleteRangeBinlog(0, result.newSave);
-    if (!s.ok()) {
-      LOG(ERROR) << "deleteRangeBinlog error:" << s.toString();
-    }
+  INVARIANT_D(ts != 0);
+  s = saveMinBinlogId(newStart, ts);
+  RET_IF_ERR(s);
+  s = deleteRangeBinlog(0, newStart);
+  if (!s.ok()) {
+    LOG(ERROR) << "deleteRangeBinlog error:" << s.toString();
   }
   return result;
 }
@@ -1806,13 +1796,13 @@ Expected<uint64_t> RocksKVStore::getBinlogCnt(Transaction* txn) const {
     if (!v.ok()) {
       if (v.status().code() == ErrorCodes::ERR_EXHAUST)
         break;
-
       return v.status();
     }
     cnt += 1;
   }
   return cnt;
 }
+
 Expected<bool> RocksKVStore::validateAllBinlog(Transaction* txn) const {
   auto bcursor = txn->createRepllogCursorV2(Transaction::MIN_VALID_TXNID, true);
   while (true) {
@@ -1860,18 +1850,6 @@ Status RocksKVStore::compactRange(ColumnFamilyNumber cf,
   if (end != nullptr) {
     send = new rocksdb::Slice(*end);
   }
-  std::string s;
-  if (begin != nullptr) {
-    s.append("compactRange begin(base64): ");
-    s += Base64::Encode((const unsigned char*)begin->data(), begin->size());
-  }
-  if (end != nullptr) {
-    s.append(" end(base64): ");
-    s += Base64::Encode((const unsigned char*)end->data(), end->size());
-  }
-  if (!s.empty()) {
-    LOG(WARNING) << s;
-  }
   rocksdb::Status status;
   if (cf == ColumnFamilyNumber::ColumnFamily_Default) {
     status = db->CompactRange(compactionOptions, sbegin, send);
@@ -1883,7 +1861,6 @@ Status RocksKVStore::compactRange(ColumnFamilyNumber cf,
     LOG(ERROR) << "compactRange failed:" << status.ToString();
     return handleRocksdbError(status);
   }
-  LOG(WARNING) << "compactRange done.";
   return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -2738,18 +2715,11 @@ Status RocksKVStore::deleteRangeWithoutBinlog(
   rocksdb::Slice sBegin(begin);
   rocksdb::Slice sEnd(end);
   rocksdb::DB* db = getBaseDB();
-  std::string s;
-  s.append("deleteRange begin(base64): ");
-  s += Base64::Encode((const unsigned char*)begin.data(), begin.size());
-  s.append(" end(base64): ");
-  s += Base64::Encode((const unsigned char*)end.data(), end.size());
-  LOG(WARNING) << s;
   auto status = db->DeleteRange(writeOptions(), column_family, sBegin, sEnd);
   if (!status.ok()) {
     LOG(ERROR) << "deleteRange failed:" << status.ToString();
     return handleRocksdbError(status);
   }
-  LOG(WARNING) << "deleteRange done.";
   return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -2810,19 +2780,12 @@ Status RocksKVStore::deleteFilesInRangeWithoutBinlog(
   rocksdb::Slice sBegin(begin);
   rocksdb::Slice sEnd(end);
   rocksdb::DB* db = getBaseDB();
-  std::string s;
-  s.append("deleteFilesInRange begin(base64): ");
-  s += Base64::Encode((const unsigned char*)begin.data(), begin.size());
-  s.append(" end(base64): ");
-  s += Base64::Encode((const unsigned char*)end.data(), end.size());
-  LOG(WARNING) << s;
   auto status =
     rocksdb::DeleteFilesInRange(db, column_family, &sBegin, &sEnd, include_end);
   if (!status.ok()) {
     LOG(ERROR) << "deleteFilesInRange failed:" << status.ToString();
     return handleRocksdbError(status);
   }
-  LOG(WARNING) << "deleteFilesInRange done.";
   return {ErrorCodes::ERR_OK, ""};
 }
 

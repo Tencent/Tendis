@@ -1080,6 +1080,7 @@ TEST(RocksKVStore, PesTruncateBinlog) {
   uint64_t keepBinlog = 1;
   cfg->maxBinlogKeepNum = keepBinlog;
   cfg->minBinlogKeepSec = 0;
+  cfg->truncateBinlogNum = 1;
   auto kvstore = std::make_unique<RocksKVStore>("0",
                                                 cfg,
                                                 blockCache,
@@ -1105,7 +1106,6 @@ TEST(RocksKVStore, PesTruncateBinlog) {
     Expected<uint64_t> exptCommitId = txn1->commit();
     EXPECT_EQ(exptCommitId.ok(), true);
   }
-
   {
     auto eTxn1 = kvstore->createTransaction(sg.getSession());
     EXPECT_EQ(eTxn1.ok(), true);
@@ -1142,20 +1142,16 @@ TEST(RocksKVStore, PesTruncateBinlog) {
   {
     uint64_t ts = 0;
     uint64_t written = 0;
-    uint64_t deleten = 0;
     // TODO(takenliu): save binlog
     auto s = kvstore->truncateBinlogV2(
       firstBinlog, firstBinlog, firstBinlog, nullptr, 0, false);
     EXPECT_TRUE(s.ok());
     ts = s.value().timestamp;
     written = s.value().written;
-    deleten = s.value().deleten;
     EXPECT_GT(ts, std::numeric_limits<uint32_t>::max());
     EXPECT_EQ(written, 0);
     EXPECT_GT(s.value().newStart, firstBinlog);
     EXPECT_EQ(s.value().newStart, 2U);
-    EXPECT_EQ(deleten, s.value().newStart - firstBinlog);
-    firstBinlog = s.value().newStart;
     auto eTxn1 = kvstore->createTransaction(sg.getSession());
     EXPECT_EQ(eTxn1.ok(), true);
     auto txn1 = std::move(eTxn1.value());
@@ -1172,9 +1168,6 @@ TEST(RocksKVStore, PesTruncateBinlog) {
     auto expMin1 = RepllogCursorV2::getMinBinlogId(txn.get());
     EXPECT_TRUE(expMin1.ok());
     firstBinlog = expMin1.value();
-
-    Expected<uint64_t> exptCommitId = txn->commit();
-    EXPECT_EQ(exptCommitId.ok(), true);
 
     uint32_t txnCnt = 0;
     for (auto range : {10, 100, 1000}) {
@@ -1226,7 +1219,6 @@ TEST(RocksKVStore, PesTruncateBinlog) {
 
     uint64_t ts = 0;
     uint64_t written = 0;
-    uint64_t deleten = 0;
 
     uint64_t lastFirstBinlog = 0;
 
@@ -1240,18 +1232,14 @@ TEST(RocksKVStore, PesTruncateBinlog) {
                                          0,
                                          false);
       EXPECT_TRUE(s.ok());
-      if (!s.value().deleten) {
-        EXPECT_EQ(s.value().newStart, firstBinlog);
-        firstBinlog = s.value().newStart;
+      if (s.value().newStart == firstBinlog) {
         break;
       }
       ts = s.value().timestamp;
       written = s.value().written;
-      deleten = s.value().deleten;
       EXPECT_GT(ts, std::numeric_limits<uint32_t>::max());
       EXPECT_EQ(written, 0);
       EXPECT_GT(s.value().newStart, firstBinlog);
-      EXPECT_EQ(deleten, s.value().newStart - firstBinlog);
       firstBinlog = s.value().newStart;
     }
     {

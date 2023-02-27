@@ -25,6 +25,7 @@ func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstoreco
     cfgArgs["kvstorecount"] = strconv.Itoa(kvstorecount)
     cfgArgs["requirepass"] = "tendis+test"
     cfgArgs["masterauth"] = "tendis+test"
+    cfgArgs["truncateBinlogNum"] = "1"
 
     m1_port = util.FindAvailablePort(m1_port)
     log.Infof("FindAvailablePort:%d", m1_port)

@@ -88,7 +88,7 @@ struct MPovFullPushStatus {
 struct RecycleBinlogStatus {
   bool isRunning;
   SCLOCK::time_point nextSchedTime;
-  uint64_t firstBinlogId;
+  uint64_t minValidBinlogID;
   uint64_t lastFlushBinlogId;
   uint32_t fileSeq;
   // the timestamp of last binlog in prev file or the first binlog in cur file
@@ -97,10 +97,11 @@ struct RecycleBinlogStatus {
   uint64_t fileSize;
   std::unique_ptr<std::ofstream> fs;
   bool needNewFile;
-  uint64_t saveBinlogId;
+  uint64_t dumpBinlogID;
   std::string toString() const {
     std::stringstream ss;
-    ss << "firstBinlogId:" << firstBinlogId << ",saveBinlogId:" << saveBinlogId
+    ss << "minValidBinlogID:" << minValidBinlogID
+       << ",dumpBinlogID:" << dumpBinlogID
        << ",lastFlushBinlogId:" << lastFlushBinlogId << ",fileSeq:" << fileSeq
        << ",timestamp:" << timestamp;
     return ss.str();
@@ -193,19 +194,10 @@ class ReplManager {
                               bool checkEmpty = true);
   Status replicationUnSetMaster();
   Status replicationUnSetMaster(uint32_t storeid);
-#ifdef BINLOG_V1
-  Status applyBinlogs(uint32_t storeId,
-                      uint64_t sessionId,
-                      const std::map<uint64_t, std::list<ReplLog>>& binlogs);
-  Status applySingleTxn(uint32_t storeId,
-                        uint64_t txnId,
-                        const std::list<ReplLog>& ops);
-#else
   Status applyRepllogV2(Session* sess,
                         uint32_t storeId,
                         const std::string& logKey,
                         const std::string& logValue);
-#endif
   bool flushCurBinlogFs(uint32_t storeId);
   void appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer>&) const;
   void getReplInfo(std::stringstream& ss) const;
@@ -219,7 +211,7 @@ class ReplManager {
   bool isSlaveOfSomeone();
   bool isSlaveFullSyncDone();
   Status resetRecycleState(uint32_t storeId);
-  Expected<uint64_t> getSaveBinlogId(uint32_t storeId, uint32_t fileSeq);
+  Expected<uint64_t> getDumpBinlogID(uint32_t storeId, uint32_t fileSeq);
 
   void fullPusherResize(size_t size);
   void fullReceiverResize(size_t size);
@@ -243,10 +235,8 @@ class ReplManager {
   uint64_t replicationGetOffset() const;
   uint64_t replicationGetMaxBinlogIdFromRocks() const;
   uint64_t replicationGetMaxBinlogId() const;
-  StoreMeta& getSyncMeta() const {
-    return *_syncMeta[0];
-  }
   uint64_t getfullsyncSuccTime();
+  std::string getRecycleStatus(uint32_t storeId);
 
  protected:
   void controlRoutine();
@@ -280,18 +270,10 @@ class ReplManager {
   void slaveChkSyncStatus(const StoreMeta&);
   std::ofstream* getCurBinlogFs(uint32_t storeid);
 
-#ifdef BINLOG_V1
-  // binlogPos: the greatest id that has been applied
-  Expected<uint64_t> masterSendBinlog(BlockingTcpClient*,
-                                      uint32_t storeId,
-                                      uint32_t dstStoreId,
-                                      uint64_t binlogPos);
-#else
   void updateCurBinlogFs(uint32_t storeId,
                          uint64_t written,
                          uint64_t ts,
                          bool changeNewFile = false);
-#endif
   bool newBinlogFs(uint32_t storeId);
 
   void masterPushRoutine(uint32_t storeId, uint64_t clientId);
@@ -306,9 +288,6 @@ class ReplManager {
   void changeReplStateInLock(const StoreMeta&, bool persist);
 
   Expected<uint32_t> maxDumpFileSeq(uint32_t storeId);
-#ifdef BINLOG_V1
-  Status saveBinlogs(uint32_t storeId, const std::list<ReplLog>& logs);
-#endif
   void getReplInfoSimple(std::stringstream& ss) const;
   void getReplInfoDetail(std::stringstream& ss) const;
   void recycleFullPushStatus();
