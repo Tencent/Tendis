@@ -2552,7 +2552,7 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
 
   sess.setArgs({"CONFIG", "SET", "logRecycleThreadnum", "1"});
   expect = Command::runSessionCmd(&sess);
-  EXPECT_EQ(svr->getParams()->fullReceiveThreadnum, 1);
+  EXPECT_EQ(svr->getParams()->logRecycleThreadnum, 1);
 
   sess.setArgs({"CONFIG", "SET", "migrateSenderThreadnum", "1"});
   expect = Command::runSessionCmd(&sess);

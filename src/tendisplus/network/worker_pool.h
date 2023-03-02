@@ -90,7 +90,7 @@ class WorkerPool {
   void resizeIncrease(size_t size);
   void resizeDecrease(size_t size);
   mutable std::mutex _mutex;
-  std::atomic<bool> _isRuning;
+  std::atomic<bool> _isRunning;
   std::unique_ptr<asio::io_context> _ioCtx;
   const std::string _name;
   std::shared_ptr<PoolMatrix> _matrix;

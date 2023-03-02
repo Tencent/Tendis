@@ -49,7 +49,7 @@ PoolMatrix PoolMatrix::operator-(const PoolMatrix& right) {
 
 WorkerPool::WorkerPool(const std::string& name,
                        std::shared_ptr<PoolMatrix> poolMatrix)
-  : _isRuning(false),
+  : _isRunning(false),
     _ioCtx(std::make_unique<asio::io_context>()),
     _name(name),
     _matrix(poolMatrix),
@@ -95,13 +95,14 @@ void WorkerPool::consumeTasks(size_t idx) {
                << "not found in threads_list";
   });
 
-  while (_isRuning.load(std::memory_order_relaxed)) {
+  while (_isRunning.load(std::memory_order_relaxed)) {
     DLOG(INFO) << "WorkerPool consumeTasks work:" << idx;
     asio::io_context::work work(*_ioCtx);
     try {
       _ioCtx->run();
     } catch (const IOCtxException&) {
       auto id = std::this_thread::get_id();
+      std::lock_guard<std::mutex> lk(_mutex);
       auto iter = _threads.find(id);
       if (iter != _threads.cend()) {
         // NOTE: if in need, we can log exiting thread info with its
@@ -120,7 +121,7 @@ void WorkerPool::consumeTasks(size_t idx) {
 
 void WorkerPool::stop() {
   LOG(INFO) << "workerPool begins to stop...";
-  _isRuning.store(false, std::memory_order_relaxed);
+  _isRunning.store(false, std::memory_order_relaxed);
   _ioCtx->stop();
   for (auto& t : _threads) {
     t.second.join();
@@ -132,7 +133,7 @@ Status WorkerPool::startup(size_t poolsize) {
   std::lock_guard<std::mutex> lk(_mutex);
 
   // worker threads rely on _isRunning flag
-  _isRuning.store(true, std::memory_order_relaxed);
+  _isRunning.store(true, std::memory_order_relaxed);
 
   for (size_t i = 0; i < poolsize; ++i) {
     std::thread thd = std::thread([this, i]() {
@@ -187,16 +188,16 @@ void WorkerPool::resize(size_t poolSize) {
  */
 void WorkerPool::resizeIncrease(size_t size) {
   for (size_t i = 0; i < size; ++i) {
-    std::thread thd = std::thread([this]() {
-      std::string threadName = _name + "_" +
-        std::to_string(_idGenerator.load(std::memory_order_relaxed));
+    auto threadID =
+      _idGenerator.fetch_add(1, std::memory_order::memory_order_relaxed);
+    std::thread thd = std::thread([this, threadID]() {
+      std::string threadName = _name + "_" + std::to_string(threadID);
       threadName.resize(15);
       INVARIANT(!pthread_setname_np(pthread_self(), threadName.c_str()));
-      consumeTasks(_idGenerator.load(std::memory_order_relaxed));
+      consumeTasks(threadID);
     });
     auto tid = thd.get_id();
     _threads.emplace(tid, std::move(thd));
-    _idGenerator.fetch_add(1, std::memory_order::memory_order_relaxed);
     LOG(INFO) << "_threads add, " << _name << ":" << tid;
   }
 }
