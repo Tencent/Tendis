@@ -222,7 +222,8 @@ Expected<ReplLogRawV2> RepllogCursorV2::next() {
     if (eval.status().code() == ErrorCodes::ERR_NOTFOUND) {
       DLOG(WARNING) << "binlogid " << _cur << " is not exists";
       _cur++;
-      if (num++ % 1000 == 0) {
+      num++;
+      if (num % 1000 == 0) {
         LOG(WARNING) << "RepllogCursorV2::next ERR_NOTFOUND too much,"
                      << " num:" << num << " _cur:" << _cur << " _end:" << _end;
       }
@@ -256,7 +257,8 @@ Expected<ReplLogV2> RepllogCursorV2::nextV2() {
       _cur++;
       DLOG(WARNING) << "binlogid " << _cur << " is not exists";
 
-      if (num++ % 1000 == 0) {
+      num++;
+      if (num % 1000 == 0) {
         LOG(WARNING) << "RepllogCursorV2::nextV2 ERR_NOTFOUND too much,"
                      << " num:" << num << " _cur:" << _cur << " _end:" << _end;
       }
