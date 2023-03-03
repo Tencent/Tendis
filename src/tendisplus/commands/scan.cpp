@@ -442,9 +442,10 @@ class ScanCommand : public Command {
                                    &count, &cursor, &seqId, &enableSlots);
     RET_IF_ERR(status);
 
-    // init _filter config.
-    _filter.setPattern(pattern);
-    _filter.setType(type);
+    Filter filter;
+    // init filter config.
+    filter.setPattern(pattern);
+    filter.setType(type);
 
     // Step 2: check if this scan command cursor has been stored in cursorMap_
     uint64_t kvstoreId{0};
@@ -523,7 +524,8 @@ class ScanCommand : public Command {
             return genRecordKey(0, pCtx->getDbId(), "");
           }
         }();
-        auto expRecordKeys = scanKvstore(slots, recordKey, pCtx->getDbId(),
+        auto expRecordKeys = scanKvstore(slots, filter, recordKey,
+                                         pCtx->getDbId(),
                                          id, kvstoreCount, count - batch.size(),
                                          &seq, &scanTimes, scanMaxTimes,
                                          ptxn.value());
@@ -536,7 +538,7 @@ class ScanCommand : public Command {
     }
 
     id -= 1;                        // id need operator-- after loop
-    _filter.reset();                // reset _filter condition
+    filter.reset();                // reset _filter condition
     cursor += seq;                  // seq is real cursor position.
 
     // means ERR_EXHAUST, should set cursor to 0
@@ -576,7 +578,7 @@ class ScanCommand : public Command {
      * @param record record to filter
      * @return boolean shows whether it's needed
      */
-    bool filter(const Record& record) {
+    bool filter(const Record& record) const {
       if (enablePattern() &&
           !redis_port::stringmatchlen(
             _pattern.c_str(),
@@ -633,7 +635,7 @@ class ScanCommand : public Command {
      * @brief check whether need pattern match
      * @return boolean
      */
-    inline bool enablePattern() {
+    inline bool enablePattern() const {
       return !_pattern.empty();
     }
 
@@ -643,7 +645,7 @@ class ScanCommand : public Command {
      * @note RT_DATA_META means all data is needed.
      *      RT_INVALID means not support type
      */
-    inline bool enableType() {
+    inline bool enableType() const {
       return _type != RecordType::RT_DATA_META;
     }
 
@@ -659,7 +661,7 @@ class ScanCommand : public Command {
       {"tbitmap", RecordType::RT_TBITMAP_META},
       // TODO(pecochen): unsupport type stream now (since redis 5.0)
     };
-  } _filter;
+  };
 
   /**
    * @brief get next slot which fit the slots condition
@@ -739,6 +741,7 @@ class ScanCommand : public Command {
    * @return {cursor, key-list}
    */
   auto scanKvstore(const std::bitset<CLUSTER_SLOTS>& slots,
+                   const Filter& filter,
                    const RecordKey& lastScanRecordKey,
                    uint32_t dbId,
                    int kvstoreId,
@@ -834,7 +837,7 @@ class ScanCommand : public Command {
       }
 
       // filter
-      if (!_filter.filter(record)) {
+      if (!filter.filter(record)) {
         continue;
       }
 
