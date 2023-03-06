@@ -73,7 +73,6 @@ TSAN_SUPPRESSION std::shared_ptr<ServerEntry> makeClusterNode(
     cfg1->migrateSenderThreadnum = 3;
   }
   cfg1->waitTimeIfExistsMigrateTask = 1;
-  cfg1->deleteFilesInRangeForMigrateGc = true;
 
 #ifdef _WIN32
   cfg1->executorThreadNum = 1;
@@ -2469,7 +2468,6 @@ TEST(Cluster, deleteFilesInRange) {
   uint32_t startPort = 17300;
   std::map<std::string, std::string> config;
   config["wait-time-if-exists-migrate-task"] = "10";
-  config["deletefilesinrange-for-migrate-gc"] = "true";
   auto servers = makeCluster(
     startPort, 2, 10, true, false, std::vector<int>({0, 16382}), config);
 

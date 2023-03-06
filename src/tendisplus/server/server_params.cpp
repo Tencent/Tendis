@@ -476,8 +476,7 @@ ServerParams::ServerParams() {
     migrateSenderThreadnum, nullptr, nullptr, 1, 200, true);
   REGISTER_VARS_SAME_NAME(
     migrateReceiveThreadnum, nullptr, nullptr, 1, 200, true);
-  REGISTER_VARS_SAME_NAME(
-    garbageDeleteThreadnum, nullptr, nullptr, 1, 100, true);
+  REGISTER_VARS_NOUSE("garbageDeleteThreadnum");
 
   REGISTER_VARS_DIFF_NAME("cluster-enabled", clusterEnabled);
   REGISTER_VARS_DIFF_NAME("domain-enabled", domainEnabled);
@@ -488,7 +487,7 @@ ServerParams::ServerParams() {
                                   fullPsyncNoticeEnable);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("slave-migrate-enabled",
                                   slaveMigarateEnabled);
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("migrate-gc-enabled", enableGcInMigate);
+  REGISTER_VARS_NOUSE("migrate-gc-enabled");
   REGISTER_VARS_DIFF_NAME_DYNAMIC("replicate-fix-enabled",
                                    replicateFixEnable);
   REGISTER_VARS_DIFF_NAME("cluster-single-node", clusterSingleNode);
@@ -500,7 +499,7 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-node-timeout", clusterNodeTimeout);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-distance",
                                   migrateDistance);
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("garbage-delete-size", garbageDeleteSize);
+  REGISTER_VARS_NOUSE("garbage-delete-size");
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-binlog-iters",
                                   migrateBinlogIter);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-slots-num-per-task",

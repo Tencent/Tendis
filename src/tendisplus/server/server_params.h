@@ -554,14 +554,11 @@ class ServerParams {
 
   uint32_t migrateSenderThreadnum = 5;
   uint32_t migrateReceiveThreadnum = 5;
-  uint32_t garbageDeleteThreadnum = 1;
-  uint32_t garbageDeleteSize = 30;
 
   bool clusterEnabled = false;
   bool domainEnabled = false;
   bool slaveMigarateEnabled = false;
   bool clusterAllowReplicaMigration = false;
-  bool enableGcInMigate = false;
   bool aofEnabled = false;
   bool psyncEnabled = false;
   bool fullPsyncNoticeEnable = false;
@@ -600,7 +597,7 @@ class ServerParams {
   int64_t luaTimeLimit = 5000;  // ms
   int64_t luaStateMaxIdleTime = 60*60*1000;  // ms
   bool jeprofAutoDump = true;
-  bool deleteFilesInRangeForMigrateGc = false;
+  bool deleteFilesInRangeForMigrateGc = true;
   bool compactRangeAfterDeleteRange = false;
   bool logError = false;
   bool directIo = false;
