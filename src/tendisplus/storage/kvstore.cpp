@@ -603,9 +603,9 @@ uint64_t KVStore::getCurrentTime() {
   return ts;
 }
 
-std::ofstream* KVStore::createBinlogFile(const std::string& name,
-                                         uint32_t storeId) {
-  std::ofstream* fs = new std::ofstream(
+std::unique_ptr<std::ofstream> KVStore::createBinlogFile(
+  const std::string& name, uint32_t storeId) {
+  auto fs = std::make_unique<std::ofstream>(
     name.c_str(), std::ios::out | std::ios::app | std::ios::binary);
   if (!fs->is_open()) {
     LOG(ERROR) << "fs->is_open() failed:" << name;
