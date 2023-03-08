@@ -44,7 +44,7 @@ func testDeleteFilesInRange() {
 
 	m1 := util.RedisServer{}
 
-	pwd := getCurrentDirectory()
+	pwd := util.GetCurrentDirectory()
 	log.Infof("current pwd:" + pwd)
 
 	cfgArgs := make(map[string]string)
@@ -255,7 +255,8 @@ func testDeleteFilesInRange() {
 }
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
 	flag.Parse()
+	// rand.Seed(time.Now().UnixNano())
 	testDeleteFilesInRange()
 }

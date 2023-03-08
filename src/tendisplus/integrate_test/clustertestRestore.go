@@ -252,7 +252,7 @@ func testRestore(portStart int, num int, testFun int, commandType string) {
 	src_restore := util.RedisServer{}
 	dst_restore := util.RedisServer{}
 
-	pwd := getCurrentDirectory()
+	pwd := util.GetCurrentDirectory()
 	log.Infof("current pwd:" + pwd)
 
 	cfgArgs := make(map[string]string)
@@ -346,8 +346,9 @@ func testRestore(portStart int, num int, testFun int, commandType string) {
 }
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
 	flag.Parse()
+	// rand.Seed(time.Now().UnixNano())
 	testRestore(47000, 100000, 1, "set")
 	testRestore(47100, 100000, 2, "set")
 

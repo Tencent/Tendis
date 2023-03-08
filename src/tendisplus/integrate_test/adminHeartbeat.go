@@ -24,7 +24,7 @@ func testAutoGenerateHeartbeatTimestamp() {
 	m2 := util.RedisServer{}
 	m3 := util.RedisServer{}
 
-	pwd := getCurrentDirectory()
+	pwd := util.GetCurrentDirectory()
 	log.Infof("current pwd:" + pwd)
 
 	cfgArgs := make(map[string]string)
@@ -147,11 +147,14 @@ func testAutoGenerateHeartbeatTimestamp() {
 
 	log.Infof("adminHeartbeat.go passed. command : %s", *benchtype)
 
+	shutdownServer(&m3, *shutdown, *clear)
+	shutdownServer(&m2, *shutdown, *clear)
 	shutdownServer(&m1, *shutdown, *clear)
 }
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
 	flag.Parse()
+	// rand.Seed(time.Now().UnixNano())
 	testAutoGenerateHeartbeatTimestamp()
 }

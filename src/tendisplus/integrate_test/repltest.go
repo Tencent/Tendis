@@ -21,7 +21,7 @@ func waitFullsyncAndCatchup(m *util.RedisServer, s *util.RedisServer, kvstorecou
 func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int, kvstorecount int) {
     m1 := util.RedisServer{}
     s1 := util.RedisServer{}
-    pwd := getCurrentDirectory()
+    pwd := util.GetCurrentDirectory()
     log.Infof("current pwd:" + pwd)
     num1:=100000
     num2:=100000
@@ -72,9 +72,9 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int, kvstoreco
 }
 
 func main(){
-    log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+    log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
     flag.Parse()
-    //rand.Seed(time.Now().UTC().UnixNano())
+    // rand.Seed(time.Now().UnixNano())
     testRestore(*m1ip, *m1port, *s1ip, *s1port, *kvstorecount)
     log.Infof("repltest.go passed.")
 }

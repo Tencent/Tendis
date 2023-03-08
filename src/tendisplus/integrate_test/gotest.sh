@@ -10,8 +10,9 @@ srcroot=`pwd`/../../../
 govendor=`pwd`/../../thirdparty/govendor/
 export GOPATH=$srcroot:$govendor
 echo $GOPATH
+rm -rf adminHeartbeat repl repltest restore restoretest clustertest clustertestRestore clustertestFailover deletefilesinrange dts/dts dts/dts_sync
 go build adminHeartbeat.go common.go common_cluster.go
-go build repl.go
+go build repl.go common.go
 go build repltest.go common.go
 go build restore.go common.go
 go build restoretest.go common.go

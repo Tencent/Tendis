@@ -423,8 +423,9 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int,
 }
 
 func main(){
-    log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+    log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
     flag.Parse()
+    // rand.Seed(time.Now().UnixNano())
     testCluster(*clusterIp, 45200, 3, false)
     testCluster(*clusterIp, 45300, 3, true)
     testClusterManualFailoverIncrSync()

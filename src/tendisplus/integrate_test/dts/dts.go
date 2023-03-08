@@ -18,9 +18,9 @@ var (
 )
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
 	flag.Parse()
-	rand.Seed(time.Now().UTC().UnixNano())
+	rand.Seed(time.Now().UnixNano())
 
 	cfgArgs := make(map[string]string)
 	cfgArgs["aof-enabled"] = "yes"
@@ -92,15 +92,20 @@ func main() {
 	log.Info(stdoutDTS.String())
 	log.Info(stderrDTS.String())
 
-	time.Sleep(time.Second * 40)
-
+	// wait slave catch up master
+	time.Sleep(time.Second * 10)
+	// s and t no expire now
 	util.CompareData(s.Addr(), t.Addr(), 1)
 
-	util.ConfigSet(s, "noexpire", "false")
+	util.ConfigSet(t, "noexpire", "false")
 	time.Sleep(time.Second * 5)
+	// still no expire
 	util.CompareData(t.Addr(), s.Addr(), 1)
 
-	time.Sleep(10 * time.Second)
+	// wait for expire
+	// see SpecifHashData for more info.
+	time.Sleep(120 * time.Second)
+	// after expire, m s t should have same data.
 	util.CompareData(m.Addr(), t.Addr(), 1)
 
 	util.CompareData(m.Addr(), s.Addr(), 1)

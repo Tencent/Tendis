@@ -14,15 +14,11 @@ import (
 	"sync/atomic"
 	"tendisplus/integrate_test/util"
 	"time"
-    "os"
-    "path/filepath"
-    "strings"
 )
 
 var (
 	mport     = flag.Int("masterport", 62001, "master port")
 	sport     = flag.Int("slaveport", 62002, "slave port")
-	kvstorecount     = flag.Int("kvstorecount", 10, "kvstore count")
 	zsetcount = flag.Int("zsetcount", 1, "zset count")
 	setcount  = flag.Int("setcount", 100, "set count")
 	listcount = flag.Int("listcount", 100, "list count")
@@ -64,10 +60,7 @@ func testReplMatch2(kvstore_count int, m *util.RedisServer, s *util.RedisServer)
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			cli, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", m.Port), 10*time.Second)
-			if err != nil {
-				log.Fatalf("dial master failed:%v", err)
-			}
+			cli := createClient(m)
 			for atomic.LoadInt32(&running) == 1 {
 			    tp := getRandomType()
 				if tp == KV {
@@ -136,14 +129,8 @@ func testReplMatch2(kvstore_count int, m *util.RedisServer, s *util.RedisServer)
 	wg1.Wait()
 	log.Infof("consumer closed")
 
-	cli1, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", m.Port), 10*time.Second)
-	if err != nil {
-		log.Fatalf("dial master failed:%v", err)
-	}
-	cli2, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", s.Port), 10*time.Second)
-	if err != nil {
-		log.Fatalf("dial slave failed:%v", err)
-	}
+	cli1 := createClient(m)
+	cli2 := createClient(s)
 
     for i:=0; i < kvstore_count; i++ {
         mPos, err := cli1.Cmd("binlogpos", fmt.Sprintf("%d", i)).Int64()
@@ -227,30 +214,9 @@ func testReplMatch2(kvstore_count int, m *util.RedisServer, s *util.RedisServer)
 	log.Infof("compare complete")
 }
 
-func shutdownServer(m *util.RedisServer) {
-	cli1, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", m.Port), 10*time.Second)
-    if err != nil {
-        log.Fatalf("can't connect to %d: %v", m.Port, err)
-    }
-
-	if r, err := cli1.Cmd("shutdown").Str(); err != nil {
-		log.Fatalf("do shutdown failed:%v", err)
-	} else if r != "OK" {
-		log.Fatalf("do shutdown error:%s", r)
-	}
-
-    m.Destroy();
-}
-
 func testReplMatch1(kvstore_count int, m *util.RedisServer, s *util.RedisServer) {
-	cli1, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", m.Port), 10*time.Second)
-    if err != nil {
-        log.Fatalf("can't connect to %d: %v", m.Port, err)
-    }
-	cli2, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", s.Port), 10*time.Second)
-    if err != nil {
-        log.Fatalf("can't connect to %d: %v", s.Port, err)
-    }
+	cli1 := createClient(m)
+	cli2 := createClient(s)
 
 	if r, err := cli2.Cmd("slaveof", "127.0.0.1", fmt.Sprintf("%d", m.Port)).Str(); err != nil {
 		log.Fatalf("do slaveof failed:%v", err)
@@ -297,23 +263,15 @@ func testReplMatch1(kvstore_count int, m *util.RedisServer, s *util.RedisServer)
 	}
 }
 
-func getCurrentDirectory() string {
-    dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
-    if err != nil {
-        log.Fatal(err)
-    }
-    return strings.Replace(dir, "\\", "/", -1)
-}
-
 func testRepl(m_port int, s_port int, kvstore_count int) {
 	m := util.RedisServer{}
 	s := util.RedisServer{}
-    pwd := getCurrentDirectory()
+    pwd := util.GetCurrentDirectory()
     log.Infof("current pwd:" + pwd)
 
     cfgArgs := make(map[string]string)
-    //cfgArgs["requirepass"] = "tendis+test"
-    //cfgArgs["masterauth"] = "tendis+test"
+    cfgArgs["requirepass"] = "tendis+test"
+    cfgArgs["masterauth"] = "tendis+test"
 
     m_port = util.FindAvailablePort(m_port)
     log.Infof("FindAvailablePort:%d", m_port)
@@ -332,13 +290,13 @@ func testRepl(m_port int, s_port int, kvstore_count int) {
 	testReplMatch1(kvstore_count, &m, &s)
 	testReplMatch2(kvstore_count, &m, &s)
 
-    shutdownServer(&s);
-    shutdownServer(&m);
+	shutdownServer(&s, *shutdown, *clear)
+	shutdownServer(&m, *shutdown, *clear)
 }
 
 func testBindMultiIP(m_port int, kvstore_count int) {
 	m := util.RedisServer{}
-    pwd := getCurrentDirectory()
+    pwd := util.GetCurrentDirectory()
     log.Infof("current pwd:" + pwd)
 
     cfgArgs := make(map[string]string)
@@ -347,6 +305,8 @@ func testBindMultiIP(m_port int, kvstore_count int) {
     log.Infof("getIp:%v", ip2)
     cfgArgs["bind"] = ip
     cfgArgs["bind2"] = ip2
+	cfgArgs["requirepass"] = "tendis+test"
+    cfgArgs["masterauth"] = "tendis+test"
 
     m_port = util.FindAvailablePort(m_port)
     log.Infof("FindAvailablePort:%d", m_port)
@@ -360,10 +320,20 @@ func testBindMultiIP(m_port int, kvstore_count int) {
     if err != nil {
         log.Fatalf("can't connect to %s %d: %v", ip, m.Port, err)
     }
+	if *auth != "" {
+		if v, err := cli1.Cmd("AUTH", *auth).Str(); err != nil || v != "OK" {
+			log.Fatalf("auth result:%s failed:%v. %s:%d auth:%s", v, err, ip, m.Port, *auth)
+		}
+	}
     cli2, err := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", ip2, m.Port), 10*time.Second)
     if err != nil {
         log.Fatalf("can't connect to %s %d: %v", ip2, m.Port, err)
     }
+	if *auth != "" {
+		if v, err := cli2.Cmd("AUTH", *auth).Str(); err != nil || v != "OK" {
+			log.Fatalf("auth result:%s failed:%v. %s:%d auth:%s", v, err, ip2, m.Port, *auth)
+		}
+	}
 
 	if r, err := cli1.Cmd("set", "a", "1").Str(); err != nil {
 		log.Fatalf("ip cmd failed:%v", err)
@@ -383,18 +353,18 @@ func testBindMultiIP(m_port int, kvstore_count int) {
         log.Fatalf("ip cmd error:%s", r)
     }
     if r, err := cli2.Cmd("get", "a").Str(); err != nil {
-        log.Fatalf("ip cmd failed:%v", err)
+        log.Fatalf("ip2 cmd failed:%v", err)
     } else if r != "1" {
-        log.Fatalf("ip cmd error:%s", r)
+        log.Fatalf("ip2 cmd error:%s", r)
     }
 
-    shutdownServer(&m);
+    shutdownServer(&m, *shutdown, *clear)
 }
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
 	flag.Parse()
-	rand.Seed(time.Now().UTC().UnixNano())
+	rand.Seed(time.Now().UnixNano())
 	testRepl(*mport, *sport, *kvstorecount)
 	testBindMultiIP(*mport+1, *kvstorecount)
 	log.Infof("repl.go passed.")

@@ -452,7 +452,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
             NodeInfo{i, startSlot, endSlot, migrateStart, migrateEnd})
     }
 
-    pwd := getCurrentDirectory()
+    pwd := util.GetCurrentDirectory()
     log.Infof("current pwd:" + pwd)
     kvstorecount := 2
 
@@ -709,9 +709,9 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
 }
 
 func main(){
-    log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+    log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
     flag.Parse()
-    // rand.Seed(time.Now().UTC().UnixNano())
+    // rand.Seed(time.Now().UnixNano())
     testCluster(*clusterIp, *clusterPortStart, 1)
     testCluster(*clusterIp, *clusterPortStart + 100, *clusterNodeNum)
     log.Infof("clustertest.go passed. command : %s", *benchtype)

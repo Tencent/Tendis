@@ -40,7 +40,8 @@ var (
 	num1         = flag.Int("num1", 100, "first add data nums")
 	num2         = flag.Int("num2", 100, "first add data nums")
 	shutdown     = flag.Int("shutdown", 1, "whether shutdown the dir")
-	clear        = flag.Int("clear", 1, "whether clear the dir")
+	// do not clear log file for AddressSanitizer/ThreadSanitizer info
+	clear        = flag.Int("clear", 0, "whether clear the dir")
 	startup      = flag.Int("startup", 1, "whether startup")
 	iscompare    = flag.Int("compare", 1, "whether compare")
 	kvstorecount = flag.Int("kvstorecount", 10, "kvstore count")
@@ -51,23 +52,6 @@ var (
 	benchtype = flag.String("benchtype", "set,incr,lpush,sadd,hset", "benchmark data type")
 	valgrind  = flag.Bool("valgrind", false, "whether valgrind")
 )
-
-func getCurrentDirectory() string {
-	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
-	if err != nil {
-		log.Fatal(err)
-	}
-	return strings.Replace(dir, "\\", "/", -1)
-}
-
-func PortInUse(port int) bool {
-	checkStatement := fmt.Sprintf("lsof -i:%d ", port)
-	output, _ := exec.Command("sh", "-c", checkStatement).CombinedOutput()
-	if len(output) > 0 {
-		return true
-	}
-	return false
-}
 
 func addDataInCoroutine(m *util.RedisServer, num int, prefixkey string, channel chan int) {
 	var optype string = *benchtype
@@ -534,20 +518,23 @@ func waitCatchup(m *util.RedisServer, s *util.RedisServer, kvstorecount int) {
 		var total1 int = 0
 		var total2 int = 0
 		for i := 0; i < kvstorecount; i++ {
-			var binlogmax1 int
-			if r, err := cli1.Cmd("binlogpos", i).Int(); err != nil {
-				log.Fatalf("do waitCatchup %d failed:%v", i, err)
-			} else {
-				//log.Infof("binlogpos store:%d binlogmax:%d" , i, r)
-				binlogmax1 = r
-			}
-
+			// slave should be checked first to ensure that master/slave
+			// have the same binlogs. If we check the binlog on the master
+			// first, there may be misjudgments due to subsequent data writing
 			var binlogmax2 int
 			if r, err := cli2.Cmd("binlogpos", i).Int(); err != nil {
 				log.Fatalf("do waitCatchup %d failed:%v", i, err)
 			} else {
 				//log.Infof("binlogpos store:%d binlogmax:%d" , i, r)
 				binlogmax2 = r
+			}
+
+			var binlogmax1 int
+			if r, err := cli1.Cmd("binlogpos", i).Int(); err != nil {
+				log.Fatalf("do waitCatchup %d failed:%v", i, err)
+			} else {
+				//log.Infof("binlogpos store:%d binlogmax:%d" , i, r)
+				binlogmax1 = r
 			}
 
 			if binlogmax1 != binlogmax2 {

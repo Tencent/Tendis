@@ -17,7 +17,7 @@ import (
 func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstorecount int, backup_mode string) {
     m1 := util.RedisServer{}
     m2 := util.RedisServer{}
-    pwd := getCurrentDirectory()
+    pwd := util.GetCurrentDirectory()
     log.Infof("current pwd:" + pwd)
 
     cfgArgs := make(map[string]string)
@@ -73,8 +73,9 @@ func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstoreco
 }
 
 func main(){
-    log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+    log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
     flag.Parse()
+    // rand.Seed(time.Now().UnixNano())
     testRestore(*m1ip, *m1port, *m2ip, *m2port, *kvstorecount, "copy")
     // port+100 to avoid TIME_WAIT
     testRestore(*m1ip, *m1port+100, *m2ip, *m2port+100, *kvstorecount, "ckpt")
