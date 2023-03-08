@@ -274,7 +274,6 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->fullPsyncNoticeEnable, false);
   EXPECT_EQ(cfg->migrateSenderThreadnum, 5);
   EXPECT_EQ(cfg->migrateReceiveThreadnum, 5);
-  EXPECT_EQ(cfg->garbageDeleteThreadnum, 1);
   EXPECT_EQ(cfg->clusterEnabled, false);
   EXPECT_EQ(cfg->domainEnabled, false);
   EXPECT_EQ(cfg->migrateTaskSlotsLimit, 10);
