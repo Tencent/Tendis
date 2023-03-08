@@ -1,13 +1,8 @@
-rm ./master1/  ./master2/ ./back_test/ -rf
-rm ./m1_*/ ./m2_*/ ./s1_*/ ./s2_*/ ./m_*/ ./s_* -rf
-rm ./m*_*/ -rf
-rm ./src_*/ ./dst_*/ -rf
-rm -f tendisplus*.log
-rm -f valgrindTendis*.log
-rm benchmark_*.log
-rm predixy_* -rf
-rm stderr*
-rm redis-sync-*.conf 
+rm -rf ./m*_* ./s*_* ./t*_* ./running ./predixy_* ./benchmark_*.log ./dst_* ./src_*
+rm -rf redis-sync-* sync-*
+cd dts
+rm -rf ./m*_* ./s*_* ./t*_* ./running ./predixy_* ./benchmark_*.log ./dst_* ./src_*
+cd ..
 
 user=$USER
 tpids=`ps axu |grep tendisplus|grep integrate_test| grep $user|awk '{print $2}'`
@@ -17,7 +12,7 @@ do
   kill -9 $tpid
 done
 
-ppids=`ps axu |grep predixy   |grep integrate_test| grep $user|awk '{print $2}'`
+ppids=`ps axu |grep predixy |grep integrate_test| grep $user|awk '{print $2}'`
 for ppid in $ppids
 do
   echo "killing predixy process : $ppid"
@@ -44,8 +39,6 @@ do
   echo "killing checkdts process : $checkdtspid"
   kill -9 $checkdtspid
 done
-
-rm sync-*.log
 
 while true
 do

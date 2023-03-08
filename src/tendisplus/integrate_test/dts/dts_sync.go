@@ -75,13 +75,14 @@ func runRedisSync(port int, srcPort int, dstPort int, kvstore int) {
 }
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
 	flag.Parse()
-	rand.Seed(time.Now().UTC().UnixNano())
+	rand.Seed(time.Now().UnixNano())
 
 	cfgArgs := make(map[string]string)
 	cfgArgs["aof-enabled"] = "yes"
 	cfgArgs["kvStoreCount"] = "10"
-	cfgArgs["noexpire"] = "false"
+	cfgArgs["noexpire"] = "true"
 	cfgArgs["generallog"] = "true"
 	pwd := util.GetCurrentDirectory()
 
@@ -151,18 +152,23 @@ func main() {
 	}
 
 	util.WriteData(m)
-	util.WriteData(m)
-
-	time.Sleep(30 * time.Second)
-
+	// wait slave catch up master
+	time.Sleep(time.Second * 10)
+	// m and s no expire now
 	util.CompareData(s.Addr(), fmt.Sprintf("127.0.0.1:%d", targetPort), 1)
-
 	util.CompareData(m.Addr(), fmt.Sprintf("127.0.0.1:%d", targetPort), 1)
 
 	util.ConfigSet(m, "noexpire", "false")
 	util.ConfigSet(s, "noexpire", "false")
-	time.Sleep(time.Second * 20)
+	time.Sleep(time.Second * 5)
+	// still no expire
+	util.CompareData(s.Addr(), fmt.Sprintf("127.0.0.1:%d", targetPort), 1)
+	util.CompareData(m.Addr(), fmt.Sprintf("127.0.0.1:%d", targetPort), 1)
 
+	// wait for expire
+	// see SpecifHashData for more info.
+	time.Sleep(time.Second * 120)
+	// after expire, m s redis should have same data.
 	util.CompareData(m.Addr(), fmt.Sprintf("127.0.0.1:%d", targetPort), 1)
 
 	util.CompareData(m.Addr(), s.Addr(), 1)

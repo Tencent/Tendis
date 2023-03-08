@@ -26,12 +26,12 @@ type RedisServer struct {
 	binPath string
 }
 
-var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 func RandStrAlpha(n int) string {
-	b := make([]rune, n)
+	b := make([]byte, n)
 	for i := range b {
-		b[i] = letterRunes[rand.Intn(len(letterRunes))]
+		b[i] = letterBytes[rand.Int63()%int64(len(letterBytes))]
 	}
 	return string(b)
 }
@@ -362,11 +362,6 @@ func (s *Predixy) Setup(valgrind bool, cfgArgs *map[string]string) error {
 	cfg = cfg + "LogNoticeSample 1\n"
 	cfg = cfg + "LogWarnSample 1\n"
 	cfg = cfg + "LogErrorSample 1\n"
-	cfg = cfg + "Authority {\n"
-	cfg = cfg + "    Auth \"tendis+test\" {\n"
-	cfg = cfg + "        Mode write\n"
-	cfg = cfg + "    }\n"
-	cfg = cfg + "}\n"
 
     cfg = cfg + "Authority {\n"
 	cfg = cfg + "	Auth tendis+test {\n"
@@ -458,7 +453,8 @@ func ShutdownServer(m *RedisServer) {
 		log.Infof("can't connect to %d: %v", m.Port, err)
 	}
 
-	m.Destroy()
+	// do not clear log file for AddressSanitizer/ThreadSanitizer info
+	// m.Destroy()
 }
 
 func SlaveOf(m *RedisServer, s *RedisServer) {
@@ -653,11 +649,11 @@ func SpecifHashData(m *RedisServer) {
 	}
 
 	f(1000, 1)
-	f(1000, 60*1000)
+	f(1000, 120*1000)
 	f(1000, int(rand.Int31n(1000)))
 
 	f(999, 1)
-	f(999, 60*1000)
+	f(999, 120*1000)
 	f(999, int(rand.Int31n(1000)))
 
 	f(1001, 1)
@@ -665,7 +661,7 @@ func SpecifHashData(m *RedisServer) {
 	f(1001, int(rand.Int31n(1000)))
 
 	f(3000, 1)
-	f(3000, 60*1000)
+	f(3000, 120*1000)
 	f(3000, 400000)
 }
 

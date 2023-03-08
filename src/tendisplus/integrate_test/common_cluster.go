@@ -248,7 +248,7 @@ func startCluster(
             NodeInfo{i, startSlot, endSlot, 0, 0})
     }
 
-    pwd := getCurrentDirectory()
+    pwd := util.GetCurrentDirectory()
     log.Infof("current pwd:" + pwd)
     kvstorecount := 2
 
