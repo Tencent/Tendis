@@ -851,6 +851,11 @@ TEST(ClusterState, clusterReplyMultiBulkSlotsV2) {
   server->getClusterMgr()->stop();
   int num = 128, bucket = 16384/num;
 
+  const auto guard = MakeGuard([] {
+    destroyEnv("node");
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+
   for (int i = 0; i < num; ++i) {
     auto name = getUUid(20);
     auto node = std::make_shared<ClusterNode>(
@@ -2465,7 +2470,6 @@ TEST(Cluster, deleteChunks) {
 }
 
 TEST(Cluster, deleteFilesInRange) {
-  std::vector<std::string> dirs = {"node1", "node2", "node3", "node4"};
   uint32_t startPort = 17300;
   std::map<std::string, std::string> config;
   config["wait-time-if-exists-migrate-task"] = "10";
@@ -2473,10 +2477,8 @@ TEST(Cluster, deleteFilesInRange) {
   auto servers = makeCluster(
     startPort, 2, 10, true, false, std::vector<int>({0, 16382}), config);
 
-  const auto guard = MakeGuard([dirs] {
-    for (auto dir : dirs) {
-      destroyEnv(dir);
-    }
+  const auto guard = MakeGuard([] {
+    destroyCluster(4);
     std::this_thread::sleep_for(std::chrono::seconds(5));
   });
 
@@ -2987,7 +2989,7 @@ TEST(Cluster, ChangeMaster) {
   uint32_t startPort = 17700;
 
   const auto guard = MakeGuard([&nodeNum] {
-    destroyCluster(nodeNum);
+    destroyCluster(nodeNum * 2);
     std::this_thread::sleep_for(std::chrono::seconds(5));
   });
 

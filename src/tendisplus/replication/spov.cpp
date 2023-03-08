@@ -718,14 +718,15 @@ std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
              currentId + 1,
              tbuf);
 
-    fs = KVStore::createBinlogFile(fname, storeId);
-    if (!fs) {
-      return fs;
+    auto newfs = KVStore::createBinlogFile(fname, storeId);
+    if (!newfs) {
+      return nullptr;
     }
+    fs = newfs.get();
 
     std::unique_lock<std::mutex> lk(_mutex);
     auto& v = _logRecycStatus[storeId];
-    v->fs.reset(fs);
+    v->fs = std::move(newfs);
     v->fileSeq = currentId + 1;
     v->fileCreateTime = SCLOCK::now();
     v->fileSize = BINLOG_HEADER_V2_LEN;

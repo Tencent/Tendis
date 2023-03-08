@@ -417,8 +417,8 @@ class KVStore {
   virtual Status assignBinlogIdIfNeeded(Transaction* txn) = 0;
   virtual void setNextBinlogSeq(uint64_t binlogId, Transaction* txn) = 0;
   virtual uint64_t getNextBinlogSeq() const = 0;
-  static std::ofstream* createBinlogFile(const std::string& name,
-                                         uint32_t storeId);
+  static std::unique_ptr<std::ofstream> createBinlogFile(
+    const std::string& name, uint32_t storeId);
   virtual Expected<TruncateBinlogResult> truncateBinlogV2(uint64_t start,
                                                           uint64_t end,
                                                           uint64_t dump,
