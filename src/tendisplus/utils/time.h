@@ -22,6 +22,8 @@ std::string timePointRepr(const SCLOCK::time_point&);
 uint64_t nsSinceEpoch(const SCLOCK::time_point&);
 uint32_t sinceEpoch(const SCLOCK::time_point&);
 std::string epochToDatetime(uint64_t epoch);
+// in one string, example: 2022/1/1-00:00:00
+std::string epochToDatetimeInOneStr(uint64_t epoch);
 std::string msEpochToDatetime(uint64_t msEpoch);
 std::string nsEpochToDatetime(uint64_t nsEpoch);
 
