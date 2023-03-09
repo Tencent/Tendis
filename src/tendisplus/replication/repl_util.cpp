@@ -61,11 +61,6 @@ Expected<BinlogResult> masterSendBinlogV2(
   size_t suggestBytes = svr->getParams()->binlogSendBytes;
 
   LocalSessionGuard sg(svr.get());
-  sg.getSession()->setArgs({"mastersendlog",
-                            std::to_string(storeId),
-                            client->getRemoteRepr(),
-                            std::to_string(dstStoreId),
-                            std::to_string(binlogPos)});
 
   auto expdb = svr->getSegmentMgr()->getDb(
     sg.getSession(), storeId, mgl::LockMode::LOCK_IS);
@@ -74,13 +69,21 @@ Expected<BinlogResult> masterSendBinlogV2(
   }
   auto store = std::move(expdb.value().store);
   INVARIANT(store != nullptr);
+  BinlogResult br{binlogPos, msSinceEpoch()};
+  // NOTE(takenliu): check eariler only for performance.
+  if (!needHeartBeart && binlogPos >= store->getHighestBinlogId()) {
+    return br;
+  }
+  sg.getSession()->setArgs({"mastersendlog",
+                            std::to_string(storeId),
+                            client->getRemoteRepr(),
+                            std::to_string(dstStoreId),
+                            std::to_string(binlogPos)});
 
   auto ptxn = store->createTransaction(sg.getSession());
   if (!ptxn.ok()) {
     return ptxn.status();
   }
-
-  BinlogResult br;
 
   std::unique_ptr<Transaction> txn = std::move(ptxn.value());
   std::unique_ptr<RepllogCursorV2> cursor =
@@ -133,9 +136,6 @@ Expected<BinlogResult> masterSendBinlogV2(
 
   std::stringstream ss2;
   if (writer.getCount() == 0) {
-    br.binlogId = binlogPos;
-    br.binlogTs = msSinceEpoch();
-
     if (!needHeartBeart) {
       return br;
     }
