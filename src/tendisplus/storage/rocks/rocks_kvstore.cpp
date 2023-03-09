@@ -993,7 +993,8 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
     if (ed.ok()) {
       value = ed.value();
     } else {
-      LOG(ERROR) << "param need to be int64_t, " << key << ":" << rawValue;
+      LOG(FATAL) << "param need to be int64_t, rocks." << key
+                 << ":" << rawValue;
       return {ErrorCodes::ERR_PARSEOPT, "invalid rocksdb option :" + key};
     }
   }
