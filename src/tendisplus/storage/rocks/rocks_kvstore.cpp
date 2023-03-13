@@ -1742,6 +1742,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
       }
       written += len;
       newDump = explog.value().getBinlogId() + 1;
+      ts = explog.value().getTimestamp();
     }
 
     result.err = err;
