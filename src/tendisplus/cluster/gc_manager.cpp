@@ -2,6 +2,7 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include <thread>
 #include "glog/logging.h"
 #include "tendisplus/cluster/gc_manager.h"
 #include "tendisplus/commands/command.h"

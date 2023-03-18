@@ -11,6 +11,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include "glog/logging.h"
