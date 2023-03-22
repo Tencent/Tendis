@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <functional>
 #include <string>
+#include <thread>
 #include "glog/logging.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/network/worker_pool.h"

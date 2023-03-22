@@ -6,6 +6,7 @@
 #include <bitset>
 #include <set>
 #include <sstream>
+#include <thread>
 #include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/varint.h"
@@ -1249,7 +1250,7 @@ Expected<CNodePtr> ClusterState::clusterHandleRedirect(uint32_t slot,
 
   auto node = getNodeBySlot(slot);
   if (!node) {
-      LOG(ERROR) << "slot belong node：" << node->getNodeName() << " not exist";
+    LOG(ERROR) << "slot " << slot << " doesn't belong to any node now.";
     return {ErrorCodes::ERR_CLUSTER_REDIR_DOWN_UNBOUND, ""};
   }
 

@@ -10,6 +10,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <thread>
 
 #include "glog/logging.h"
 #include "rapidjson/document.h"

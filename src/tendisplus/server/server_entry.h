@@ -14,6 +14,7 @@
 #include <deque>
 #include <set>
 #include <shared_mutex>
+#include <thread>
 
 #include "glog/logging.h"
 #include "tendisplus/network/network.h"
