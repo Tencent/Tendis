@@ -379,14 +379,14 @@ bool ClusterNode::addSlave(std::shared_ptr<ClusterNode> slave) {
   std::lock_guard<myMutex> lk(_mutex);
   for (auto v : _slaves) {
     if (v == slave) {
-      LOG(ERROR) << "node:" << getNodeName()
-                 << " already has slave:" << slave->getNodeName();
+      // LOG(ERROR) << "node:" << getNodeName()
+      //            << " already has slave:" << slave->getNodeName();
       return false;
     }
   }
 
-  LOG(INFO) << "node:" << getNodeName()
-            << " add slave:" << slave->getNodeName();
+  // LOG(INFO) << "node:" << getNodeName()
+  //           << " add slave:" << slave->getNodeName();
   _slaves.emplace_back(std::move(slave));
   _flags |= CLUSTER_NODE_MIGRATE_TO;
   _numSlaves++;
@@ -398,8 +398,8 @@ bool ClusterNode::removeSlave(std::shared_ptr<ClusterNode> slave) {
 
   for (auto iter = _slaves.begin(); iter != _slaves.end();) {
     if (*iter == slave) {
-      LOG(WARNING) << "node:" << getNodeName()
-                   << " delete slave:" << slave->getNodeName();
+      // LOG(WARNING) << "node:" << getNodeName()
+      //              << " delete slave:" << slave->getNodeName();
       iter = _slaves.erase(iter);
       _numSlaves--;
 
@@ -565,8 +565,8 @@ void ClusterNode::setAsMaster() {
   std::lock_guard<myMutex> lk(_mutex);
   _flags &= ~CLUSTER_NODE_SLAVE;
   _flags |= CLUSTER_NODE_MASTER;
-  LOG(INFO) << "node:" << getNodeName() << " are master now. old master:"
-            << (_slaveOf ? _slaveOf->getNodeName() : "None");
+  // LOG(INFO) << "node:" << getNodeName() << " are master now. old master:"
+  //           << (_slaveOf ? _slaveOf->getNodeName() : "None");
   _slaveOf = nullptr;
 }
 
@@ -607,8 +607,8 @@ bool ClusterNode::clearNodeFailureIfNeeded(uint32_t timeout) {
 
 void ClusterNode::setMaster(std::shared_ptr<ClusterNode> master) {
   std::lock_guard<myMutex> lk(_mutex);
-  LOG(INFO) << "node:" << getNodeName() << " are slave now. old master:"
-            << (_slaveOf ? _slaveOf->getNodeName() : "None");
+  // LOG(INFO) << "node:" << getNodeName() << " are slave now. old master:"
+  //           << (_slaveOf ? _slaveOf->getNodeName() : "None");
   _slaveOf = master;
 }
 
