@@ -24,7 +24,8 @@ namespace tendisplus {
   }
 
 #define SyncWriteData(data)                             \
-  if (!_client->writeData((data)).ok()) {               \
+  s = _client->writeData((data));                       \
+  if (!s.ok()) {                                        \
     LOG(ERROR) << "write data failed:" << s.toString(); \
     return {ErrorCodes::ERR_INTERNAL, "write failed"};  \
   }
