@@ -377,9 +377,9 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
         _migrateSender->schedule(
           [this, iter = taskPtr]() { iter->sendSlots(); });
       } else {
-        LOG(ERROR) << "sender task threadpool is full on slots:"
-                   << bitsetStrEncode(taskPtr->_slots)
-                   << "taskid:" << taskPtr->_taskid;
+        LOG(WARNING) << "sender task threadpool is full on slots:"
+                     << bitsetStrEncode(taskPtr->_slots)
+                     << "taskid:" << taskPtr->_taskid;
         taskPtr->_sender->stop();
         taskPtr->_nextSchedTime =
           SCLOCK::now() + std::chrono::milliseconds(100);
