@@ -1,0 +1,33 @@
+From eab2cc3f70885fa86333dca6daa902e40fd94f2a Mon Sep 17 00:00:00 2001
+From: leonliao <xiaobo.liao@gmail.com>
+Date: Thu, 13 Apr 2023 12:04:12 +0800
+Subject: [PATCH 1/1] Reset the blob_value_
+
+---
+ db/compaction/compaction_iterator.cc | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/db/compaction/compaction_iterator.cc b/db/compaction/compaction_iterator.cc
+index 3ce38f90b..e9efb55c7 100644
+--- a/db/compaction/compaction_iterator.cc
++++ b/db/compaction/compaction_iterator.cc
+@@ -234,7 +234,6 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
+   {
+     StopWatchNano timer(clock_, report_detailed_time_);
+     if (kTypeBlobIndex == ikey_.type) {
+-      blob_value_.Reset();
+       filter = compaction_filter_->FilterBlobByKey(
+           level_, filter_key, &compaction_filter_value_,
+           compaction_filter_skip_until_.rep());
+@@ -364,6 +363,8 @@ void CompactionIterator::NextFromInput() {
+          !IsShuttingDown()) {
+     key_ = input_.key();
+     value_ = input_.value();
++    blob_value_.Reset();
++
+     iter_stats_.num_input_records++;
+ 
+     Status pik_status = ParseInternalKey(key_, &ikey_, allow_data_in_errors_);
+-- 
+2.23.0
+
