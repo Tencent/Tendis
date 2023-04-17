@@ -36,6 +36,15 @@ class KVTtlCompactionFilter : public CompactionFilter {
     return "KVTTLCompactionFilter";
   }
 
+  virtual rocksdb::CompactionFilter::Decision FilterBlobByKey(int /*level*/, const rocksdb::Slice& key,
+                                   std::string* /*new_value*/,
+                                   std::string* /*skip_until*/) const {
+    if (RecordKey::decodeType(key.data(), key.size()) == RecordType::RT_DATA_META) {
+      return rocksdb::CompactionFilter::Decision::kUndetermined;
+    }
+    return rocksdb::CompactionFilter::Decision::kKeep;
+  }
+
   virtual bool Filter(int /*level*/,
                       const rocksdb::Slice& key,
                       const rocksdb::Slice& existing_value,
