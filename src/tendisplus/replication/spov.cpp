@@ -201,11 +201,13 @@ Status ReplManager::receiveFileDirectio(const std::string& fullFileName,
 // send +OK
 void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
   LOG(INFO) << "store:" << metaSnapshot.id << " fullsync start";
-  /* NOTE(wayenchen):lastsyncTime && lastbinlogTs 
-        should be inited if fullsync to new master */
+  /* NOTE(raffertyyu@tencent.com)
+   * lastSyncTime should be inited to minimal time point to prevent reconnect.
+   * lastBinlogTs should be inited to 0 to prevent to be able to failover.
+   */
   {
     std::lock_guard<std::mutex> lk(_mutex);
-    _syncStatus[metaSnapshot.id]->lastSyncTime = getGmtUtcTime();
+    _syncStatus[metaSnapshot.id]->lastSyncTime = SCLOCK::time_point::min();
     _syncStatus[metaSnapshot.id]->lastBinlogTs = 0;
   }
   LocalSessionGuard sg(_svr.get());
@@ -606,7 +608,7 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
   }();
 
   if (metaSnapshot->syncFromHost == "") {
-    // if master is nil, try sched after 1 second
+    // if master is nil, try sched after 10 second
     LOG(WARNING) << "metaSnapshot->syncFromHost is nil, sleep 10 seconds";
     nextSched = nextSched + std::chrono::seconds(10);
     return;
