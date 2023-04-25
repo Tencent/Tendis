@@ -428,7 +428,15 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
     _isEnded(false),
     _closeResponse(false),
     _netMatrix(netMatrix),
-    _reqMatrix(reqMatrix) {
+    _reqMatrix(reqMatrix),
+    _commandUsedMemory(0),
+    _hardMemoryLimit(0),
+    _haveExceedHardLimit(false),
+    _softMemoryLimit(0),
+    _softMemoryLimitSeconds(0),
+    _haveExceedSoftLimit(false),
+    _firstTimePoint(SCLOCK::now()),
+    _softLimitReachedTime(_firstTimePoint) {
   if (initSock) {
     std::error_code ec;
     _sock.non_blocking(true, ec);
@@ -437,6 +445,7 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
     _sock.set_option(asio::socket_base::keep_alive(true));
     // TODO(deyukong): keep-alive params
   }
+  resetMemoryLimit();
 
   DLOG(INFO) << "net session, id:" << id() << ",connId:" << _connId
              << " createad";
@@ -548,6 +557,23 @@ asio::ip::tcp::socket* NetSession::getSock() {
 
 Status NetSession::setResponse(const std::string& s) {
   std::lock_guard<std::mutex> lk(_mutex);
+  // when writing response to socket, check memory limit first.
+  // memory used = content(in memory) + content(will be in sendbuffer)
+  //             + sendbuffer(current) + _sendBufferBack(maybe not empty)
+  _commandUsedMemory =
+    s.size() * 2 + _sendBuffer.size() + _sendBufferBack.size();
+  auto status = checkMemLimit();
+  if (!status.ok()) {
+    if (_server) {
+      _server->getServerStat().memlimitExceededTimes.fetch_add(
+        1, std::memory_order_relaxed);
+      LOG(WARNING) << "sess: " << id()
+                   << " exceed client-output-buffer-limit-normal."
+                   << " current memory used: " << _commandUsedMemory;
+    }
+    return status;
+  }
+
   if (_isEnded) {
     _closeAfterRsp = true;
     LOG(WARNING) << "setResponse _isEnded, id:" << id()
@@ -582,6 +608,7 @@ Status NetSession::setResponse(const std::string& s) {
       drainRspWithoutLock();
     }
   }
+  resetMemoryLimit();
   return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -1114,5 +1141,52 @@ void NetSession::stepState() {
   }
 }
 
+void NetSession::resetMemoryLimit() {
+  if (!_haveExceedSoftLimit) {
+    _softLimitReachedTime = _firstTimePoint;
+  }
+  _haveExceedHardLimit = false;
+  _haveExceedSoftLimit = false;
+
+  if (!_server) {
+    return;
+  }
+
+  _hardMemoryLimit = _server->getParams()->clientOutputBufferLimitNormalHardMB
+    << 20;
+  _softMemoryLimit = _server->getParams()->clientOutputBufferLimitNormalSoftMB
+    << 20;
+  _softMemoryLimitSeconds =
+    _server->getParams()->clientOutputBufferLimitNormalSoftSecond;
+
+  _commandUsedMemory = 0;
+}
+
+Status NetSession::checkMemLimit() {
+  if (_hardMemoryLimit && !_haveExceedHardLimit &&
+      _commandUsedMemory >= _hardMemoryLimit) {
+    _haveExceedHardLimit = true;
+    return {ErrorCodes::ERR_MEMORY_LIMIT, ""};
+  }
+  if (_softMemoryLimit && !_haveExceedSoftLimit &&
+      _commandUsedMemory >= _softMemoryLimit) {
+    _haveExceedSoftLimit = true;
+    if (_softLimitReachedTime == _firstTimePoint) {
+      _softLimitReachedTime = SCLOCK::now();
+    } else {
+      if (_softMemoryLimitSeconds &&
+          (SCLOCK::now() - _softLimitReachedTime >
+           std::chrono::seconds(_softMemoryLimitSeconds))) {
+        return {ErrorCodes::ERR_MEMORY_LIMIT, ""};
+      }
+    }
+  }
+  return {};
+}
+
+Status NetSession::memLimitRequest(uint64_t sizeUsed) {
+  _commandUsedMemory += sizeUsed;
+  return checkMemLimit();
+}
 
 }  // namespace tendisplus

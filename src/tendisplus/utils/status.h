@@ -40,6 +40,7 @@ enum class ErrorCodes {
   ERR_UNKNOWN,
   ERR_CLUSTER,
   ERR_CONNECT_TRY,
+  ERR_MEMORY_LIMIT,
   // special error code for `ChunkMigrateReceiver::receiveSnapshot()`
   ERR_READY_MIGRATE,
   ERR_BINLOG_DISABLED,
@@ -183,6 +184,11 @@ Expected<T> makeExpected(Args&&... args) {
     }                                                                  \
   } while (0)
 
+#define RET_IF_MEMORY_REQUEST_FAILED(SESS, SIZE)     \
+  auto tempStatus = (SESS)->memLimitRequest((SIZE)); \
+  if (!tempStatus.ok()) {                            \
+    return tempStatus;                               \
+  }
 }  // namespace tendisplus
 
 #endif  // SRC_TENDISPLUS_UTILS_STATUS_H_

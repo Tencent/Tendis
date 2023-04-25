@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -117,10 +118,12 @@ func Errorf(format string, v ...interface{}) {
 }
 
 func Fatal(v ...interface{}) {
+	debug.PrintStack()
 	_log.Fatal(v...)
 }
 
 func Fatalf(format string, v ...interface{}) {
+	debug.PrintStack()
 	_log.Fatalf(format, v...)
 }
 

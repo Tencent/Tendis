@@ -10,7 +10,7 @@ srcroot=`pwd`/../../../
 govendor=`pwd`/../../thirdparty/govendor/
 export GOPATH=$srcroot:$govendor
 echo $GOPATH
-rm -rf adminHeartbeat repl repltest restore restoretest clustertest clustertestRestore clustertestFailover deletefilesinrange dts/dts dts/dts_sync
+rm -rf adminHeartbeat repl repltest restore restoretest clustertest clustertestRestore clustertestFailover deletefilesinrange dts/dts dts/dts_sync memorylimit
 go build adminHeartbeat.go common.go common_cluster.go
 go build repl.go common.go
 go build repltest.go common.go
@@ -22,6 +22,7 @@ go build clustertestFailover.go common.go common_cluster.go
 go build deletefilesinrange.go common.go common_cluster.go
 go build -o dts/dts dts/dts.go
 go build -o dts/dts_sync dts/dts_sync.go
+go build memorylimit.go common.go
 
 function lm_traverse_dir(){
     for file in `ls $1`
@@ -60,7 +61,7 @@ function runOne() {
     fi
 }
 
-testNum=11
+testNum=12
 
 runOne ./adminHeartbeat
 runOne ./repl
@@ -77,6 +78,7 @@ runOne './clustertestFailover -benchtype=set'
 runOne './dts/dts'
 runOne './dts/dts_sync'
 runOne './deletefilesinrange -benchtype=set'
+runOne ./memorylimit
 
 grep "go passed" $logfile
 grep -E "\[error\]|\[fatal\]" $logfile

@@ -9,6 +9,7 @@ clustertestFailover
 deletefilesinrange
 dts/dts
 dts/dts_sync
+memorylimit
 
 *.log
 slowlog

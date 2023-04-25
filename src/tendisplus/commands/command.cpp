@@ -297,7 +297,7 @@ Expected<std::string> Command::runSessionCmd(Session* sess) {
     if (sess->getCtx()->isReplOnly() && sess->getCtx()->isMaster()) {
       // NOTE(vinchen): If it's a slave, the connection should be closed
       // when there is an error. And the error should be log
-      sess->getServerEntry()->logError(v.status().toString(), sess);
+      sess->getServerEntry()->logError(v.status(), sess);
       auto vv = dynamic_cast<NetSession*>(sess);
       if (vv) {
         vv->setCloseAfterRsp();
@@ -305,8 +305,9 @@ Expected<std::string> Command::runSessionCmd(Session* sess) {
     } else if (v.status().code() == ErrorCodes::ERR_INTERNAL ||
                v.status().code() == ErrorCodes::ERR_DECODE ||
                v.status().code() == ErrorCodes::ERR_LOCK_TIMEOUT ||
+               v.status().code() == ErrorCodes::ERR_MEMORY_LIMIT ||
                sess->getServerEntry()->getParams()->logError) {
-      sess->getServerEntry()->logError(v.status().toString(), sess);
+      sess->getServerEntry()->logError(v.status(), sess);
     }
   }
   return v;
@@ -383,6 +384,7 @@ Status Command::delKeyPessimisticInLock(Session* sess,
 }
 
 Expected<std::pair<std::string, std::list<Record>>> Command::scan(
+  Session* sess,
   const std::string& pk,
   const std::string& from,
   uint64_t cnt,
@@ -414,6 +416,12 @@ Expected<std::pair<std::string, std::list<Record>>> Command::scan(
     if (rcdKey.prefixPk() != pk) {
       break;
     }
+    RET_IF_MEMORY_REQUEST_FAILED(sess,
+                                 (RecordKey::MEMORY_USED_BESIDES_KEY +
+                                  rcdKey.getPrimaryKey().size() +
+                                  rcdKey.getSecondaryKey().size() +
+                                  RecordValue::MEMORY_USED_BESIDES_VALUE +
+                                  rcd.getRecordValue().getValue().size()));
     result.emplace_back(std::move(exptRcd.value()));
   }
   std::string nextCursor;
@@ -428,12 +436,13 @@ Expected<std::pair<std::string, std::list<Record>>> Command::scan(
 }
 
 Expected<std::list<Record>> Command::scanSimple(
+  Session* sess,
   const std::string& pk,
   const std::string& from,
   uint64_t cnt,
   Transaction* txn) {
   auto cursor = txn->createDataCursor();
-    if (from == "0") {
+  if (from == "0") {
     cursor->seek(pk);
   } else {
     cursor->seek(from);
@@ -455,6 +464,12 @@ Expected<std::list<Record>> Command::scanSimple(
     if (rcdKey.prefixPk() != pk) {
       break;
     }
+    RET_IF_MEMORY_REQUEST_FAILED(sess,
+                                 (RecordKey::MEMORY_USED_BESIDES_KEY +
+                                  rcdKey.getPrimaryKey().size() +
+                                  rcdKey.getSecondaryKey().size() +
+                                  RecordValue::MEMORY_USED_BESIDES_VALUE +
+                                  rcd.getRecordValue().getValue().size()));
     result.emplace_back(std::move(exptRcd.value()));
   }
   return std::move(result);

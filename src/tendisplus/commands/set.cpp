@@ -250,6 +250,7 @@ class SMembersCommand : public Command {
         break;
       }
       cnt += 1;
+      RET_IF_MEMORY_REQUEST_FAILED(sess, rcdkey.getSecondaryKey().size());
       Command::fmtBulk(ss, rcdkey.getSecondaryKey());
     }
     INVARIANT_D(cnt == ssize);
@@ -464,6 +465,8 @@ class SrandMemberCommand : public Command {
         break;
       }
       if (peek < remain) {
+        RET_IF_MEMORY_REQUEST_FAILED(
+          sess, exptRcd.value().getRecordKey().getSecondaryKey().size());
         vals.emplace_back(exptRcd.value().getRecordKey().getSecondaryKey());
         peek++;
       } else {
@@ -485,6 +488,7 @@ class SrandMemberCommand : public Command {
         for (auto& v : vals) {
           if (!remain)
             break;
+          RET_IF_MEMORY_REQUEST_FAILED(sess, v.size());
           Command::fmtBulk(ss, v);
           remain--;
         }
@@ -580,7 +584,7 @@ class SpopCommand : public Command {
     // for the index of the next scan.
     uint32_t countAddNext = count + 1;
     auto batch = Command::scanSimple(
-      fake.prefixPk(), spopFrom, countAddNext, ptxn.value());
+      sess, fake.prefixPk(), spopFrom, countAddNext, ptxn.value());
     if (!batch.ok()) {
       return batch.status();
     }
@@ -623,6 +627,7 @@ class SpopCommand : public Command {
         if (!s.ok()) {
           return s;
         }
+        RET_IF_MEMORY_REQUEST_FAILED(sess, subRk.getSecondaryKey().size());
         Command::fmtBulk(ss, subRk.getSecondaryKey());
       }
 
@@ -932,6 +937,7 @@ class SdiffgenericCommand : public Command {
           break;
         }
         if (i == startkey) {
+          RET_IF_MEMORY_REQUEST_FAILED(sess, rcdkey.getSecondaryKey().size());
           result.insert(rcdkey.getSecondaryKey());
         } else {
           result.erase(rcdkey.getSecondaryKey());
@@ -943,6 +949,7 @@ class SdiffgenericCommand : public Command {
       std::stringstream ss;
       Command::fmtMultiBulkLen(ss, result.size());
       for (auto& v : result) {
+        RET_IF_MEMORY_REQUEST_FAILED(sess, v.size());
         Command::fmtBulk(ss, v);
       }
       return ss.str();
@@ -1137,6 +1144,7 @@ class SintergenericCommand : public Command {
           if (rcdKey.prefixPk() != fakeRk.prefixPk()) {
             break;
           }
+          RET_IF_MEMORY_REQUEST_FAILED(sess, rcdKey.getSecondaryKey().size());
           result.insert(rcdKey.getSecondaryKey());
         }
         // for the smallest set
@@ -1176,6 +1184,7 @@ class SintergenericCommand : public Command {
       std::stringstream ss;
       Command::fmtMultiBulkLen(ss, result.size());
       for (auto& v : result) {
+        RET_IF_MEMORY_REQUEST_FAILED(sess, v.size());
         Command::fmtBulk(ss, v);
       }
       return ss.str();
@@ -1475,7 +1484,11 @@ class SuniongenericCommand : public Command {
         if (rcdkey.prefixPk() != fakeRk.prefixPk()) {
           break;
         }
+        auto size0 = result.size();
         result.insert(rcdkey.getSecondaryKey());
+        if (size0 != result.size()) {
+          RET_IF_MEMORY_REQUEST_FAILED(sess, rcdkey.getSecondaryKey().size());
+        }
       }
     }
 

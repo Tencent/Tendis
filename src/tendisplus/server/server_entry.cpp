@@ -44,6 +44,7 @@ void ServerStat::reset() {
   syncPartialErr = 0;
   netInputBytes = 0;
   netOutputBytes = 0;
+  memlimitExceededTimes = 0;
   memset(&instMetric, 0, sizeof(instMetric));
 }
 
@@ -382,24 +383,17 @@ void ServerEntry::logGeneral(Session* sess) {
   LOG(INFO) << sess->getCmdStr();
 }
 
-void ServerEntry::logWarning(const std::string& str, Session* sess) {
+void ServerEntry::logError(const Status& s, Session* sess) {
   std::stringstream ss;
   if (sess) {
     ss << "sessid:" << sess->id() << "cmd:" << sess->getCmdStr();
   }
 
-  ss << ", warning:" << tendisplus::catRepr(str);
-
-  LOG(WARNING) << ss.str();
-}
-
-void ServerEntry::logError(const std::string& str, Session* sess) {
-  std::stringstream ss;
-  if (sess) {
-    ss << "sessid:" << sess->id() << " cmd:" << sess->getCmdStr();
+  if (s.code() == ErrorCodes::ERR_MEMORY_LIMIT) {
+    _serverStat.memlimitExceededTimes.fetch_add(1, std::memory_order_relaxed);
   }
 
-  ss << ", error:" << tendisplus::catRepr(str);
+  ss << ", error:" << tendisplus::catRepr(s.toString());
 
   LOG(ERROR) << ss.str();
 
@@ -1262,6 +1256,9 @@ void ServerEntry::getStatInfo(std::stringstream& ss) const {
   ss << "keyspace_hits:" << _serverStat.keyspaceHits.get() << "\r\n";
   ss << "keyspace_misses:" << _serverStat.keyspaceMisses.get() << "\r\n";
   ss << "keyspace_wrong_versionep:" << _serverStat.keyspaceIncorrectEp.get()
+     << "\r\n";
+  ss << "memory_limit_exceeded_times:"
+     << _serverStat.memlimitExceededTimes.load(std::memory_order_relaxed)
      << "\r\n";
   ss << "scheduleNum:" << _scheduleNum << "\r\n";
   ss << "internalErrors:" << _internalErrorCnt.load(std::memory_order_relaxed)

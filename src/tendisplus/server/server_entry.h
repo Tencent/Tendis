@@ -83,6 +83,9 @@ class ServerStat {
   Atom<uint64_t> netInputBytes;  /* Bytes read from network. */
   Atom<uint64_t> netOutputBytes; /* Bytes written to network. */
 
+  /* Number of times the memory limit was exceeded */
+  std::atomic<uint64_t> memlimitExceededTimes{0};
+
   /* The following two are used to track instantaneous metrics, like
    * number of operations per second, network traffic. */
   struct {
@@ -268,8 +271,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   void setTsEp(uint64_t timestamp);
   uint64_t getTsEp() const;
   void AddMonitor(uint64_t sessId);
-  static void logWarning(const std::string& str, Session* sess = nullptr);
-  void logError(const std::string& str, Session* sess = nullptr);
+  void logError(const Status& s, Session* sess = nullptr);
   void slowlogPushEntryIfNeeded(
     uint64_t time,
     uint64_t duration, /* including the queue time */
