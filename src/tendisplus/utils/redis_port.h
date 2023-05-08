@@ -5,6 +5,7 @@
 #ifndef SRC_TENDISPLUS_UTILS_REDIS_PORT_H_
 #define SRC_TENDISPLUS_UTILS_REDIS_PORT_H_
 
+#include <cstdint>
 #include <iostream>
 #include <vector>
 #include <string>
