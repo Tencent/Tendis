@@ -5,6 +5,7 @@
 #ifndef SRC_TENDISPLUS_UTILS_PARAM_MANAGER_H_
 #define SRC_TENDISPLUS_UTILS_PARAM_MANAGER_H_
 
+#include <cstdint>
 #include <map>
 #include <string>
 
