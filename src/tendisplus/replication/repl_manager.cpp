@@ -183,9 +183,8 @@ Status ReplManager::startup() {
   if (!s.ok()) {
     return s;
   }
-  SCLOCK::time_point tp = getGmtUtcTime();
-  DLOG(INFO) << "init last sync time:"
-             << epochToDatetime(nsSinceEpoch(tp) / 1000000);
+  // init _syncStatus/_logRecycStatus run ASAP
+  SCLOCK::time_point tp = SCLOCK::time_point::min();
 
   LocalSessionGuard g(_svr.get());
   for (uint32_t i = 0; i < _svr->getKVStoreCount(); i++) {
@@ -204,7 +203,7 @@ Status ReplManager::startup() {
     if (!isOpen) {
       LOG(INFO) << "store:" << i << " is not opened";
 
-      // NOTE(vinchen): Here the max timepiont value is tp used
+      // NOTE(vinchen): Here the max timepoint value is tp used
       // to control the _syncStatus/_logRecycStatus
       // do nothing when the storeMode == STORE_NONE.
       // And it would be easier to reopen the closed store in the

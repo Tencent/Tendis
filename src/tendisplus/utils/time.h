@@ -27,7 +27,6 @@ std::string epochToDatetimeInOneStr(uint64_t epoch);
 std::string msEpochToDatetime(uint64_t msEpoch);
 std::string nsEpochToDatetime(uint64_t nsEpoch);
 
-SCLOCK::time_point getGmtUtcTime();
 uint64_t msToNow(uint64_t ms);
 }  // namespace tendisplus
 
