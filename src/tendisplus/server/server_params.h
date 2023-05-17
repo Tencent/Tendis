@@ -597,6 +597,7 @@ class ServerParams {
   int64_t luaTimeLimit = 5000;  // ms
   int64_t luaStateMaxIdleTime = 60*60*1000;  // ms
   bool jeprofAutoDump = true;
+  bool enableJemallocBgThread = true;
   bool deleteFilesInRangeForMigrateGc = true;
   bool compactRangeAfterDeleteRange = false;
   bool logError = false;
