@@ -190,10 +190,15 @@ void testSpopOptimize(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(expect6.ok());
   EXPECT_EQ(expect6.value(), "*2\r\n$5\r\nval_0\r\n$5\r\nval_1\r\n");
 
-  sess.setArgs({"spop", "kv_2", "2"});
+  sess.setArgs({"spop", "kv_2", "1"});
   auto expect7 = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect7.ok());
-  EXPECT_EQ(expect7.value(), "*2\r\n$5\r\nval_5\r\n$5\r\nval_6\r\n");
+  EXPECT_EQ(expect7.value(), "*1\r\n$5\r\nval_5\r\n");
+
+  sess.setArgs({"spop", "kv_2", "1"});
+  auto expect9 = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect9.ok());
+  EXPECT_EQ(expect9.value(), "*1\r\n$5\r\nval_6\r\n");
 
   sess.setArgs({"scard", "kv_2"});
   auto expect8 = Command::runSessionCmd(&sess);

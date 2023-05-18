@@ -518,6 +518,7 @@ class SpopCommand : public Command {
     const std::vector<std::string>& args = sess->getArgs();
     const std::string& key = args[1];
     uint32_t count(1);
+    bool specificCount = false;
     if (args.size() > 3) {
       return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
     }
@@ -526,6 +527,7 @@ class SpopCommand : public Command {
       if (!eCnt.ok()) {
         return eCnt.status();
       }
+      specificCount = true;
       count = eCnt.value();
     }
 
@@ -605,7 +607,7 @@ class SpopCommand : public Command {
 
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
       std::stringstream ss;
-      if (rcds.size() > 1) {
+      if (specificCount) {
         Command::fmtMultiBulkLen(ss, rcds.size());
       }
       auto ptxn = sess->getCtx()->createTransaction(kvstore);
