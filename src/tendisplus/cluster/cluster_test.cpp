@@ -2317,6 +2317,45 @@ TEST(Cluster, migrateAndImport) {
   servers.clear();
 }
 
+TEST(Cluster, migrateNotAutoReconfSlave) {
+  uint32_t nodeNum = 2;
+  uint32_t startPort = 17150;
+
+  const auto guard = MakeGuard([&nodeNum] {
+    destroyCluster(nodeNum * 2);
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+  // 2 master & 2 slave
+  auto servers = makeCluster(
+    startPort, nodeNum, 10, true, false, {}, {{"slave-reconf-enabled", "no"}});
+  SlotsBitmap sbm;
+  for (int i = 0; i <= 8192; i++) {
+    sbm.set(i);
+  }
+  auto ret = migrate(servers[0], servers[1], sbm);
+  EXPECT_TRUE(ret.ok());
+  waitMigrateTaskFinish(servers[0], servers[1], sbm);
+
+  std::this_thread::sleep_for(std::chrono::seconds(30));
+
+  auto slaves = servers[0]
+                  ->getClusterMgr()
+                  ->getClusterState()
+                  ->getMyselfNode()
+                  ->getSlaves();
+  EXPECT_TRUE(slaves.ok());
+  EXPECT_EQ(slaves.value().size(), 1);
+
+#ifndef _WIN32
+  for (auto svr : servers) {
+    svr->stop();
+    LOG(INFO) << "stop " << svr->getParams()->port << " success";
+  }
+#endif
+
+  servers.clear();
+}
+
 void testDeleteChunks(std::shared_ptr<ServerEntry> srcNode,
                       std::shared_ptr<ServerEntry> dstNode,
                       std::vector<uint32_t>&& slotsList) {
