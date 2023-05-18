@@ -280,9 +280,15 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
   _enableCluster = cfg->clusterEnabled;
   _dbNum = cfg->dbNum;
   _cfg = cfg;
+  // set callback function when dynamically changing option
   _cfg->serverParamsVar("executorThreadNum")->setUpdate([this]() {
     resizeExecutorThreadNum(_cfg->executorThreadNum);
   });
+#ifdef TENDIS_JEMALLOC
+  _cfg->serverParamsVar("enable-jemalloc-bgthread")->setUpdate([this]() {
+    jemallocBgThreadConf();
+  });
+#endif
 }
 
 ServerEntry::~ServerEntry() {
@@ -733,6 +739,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
   _lastJeprofDumpMemoryGB = 0;
 
+  jemallocBgThreadConf();
 
   LOG(INFO) << "ServerEntry::startup sucess.";
   return {ErrorCodes::ERR_OK, ""};
@@ -1677,6 +1684,15 @@ void ServerEntry::jeprofCron() {
 
     mallctl("prof.dump", NULL, NULL, NULL, 0);
   }
+#endif  // !TENDIS_JEMALLOC
+#endif  // !_WIN32
+}
+
+void ServerEntry::jemallocBgThreadConf() {
+#ifndef _WIN32
+#ifdef TENDIS_JEMALLOC
+  char val = _cfg->enableJemallocBgThread ? 1 : 0;
+  mallctl("background_thread", NULL, NULL, &val, 1);
 #endif  // !TENDIS_JEMALLOC
 #endif  // !_WIN32
 }
