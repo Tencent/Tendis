@@ -485,6 +485,7 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("aof-psync-num", aofPsyncNum);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("fullPsync-notice-enabled",
                                   fullPsyncNoticeEnable);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("slave-reconf-enabled", slaveReconfEnabled);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("slave-migrate-enabled",
                                   slaveMigarateEnabled);
   REGISTER_VARS_NOUSE("migrate-gc-enabled");

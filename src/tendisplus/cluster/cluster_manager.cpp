@@ -1041,7 +1041,7 @@ void ClusterState::clusterUpdateSlotsConfigWith(
    *    master.
    * 2) We are a slave and our master is left without slots. We need
    *    to replicate to the new slots owner. */
-  if (needReconfigure) {
+  if (needReconfigure && _server->getParams()->slaveReconfEnabled) {
     serverLog(LL_WARNING,
               "Configuration change detected "
               "Reconfiguring myself as a replica of %.40s",
