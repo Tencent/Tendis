@@ -367,8 +367,7 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-log-slower-than",
                                   slowlogLogSlowerThan);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-max-len", slowlogMaxLen);
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-flush-interval",
-                                  slowlogFlushInterval);
+  REGISTER_VARS_NOUSE("slowlog-flush-interval");
   REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-file-enabled", slowlogFileEnabled);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("tendis-latency-limit", tendisLatencyLimit);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.latency-limit", rocksdbLatencyLimit);

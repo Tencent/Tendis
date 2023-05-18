@@ -141,7 +141,8 @@ class SlowlogStat {
   std::list<SlowlogEntry> _slowlogData;
   std::ofstream _slowLog;
   std::atomic<uint64_t> _slowlogId;
-  mutable std::mutex _mutex;
+  mutable std::mutex _dataMutex;
+  mutable std::mutex _fileMutex;
 };
 
 #define THREAD_SLEEP(n_secs)                                \

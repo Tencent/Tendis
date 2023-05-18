@@ -93,17 +93,17 @@ uint64_t SlowlogStat::getSlowlogNum() {
 }
 
 uint64_t SlowlogStat::getSlowlogLen() {
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::lock_guard<std::mutex> lk(_dataMutex);
   return _slowlogData.size();
 }
 
 void SlowlogStat::resetSlowlogData() {
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::lock_guard<std::mutex> lk(_dataMutex);
   _slowlogData.clear();
 }
 
 std::list<SlowlogEntry> SlowlogStat::getSlowlogData(uint64_t count) {
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::lock_guard<std::mutex> lk(_dataMutex);
   std::list<SlowlogEntry> result;
   int size;
   size = std::min(count, _slowlogData.size());
@@ -131,7 +131,7 @@ void SlowlogStat::closeSlowlogFile() {
 }
 
 void SlowlogStat::slowlogFlush() {
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::lock_guard<std::mutex> lk(_fileMutex);
   if (_slowLog.is_open()) {
     _slowLog.flush();
   }
@@ -142,7 +142,6 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(
   uint64_t duration, /* including the queue time */
   uint64_t execTime,
   Session* sess) {
-  std::lock_guard<std::mutex> lk(_mutex);
   auto server = sess->getServerEntry();
   auto& args = sess->getArgs();
   auto& cfgs = server->getParams();
@@ -150,26 +149,27 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(
   size_t max_string = SLOWLOG_ENTRY_MAX_STRING;
 
   if (cfgs->slowlogFileEnabled) {
-    _slowLog << "# Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";
-    _slowLog << "# Timestamp: " << time << "\n";
-    _slowLog << "# Time: " << epochToDatetime(time / 1000000) << "\n";
-    _slowLog << "# Host: " << sess->getRemote() << "\n";
-    _slowLog << "# Db: " << sess->getCtx()->getDbId() << "\n";
-    _slowLog << "# Query_time: " << duration << "\n";
-    _slowLog << "# Execute_time: " << execTime << "\n";
-    _slowLog << "# Thread_id: " << getCurThreadId() << "\n";
+    std::stringstream slowLog;
+    slowLog << "# Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";
+    slowLog << "# Timestamp: " << time << "\n";
+    slowLog << "# Time: " << epochToDatetime(time / 1000000) << "\n";
+    slowLog << "# Host: " << sess->getRemote() << "\n";
+    slowLog << "# Db: " << sess->getCtx()->getDbId() << "\n";
+    slowLog << "# Query_time: " << duration << "\n";
+    slowLog << "# Execute_time: " << execTime << "\n";
+    slowLog << "# Thread_id: " << getCurThreadId() << "\n";
     for (uint8_t i = 0; i < LockLatencyType::MAX_LLT; ++i) {
       auto lockRecord = sess->getCtx()->generateLockRecordLogIfNeeded(
         static_cast<LockLatencyType>(i));
       if (!lockRecord.empty()) {
-        _slowLog << "# " << lockRecord << "\n";
+        slowLog << "# " << lockRecord << "\n";
       }
     }
     for (uint8_t i = 0; i < RocksdbLatencyType::MAX_RLT; ++i) {
       auto rocksdbRecord = sess->getCtx()->generateRocksdbRecordLogIfNeeded(
         static_cast<RocksdbLatencyType>(i));
       if (!rocksdbRecord.empty()) {
-        _slowLog << "# " << rocksdbRecord << "\n";
+        slowLog << "# " << rocksdbRecord << "\n";
       }
     }
 
@@ -179,23 +179,23 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(
       args_total_length += args[i].length();
     }
     if (args_total_length > cfgs->slowlogMaxLen) {
-      _slowLog << "[" << args_total_length << "] ";
+      slowLog << "[" << args_total_length << "] ";
     } else {
-      _slowLog << "[] ";
+      slowLog << "[] ";
     }
     for (size_t i = 0; i < args.size(); ++i) {
       if (args_output_length + args[i].length() <= max_string) {
-        _slowLog << args[i] << " ";
+        slowLog << args[i] << " ";
         args_output_length += args[i].length();
       } else {
-        _slowLog << args[i].substr(0, (max_string - args_output_length)) << " ";
+        slowLog << args[i].substr(0, (max_string - args_output_length)) << " ";
         break;
       }
     }
-    _slowLog << "\n\n";
-    if ((_slowlogId.load(std::memory_order_relaxed) %
-         cfgs->slowlogFlushInterval) == 0) {
-      _slowLog.flush();
+    slowLog << "\n\n";
+    {
+      std::lock_guard<std::mutex> lk(_fileMutex);
+      _slowLog << slowLog.str();
     }
   }
 
@@ -226,10 +226,12 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(
   new_entry.execTime = execTime;
   new_entry.cname = sess->getName();
   new_entry.unix_time = time / 1000000;
-  _slowlogData.push_front(new_entry);
-
-  while (_slowlogData.size() > cfgs->slowlogMaxLen) {
-    _slowlogData.pop_back();
+  {
+    std::lock_guard<std::mutex> lk(_dataMutex);
+    _slowlogData.push_front(new_entry);
+    while (_slowlogData.size() > cfgs->slowlogMaxLen) {
+      _slowlogData.pop_back();
+    }
   }
 
   _slowlogId.fetch_add(1, std::memory_order_relaxed);

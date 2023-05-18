@@ -234,7 +234,6 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->maxClients, CONFIG_DEFAULT_MAX_CLIENTS);
   EXPECT_EQ(cfg->slowlogPath, "./slowlog");
   EXPECT_EQ(cfg->slowlogLogSlowerThan, CONFIG_DEFAULT_SLOWLOG_LOG_SLOWER_THAN);
-  EXPECT_EQ(cfg->slowlogFlushInterval, CONFIG_DEFAULT_SLOWLOG_FLUSH_INTERVAL);
   EXPECT_EQ(cfg->slowlogMaxLen, 128);
   EXPECT_EQ(cfg->netIoThreadNum, 0);
   EXPECT_EQ(cfg->executorThreadNum, 0);
