@@ -2345,6 +2345,7 @@ TEST(Cluster, migrateNotAutoReconfSlave) {
                   ->getSlaves();
   EXPECT_TRUE(slaves.ok());
   EXPECT_EQ(slaves.value().size(), 1);
+  slaves.value().clear();
 
 #ifndef _WIN32
   for (auto svr : servers) {
