@@ -19,8 +19,8 @@ TEST(Status, Common) {
 }
 
 
-size_t callCnt;
-size_t moveCallCnt;
+int32_t callCnt;
+int32_t moveCallCnt;
 class Base {
  public:
   Base() {
