@@ -30,7 +30,7 @@ enum class ClusterHealth : std::uint8_t {
 
 #define CLUSTER_SLOTS 16384
 
-#define CLUSTER_NAMELEN 40       // sha1 hex length
+// #define CLUSTER_NAMELEN 40       // sha1 hex length
 #define CLUSTER_PORT_INCR 10000  // Cluster port = baseport + PORT_INCR
 
 
@@ -616,6 +616,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void clusterHandleSlaveMigration(uint32_t max_slaves);
 
   Status clusterHandleSlaveFailover();
+  uint32_t clusterFailedMasterRank();
   Status clusterFailoverReplaceYourMaster(void);
   Status clusterFailoverReplaceYourMasterMeta(void);
   void clusterLogCantFailover(int reason);
@@ -748,9 +749,12 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   mstime_t getFailAuthTime() const;
   void setFailAuthTime(mstime_t t);
   void addFailAuthTime(mstime_t t);
+  void setRankFailoverTimeout(mstime_t t);
+  void addRankFailoverTimeout(mstime_t t);
   void setFailAuthCount(uint32_t t);
   void setFailAuthSent(uint32_t t);
   void setFailAuthRank(uint32_t t);
+  void setFailMasterRank(uint32_t t);
   bool clusterNodeFailed(const std::string& nodeid);
   bool isDataAgeTooLarge() const;
 
@@ -813,6 +817,8 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   // True if we already asked for votes.
   std::atomic<uint16_t> _failoverAuthSent;
   std::atomic<uint32_t> _failoverAuthRank;
+  std::atomic<uint32_t> _failedMasterRank;
+  mstime_t _rankFailoverTimeout;
   // Epoch of the current election.
   std::atomic<uint64_t> _failoverAuthEpoch;
   std::atomic<bool> _isVoteFailByDataAge;
