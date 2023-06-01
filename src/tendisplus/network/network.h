@@ -193,6 +193,10 @@ class NetSession : public Session {
     return _isEnded;
   }
 
+  Status memLimitRequest(uint64_t sizeUsed) override;
+  void resetMemoryLimit();
+  Status checkMemLimit();
+
  protected:
   // schedule related functions
   virtual void schedule();
@@ -259,6 +263,15 @@ class NetSession : public Session {
   std::shared_ptr<NetworkMatrix> _netMatrix;
   std::shared_ptr<RequestMatrix> _reqMatrix;
   uint32_t _ioCtxId = UINT32_MAX;
+
+  uint64_t _commandUsedMemory;
+  uint64_t _hardMemoryLimit;
+  bool _haveExceedHardLimit;
+  uint64_t _softMemoryLimit;
+  uint64_t _softMemoryLimitSeconds;
+  bool _haveExceedSoftLimit;
+  const std::chrono::steady_clock::time_point _firstTimePoint;
+  std::chrono::steady_clock::time_point _softLimitReachedTime;
 };
 
 }  // namespace tendisplus

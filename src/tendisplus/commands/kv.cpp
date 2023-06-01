@@ -1731,6 +1731,7 @@ class MGetCommand : public Command {
       } else if (!rv.status().ok()) {
         return rv.status();
       }
+      RET_IF_MEMORY_REQUEST_FAILED(sess, rv.value().getValue().size());
       Command::fmtBulk(ss, rv.value().getValue());
     }
     return ss.str();

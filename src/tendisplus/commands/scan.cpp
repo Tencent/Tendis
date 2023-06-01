@@ -32,7 +32,8 @@ class ScanGenericCommand : public Command {
                                uint32_t dbId,
                                const std::string& key) const = 0;
 
-  virtual Expected<std::string> genResult(const std::string& cursor,
+  virtual Expected<std::string> genResult(Session* sess,
+                                          const std::string& cursor,
                                           const std::list<Record>& rcds) = 0;
 
   ssize_t arity() const {
@@ -149,7 +150,7 @@ class ScanGenericCommand : public Command {
     RecordKey fake = genFakeRcd(expdb.value().chunkId, pCtx->getDbId(), key);
 
     auto batch =
-      Command::scan(fake.prefixPk(), realCursor, count, ptxn.value());
+      Command::scan(sess, fake.prefixPk(), realCursor, count, ptxn.value());
     RET_IF_ERR_EXPECTED(batch);
     const bool NOCASE = false;
     for (std::list<Record>::iterator it = batch.value().second.begin();
@@ -179,7 +180,7 @@ class ScanGenericCommand : public Command {
         sess, key, cursor, kvstoreId, batch.value().first);
       newCursor = std::to_string(cursor);
     }
-    return genResult(newCursor, batch.value().second);
+    return genResult(sess, newCursor, batch.value().second);
   }
 
  private:
@@ -200,13 +201,16 @@ class ZScanCommand : public ScanGenericCommand {
     return {chunkId, dbId, RecordType::RT_ZSET_H_ELE, key, ""};
   }
 
-  Expected<std::string> genResult(const std::string& cursor,
+  Expected<std::string> genResult(Session* sess,
+                                  const std::string& cursor,
                                   const std::list<Record>& rcds) {
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, 2);
     Command::fmtBulk(ss, cursor);
     Command::fmtMultiBulkLen(ss, rcds.size() * 2);
     for (const auto& v : rcds) {
+      RET_IF_MEMORY_REQUEST_FAILED(sess,
+                                   v.getRecordKey().getSecondaryKey().size());
       Command::fmtBulk(ss, v.getRecordKey().getSecondaryKey());
       auto d = tendisplus::doubleDecode(v.getRecordValue().getValue());
       RET_IF_ERR_EXPECTED(d);
@@ -234,7 +238,8 @@ class ZScanbyscoreCommand : public ScanGenericCommand {
             std::to_string(ZSlMetaValue::HEAD_ID)};
   }
 
-  Expected<std::string> genResult(const std::string& cursor,
+  Expected<std::string> genResult(Session* sess,
+                                  const std::string& cursor,
                                   const std::list<Record>& rcds) {
     std::list<Record> sortRcds = rcds;
     // sortRcds.sort([](Record& a, Record& b) -> bool {
@@ -257,6 +262,7 @@ class ZScanbyscoreCommand : public ScanGenericCommand {
           std::to_string(ZSlMetaValue::HEAD_ID)) {
         continue;
       }
+      RET_IF_MEMORY_REQUEST_FAILED(sess, v.getRecordValue().getValue().size());
       Command::fmtBulk(ss, v.getRecordValue().getValue());
       auto d = tendisplus::doubleDecode(v.getRecordKey().getSecondaryKey());
       INVARIANT_D(d.ok());
@@ -281,13 +287,16 @@ class SScanCommand : public ScanGenericCommand {
     return {chunkId, dbId, RecordType::RT_SET_ELE, key, ""};
   }
 
-  Expected<std::string> genResult(const std::string& cursor,
+  Expected<std::string> genResult(Session* sess,
+                                  const std::string& cursor,
                                   const std::list<Record>& rcds) {
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, 2);
     Command::fmtBulk(ss, cursor);
     Command::fmtMultiBulkLen(ss, rcds.size());
     for (const auto& v : rcds) {
+      RET_IF_MEMORY_REQUEST_FAILED(sess,
+                                   v.getRecordKey().getSecondaryKey().size());
       Command::fmtBulk(ss, v.getRecordKey().getSecondaryKey());
     }
     return ss.str();
@@ -308,13 +317,17 @@ class HScanCommand : public ScanGenericCommand {
     return {chunkId, dbId, RecordType::RT_HASH_ELE, key, ""};
   }
 
-  Expected<std::string> genResult(const std::string& cursor,
+  Expected<std::string> genResult(Session* sess,
+                                  const std::string& cursor,
                                   const std::list<Record>& rcds) final {
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, 2);
     Command::fmtBulk(ss, cursor);
     Command::fmtMultiBulkLen(ss, rcds.size() * 2);
     for (const auto& v : rcds) {
+      RET_IF_MEMORY_REQUEST_FAILED(sess,
+                                   (v.getRecordKey().getSecondaryKey().size() +
+                                    v.getRecordValue().getValue().size()));
       Command::fmtBulk(ss, v.getRecordKey().getSecondaryKey());
       Command::fmtBulk(ss, v.getRecordValue().getValue());
     }
@@ -530,8 +543,12 @@ class ScanCommand : public Command {
                                          &seq, &scanTimes, scanMaxTimes,
                                          ptxn.value());
         RET_IF_ERR_EXPECTED(expRecordKeys);
-        auto recordKeys = expRecordKeys.value();
+        const auto& recordKeys = expRecordKeys.value();
         for (const auto& key : recordKeys) {
+          RET_IF_MEMORY_REQUEST_FAILED(sess,
+                                       (RecordKey::MEMORY_USED_BESIDES_KEY +
+                                        key.getPrimaryKey().size() +
+                                        key.getSecondaryKey().size()));
           batch.emplace_back(key);
         }
       }
@@ -558,7 +575,7 @@ class ScanCommand : public Command {
      */
     cursor = (cursor | (seqId << 48U));
 
-    return genResult(cursor, batch);
+    return genResult(sess, cursor, batch);
   }
 
  private:
@@ -693,17 +710,19 @@ class ScanCommand : public Command {
 
   /**
    * @brief generate result string
+   * @param sess command session
    * @param cursor input cursor
    * @param recordKeys scan result
    * @return string return to session
    */
-  static Expected<std::string> genResult(uint64_t cursor,
-                                  const std::list<RecordKey>& recordKeys) {
+  static Expected<std::string> genResult(
+    Session* sess, uint64_t cursor, const std::list<RecordKey>& recordKeys) {
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, 2);
     Command::fmtBulk(ss, std::to_string(cursor));
     Command::fmtMultiBulkLen(ss, recordKeys.size());
     for (const auto& v : recordKeys) {
+      RET_IF_MEMORY_REQUEST_FAILED(sess, v.getPrimaryKey().size());
       Command::fmtBulk(ss, v.getPrimaryKey());
     }
     return ss.str();

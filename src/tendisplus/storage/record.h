@@ -164,6 +164,9 @@ class RecordKey {
   static constexpr size_t TYPE_OFFSET = CHUNKID_OFFSET + sizeof(uint32_t);
   static constexpr size_t DBID_OFFSET = TYPE_OFFSET + sizeof(uint8_t);
   static constexpr size_t PK_OFFSET = DBID_OFFSET + sizeof(uint32_t);
+  static constexpr size_t MEMORY_USED_BESIDES_KEY = sizeof(uint32_t) +
+    sizeof(uint32_t) + sizeof(RecordType) + sizeof(RecordType) +
+    sizeof(std::string) + sizeof(std::string) + sizeof(uint64_t) + sizeof(TRSV);
 
  private:
   void encodePrefixPk(std::vector<uint8_t>*) const;
@@ -262,6 +265,9 @@ class RecordValue {
 
   static constexpr size_t TYPE_OFFSET = 0;
   static constexpr size_t TTL_OFFSET = TYPE_OFFSET + sizeof(uint8_t);
+  static constexpr size_t MEMORY_USED_BESIDES_VALUE = sizeof(RecordType) +
+    sizeof(uint64_t) + sizeof(uint64_t) + sizeof(uint64_t) + sizeof(int64_t) +
+    sizeof(uint64_t) + sizeof(uint64_t) + sizeof(std::string);
   uint64_t getEleCnt() const;
   RecordType getEleType() const;
   bool isBigKey(uint64_t valueSize, uint64_t eleCnt) const;

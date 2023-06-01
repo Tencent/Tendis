@@ -116,6 +116,8 @@ std::string Status::getErrStr(ErrorCodes code) {
       return "-NOSCRIPT No matching script. Please use EVAL.\r\n";
     case ErrorCodes::ERR_BINLOG_DISABLED:
       return "-ERR binlog is disabled\r\n";
+    case ErrorCodes::ERR_MEMORY_LIMIT:
+      return "-ERR memory exceed client-output-buffer-limit\r\n";
 
     default:
       break;

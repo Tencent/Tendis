@@ -856,6 +856,7 @@ class LRangeCommand : public Command {
                       std::to_string(start));
       Expected<RecordValue> eSubVal = kvstore->getKV(subRk, ptxn.value());
       if (eSubVal.ok()) {
+        RET_IF_MEMORY_REQUEST_FAILED(sess, eSubVal.value().getValue().size());
         Command::fmtBulk(ss, eSubVal.value().getValue());
       } else {
         return eSubVal.status();

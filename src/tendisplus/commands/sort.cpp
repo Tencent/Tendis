@@ -396,6 +396,8 @@ class SortCommand : public Command {
         if (!expRv.ok()) {
           return expRv.status();
         }
+        RET_IF_MEMORY_REQUEST_FAILED(
+          sess, (sizeof(Element) + expRv.value().getValue().size()));
         records.emplace_back(Element{expRv.value().getValue(), 0});
         pos += sign;
       }
@@ -420,6 +422,8 @@ class SortCommand : public Command {
         if (rcdkey.prefixPk() != fakeRk.prefixPk()) {
           break;
         }
+        RET_IF_MEMORY_REQUEST_FAILED(
+          sess, (sizeof(Element) + rcdkey.getSecondaryKey().size()));
         records.emplace_back(Element{rcdkey.getSecondaryKey(), 0});
       }
     } else if (keyType == RecordType::RT_ZSET_META) {
@@ -433,6 +437,7 @@ class SortCommand : public Command {
         return arr.status();
       }
       for (auto& x : arr.value()) {
+        RET_IF_MEMORY_REQUEST_FAILED(sess, (sizeof(Element) + x.second.size()));
         records.emplace_back(Element{x.second, 0});
       }
     } else {
@@ -564,12 +569,14 @@ class SortCommand : public Command {
           const auto& op = ops[j];
           size_t uniqueId = records[i].uniqueId;
           if (op.cmd == "") {
+            RET_IF_MEMORY_REQUEST_FAILED(sess, (records[i].key.size() * 2));
             result.emplace_back(records[i].key);
             Command::fmtBulk(ssObjs, records[i].key);
             continue;
           }
           const auto& priKeylist = op.priKey;
           if (op.keySelf) {
+            RET_IF_MEMORY_REQUEST_FAILED(sess, (records[i].key.size() * 2));
             result.emplace_back(records[i].key);
             Command::fmtBulk(ssObjs, records[i].key);
           } else if (priKeylist[uniqueId].size() == 0) {
@@ -580,10 +587,11 @@ class SortCommand : public Command {
             const auto& field = op.field;
             auto expVal = getPatternResult(sess, priKeylist[uniqueId], field);
             if (expVal.ok()) {
+              RET_IF_MEMORY_REQUEST_FAILED(sess, (expVal.value().size() * 2));
               result.emplace_back(expVal.value());
               Command::fmtBulk(ssObjs, expVal.value());
             } else if (expVal.status().code() == ErrorCodes::ERR_NOTFOUND ||
-                expVal.status().code() == ErrorCodes::ERR_EXPIRED) {
+                       expVal.status().code() == ErrorCodes::ERR_EXPIRED) {
               result.emplace_back("");
               Command::fmtNull(ssObjs);
             } else {

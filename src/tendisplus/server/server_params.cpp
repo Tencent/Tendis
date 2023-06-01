@@ -546,6 +546,13 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("wait-time-if-exists-migrate-task",
                                   waitTimeIfExistsMigrateTask);
   REGISTER_VARS_NOUSE("net-send-batch-size");
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("client-output-buffer-limit-normal-hard-mb",
+                                  clientOutputBufferLimitNormalHardMB);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("client-output-buffer-limit-normal-soft-mb",
+                                  clientOutputBufferLimitNormalSoftMB);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC(
+    "client-output-buffer-limit-normal-soft-second",
+    clientOutputBufferLimitNormalSoftSecond);
 }
 
 ServerParams::~ServerParams() {

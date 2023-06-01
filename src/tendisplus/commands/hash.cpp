@@ -350,6 +350,12 @@ class HAllCommand : public Command {
       if (rcdKey.prefixPk() != prefix) {
         break;
       }
+      RET_IF_MEMORY_REQUEST_FAILED(sess,
+                                   (RecordKey::MEMORY_USED_BESIDES_KEY +
+                                    rcdKey.getPrimaryKey().size() +
+                                    rcdKey.getSecondaryKey().size() +
+                                    RecordValue::MEMORY_USED_BESIDES_VALUE +
+                                    rcd.getRecordValue().getValue().size()));
       result.emplace_back(std::move(rcd));
     }
     return std::move(result);
@@ -368,6 +374,9 @@ class HGetAllCommand : public HAllCommand {
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, rcds.value().size() * 2);
     for (const auto& v : rcds.value()) {
+      RET_IF_MEMORY_REQUEST_FAILED(sess,
+                                   (v.getRecordKey().getSecondaryKey().size() +
+                                    v.getRecordValue().getValue().size()));
       Command::fmtBulk(ss, v.getRecordKey().getSecondaryKey());
       Command::fmtBulk(ss, v.getRecordValue().getValue());
     }
@@ -387,6 +396,8 @@ class HKeysCommand : public HAllCommand {
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, rcds.value().size());
     for (const auto& v : rcds.value()) {
+      RET_IF_MEMORY_REQUEST_FAILED(sess,
+                                   v.getRecordKey().getSecondaryKey().size());
       Command::fmtBulk(ss, v.getRecordKey().getSecondaryKey());
     }
     return ss.str();
@@ -405,6 +416,7 @@ class HValsCommand : public HAllCommand {
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, rcds.value().size());
     for (const auto& v : rcds.value()) {
+      RET_IF_MEMORY_REQUEST_FAILED(sess, v.getRecordValue().getValue().size());
       Command::fmtBulk(ss, v.getRecordValue().getValue());
     }
     return ss.str();
@@ -795,6 +807,7 @@ class HMGetGeneric : public Command {
           return eValue.status();
         }
       } else {
+        RET_IF_MEMORY_REQUEST_FAILED(sess, eValue.value().getValue().size());
         Command::fmtBulk(ss, eValue.value().getValue());
       }
     }

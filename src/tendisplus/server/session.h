@@ -80,6 +80,10 @@ class Session : public std::enable_shared_from_this<Session> {
     return _inLua;
   }
 
+  virtual Status memLimitRequest(uint64_t sizeUsed) {
+    return {};
+  }
+
  protected:
   std::vector<std::string> _args;
   ServerEntry* _server;

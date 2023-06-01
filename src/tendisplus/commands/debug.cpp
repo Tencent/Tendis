@@ -163,6 +163,7 @@ class KeysCommand : public Command {
              ttl < ts)) {  // skip the expired key
           continue;
         }
+        RET_IF_MEMORY_REQUEST_FAILED(sess, key.size());
         result.emplace_back(std::move(key));
         if (result.size() >= (size_t)limit) {
           break;
@@ -176,6 +177,7 @@ class KeysCommand : public Command {
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, result.size());
     for (const auto& v : result) {
+      RET_IF_MEMORY_REQUEST_FAILED(sess, v.size());
       Command::fmtBulk(ss, v);
     }
     return ss.str();

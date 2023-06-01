@@ -605,6 +605,9 @@ class ServerParams {
   bool allowCrossSlot = false;
   uint32_t generateHeartbeatBinlogInterval = 0;  // s
   int64_t waitTimeIfExistsMigrateTask = 600;  // s
+  uint64_t clientOutputBufferLimitNormalHardMB = 0;
+  uint64_t clientOutputBufferLimitNormalSoftMB = 0;
+  uint64_t clientOutputBufferLimitNormalSoftSecond = 10;
 };
 
 extern std::shared_ptr<tendisplus::ServerParams> gParams;
