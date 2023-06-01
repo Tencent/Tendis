@@ -59,7 +59,6 @@ std::shared_ptr<ServerParams> makeServerParam(
   if (general_log) {
     myfile << "generallog on\n";
   }
-  myfile << "slowlog-flush-interval 1\n";
   // TODO(vinchen): should it always be on?
   myfile << "checkkeytypeforsetcmd on\n";
   if (storeCnt != 0) {

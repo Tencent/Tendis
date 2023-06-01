@@ -380,7 +380,6 @@ std::shared_ptr<ServerParams> GenServerParams() {
   myfile << "rocks-transaction-mode " << FLAGS_rocksTransactionMode << "\n";
 
   myfile << "generallog " << FLAGS_generallog << "\n";
-  myfile << "slowlog-flush-interval 1\n";
   myfile << "checkkeytypeforsetcmd " << FLAGS_checkkeytypeforsetcmd << "\n";
 
   myfile << "kvStoreCount " << FLAGS_kvStoreCount << "\n";

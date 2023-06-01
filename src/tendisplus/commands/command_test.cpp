@@ -872,12 +872,8 @@ void testGlobStylePattern(std::shared_ptr<ServerEntry> svr) {
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
-  sess.setArgs({"config", "set", "slowlog-flush-interval", "1"});
-  auto expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-
   sess.setArgs({"config", "set", "slowlog-log-slower-than", "100000"});
-  expect = Command::runSessionCmd(&sess);
+  auto expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
 
   sess.setArgs({"config", "set", "slowlog-max-len", "1024"});
@@ -890,7 +886,8 @@ void testGlobStylePattern(std::shared_ptr<ServerEntry> svr) {
     "*10\r\n$7\r\nslowlog\r\n$11\r\n\"./"
     "slowlog\"\r\n$20\r\nslowlog-file-enabled\r\n$3\r\nyes\r\n$"
     "22\r\nslowlog-"
-    "flush-interval\r\n$1\r\n1\r\n$23\r\nslowlog-log-slower-than\r\n$"
+    "flush-interval\r\n$22\r\n not supported anymore\r\n$23\r\n"
+    "slowlog-log-slower-than\r\n$"
     "6\r\n100000\r\n$15\r\nslowlog-max-len\r\n$4\r\n1024\r\n",
     expect.value());
 
@@ -916,12 +913,8 @@ void testConfigRewrite(std::shared_ptr<ServerEntry> svr) {
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
-  sess.setArgs({"config", "set", "slowlog-flush-interval", "2000"});
-  auto expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-
   sess.setArgs({"config", "set", "maxbinlogkeepnum", "1500000"});
-  expect = Command::runSessionCmd(&sess);
+  auto expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
 
   sess.setArgs({"config", "rewrite"});
@@ -936,18 +929,12 @@ void testConfigRewrite(std::shared_ptr<ServerEntry> svr) {
   std::string line;
   std::string text;
   std::vector<std::string> tokens;
-  bool find1 = false;
-  bool find2 = false;
+
+  bool find = false;
   try {
     line.clear();
     while (std::getline(file, line)) {
       line = trim(line);
-      if (line == "slowlog-flush-interval 2000") {
-        // modify data
-        text += "slowlog-flush-interval 3000\n";
-      } else {
-        text += line + "\n";
-      }
       if (line.size() == 0 || line[0] == '#') {
         continue;
       }
@@ -958,10 +945,8 @@ void testConfigRewrite(std::shared_ptr<ServerEntry> svr) {
         tokens.emplace_back(tmp);
       }
       if (tokens.size() == 2) {
-        if (tokens[0] == "slowlog-flush-interval" && tokens[1] == "2000") {
-          find1 = true;
-        } else if (tokens[0] == "maxbinlogkeepnum" && tokens[1] == "1500000") {
-          find2 = true;
+        if (tokens[0] == "maxbinlogkeepnum" && tokens[1] == "1500000") {
+          find = true;
         }
       }
     }
@@ -969,8 +954,7 @@ void testConfigRewrite(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(0);
     return;
   }
-  EXPECT_TRUE(find1);
-  EXPECT_TRUE(find2);
+  EXPECT_TRUE(find);
   file.close();
 
   ofstream out;
@@ -1002,7 +986,7 @@ void testConfigRewrite(std::shared_ptr<ServerEntry> svr) {
         tokens.emplace_back(tmp);
       }
       if (tokens.size() == 2) {
-        if (tokens[0] == "slowlog-flush-interval" && tokens[1] == "2000") {
+        if (tokens[0] == "maxbinlogkeepnum" && tokens[1] == "1500000") {
           correct = true;
           break;
         }

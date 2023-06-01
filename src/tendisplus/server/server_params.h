@@ -477,7 +477,6 @@ class ServerParams {
   uint32_t maxClients = CONFIG_DEFAULT_MAX_CLIENTS;
   std::string slowlogPath = "./slowlog";
   uint64_t slowlogLogSlowerThan = CONFIG_DEFAULT_SLOWLOG_LOG_SLOWER_THAN;
-  uint64_t slowlogFlushInterval = CONFIG_DEFAULT_SLOWLOG_FLUSH_INTERVAL;
   uint64_t slowlogMaxLen = CONFIG_DEFAULT_SLOWLOG_LOG_MAX_LEN;
   uint64_t tendisLatencyLimit = 0;   // us
   uint64_t rocksdbLatencyLimit = 0;  // us
