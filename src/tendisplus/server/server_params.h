@@ -608,6 +608,7 @@ class ServerParams {
   uint64_t clientOutputBufferLimitNormalHardMB = 0;
   uint64_t clientOutputBufferLimitNormalSoftMB = 0;
   uint64_t clientOutputBufferLimitNormalSoftSecond = 10;
+  bool moveDirWhenRestoreCkpt = false;
 };
 
 extern std::shared_ptr<tendisplus::ServerParams> gParams;
