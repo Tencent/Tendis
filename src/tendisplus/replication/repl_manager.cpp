@@ -262,7 +262,8 @@ Status ReplManager::startup() {
         tp,
         0,
         nullptr,
-        Transaction::TXNID_UNINITED,
+        false,
+        Transaction::TXNID_UNINITED
       });
 
     if (isOpen) {
@@ -376,6 +377,7 @@ Expected<uint32_t> ReplManager::maxDumpFileSeq(uint32_t storeId) {
       std::string relative = path.string().erase(0, subpath.size());
       if (relative.substr(0, 6) != "binlog") {
         LOG(INFO) << "maxDumpFileSeq ignore:" << relative;
+        continue;
       }
       size_t i = 0, start = 0, end = 0, first = 0;
       for (; i < relative.size(); ++i) {

@@ -1397,4 +1397,99 @@ TEST(Repl, BinlogVersion) {
   ASSERT_EQ(version2_slave2.use_count(), 1);
 }
 
+// macro from redis to avoid warning of no use var.
+#define UNUSED(x) (void)(x)
+
+static int getFileNum(const filesystem::path& p) {
+  int filenum = 0;
+  for (const auto& e : filesystem::directory_iterator{p}) {
+    UNUSED(e);
+    filenum++;
+  }
+  return filenum;
+}
+
+TEST(Repl, autoRemoveDumpFile) {
+  const auto guard = MakeGuard([] {
+    destroyEnv(master_dir);
+    destroyEnv(slave_dir);
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+
+  uint32_t kvstoreNum = 1;
+
+  EXPECT_TRUE(setupEnv(master_dir));
+  auto cfg = makeServerParam(master_port, kvstoreNum, master_dir, false);
+  cfg->binlogFileSizeMB = 1;
+  cfg->binlogFileSecs = 10;
+  cfg->maxBinlogKeepNum = 1;
+  cfg->slaveBinlogKeepNum = 1;
+  auto master = std::make_shared<ServerEntry>(cfg);
+  auto s = master->startup(cfg);
+  INVARIANT(s.ok());
+  const filesystem::path masterDumpPath = std::string(master_dir) + "/dump/0/";
+
+  EXPECT_TRUE(setupEnv(slave_dir));
+  auto cfg2 = makeServerParam(slave_port, kvstoreNum, slave_dir, false);
+  cfg2->binlogFileSizeMB = 1;
+  cfg2->binlogFileSecs = 10;
+  cfg2->maxBinlogKeepNum = 1;
+  cfg2->slaveBinlogKeepNum = 1;
+  auto slave = std::make_shared<ServerEntry>(cfg2);
+  s = slave->startup(cfg2);
+  INVARIANT(s.ok());
+  const filesystem::path slaveDumpPath = std::string(slave_dir) + "/dump/0/";
+
+  {
+    auto ctx = std::make_shared<asio::io_context>();
+    auto session = makeSession(slave, ctx);
+
+    WorkLoad work(slave, session);
+    work.init();
+    work.slaveof("127.0.0.1", master_port);
+  }
+
+  bool isRunning = true;
+
+  std::thread dateThread([&]() {
+    auto ctx = std::make_shared<asio::io_context>();
+    auto session = makeSession(master, ctx);
+    session->setArgs({"set", "aaaaaaaa", "bbbbbbbb"});
+
+    while (isRunning) {
+      auto ret = Command::runSessionCmd(session.get());
+      EXPECT_TRUE(ret.ok());
+    }
+  });
+
+  auto sleepFun = [](int second) {
+    std::this_thread::sleep_for(std::chrono::seconds(second));
+  };
+
+  sleepFun(60);
+  EXPECT_GE(getFileNum(slaveDumpPath), 10);
+
+  cfg2->dumpFileKeepNum = 10;
+  sleepFun(5);
+  EXPECT_GE(getFileNum(slaveDumpPath), 10);
+  EXPECT_LE(getFileNum(slaveDumpPath), 11);
+
+  cfg2->dumpFileKeepNum = 20;
+  sleepFun(15);
+  EXPECT_GE(getFileNum(slaveDumpPath), 20);
+  EXPECT_LE(getFileNum(slaveDumpPath), 21);
+
+  cfg2->dumpFileKeepNum = 5;
+  sleepFun(5);
+  EXPECT_GE(getFileNum(slaveDumpPath), 5);
+  EXPECT_LE(getFileNum(slaveDumpPath), 6);
+
+  slave->stop();
+
+  isRunning = false;
+  dateThread.join();
+
+  master->stop();
+}
+
 }  // namespace tendisplus
