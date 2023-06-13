@@ -269,6 +269,7 @@ class ReplManager {
           std::shared_ptr<BlockingTcpClient> client, size_t remain);
   void slaveChkSyncStatus(const StoreMeta&);
   std::ofstream* getCurBinlogFs(uint32_t storeid);
+  void recycDumpFile(uint32_t storeid);
 
   void updateCurBinlogFs(uint32_t storeId,
                          uint64_t written,

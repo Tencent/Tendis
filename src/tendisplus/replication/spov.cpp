@@ -699,6 +699,7 @@ std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
     ts = _logRecycStatus[storeId]->timestamp;
   }
   if (fs == nullptr) {
+    recycDumpFile(storeId);
     if (ts == 0) {
       ts = _svr->getStartupTimeNs() / 1000000;
     }
@@ -736,6 +737,65 @@ std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
     v->needNewFile = false;
   }
   return fs;
+}
+
+// ref https://en.cppreference.com/w/cpp/chrono/file_clock/to_from_sys
+// NOTE(raffertyyu) std::chrono::file_clock::to_sys/from_sys is not available
+// until c++20. There is no choice but copying these codes from std library.
+// Remove to_sys function when using c++20
+using Tsys_time_point =
+  std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds>;
+static Tsys_time_point to_sys(const filesystem::file_time_type& tp) noexcept {
+  static constexpr std::chrono::seconds epochDiff{6437664000};
+  return Tsys_time_point{tp.time_since_epoch()} + epochDiff;  // NOLINT
+}
+
+void ReplManager::recycDumpFile(uint32_t storeid) {
+  if (!_cfg->dumpFileKeepNum && !_cfg->dumpFileKeepHour) {
+    return;
+  }
+
+  std::error_code ec;
+  std::vector<std::pair<Tsys_time_point, filesystem::directory_entry>> files;
+  const filesystem::path subpath =
+    _dumpPath + "/" + std::to_string(storeid) + "/";
+  for (const auto& entry : filesystem::directory_iterator{subpath}) {
+    auto tp = entry.last_write_time(ec);
+    if (ec) {
+      LOG(ERROR) << "get file:" << entry.path()
+                 << " last_write_time failed. error:" << ec.message();
+      return;
+    }
+    files.emplace_back(to_sys(tp), entry);
+  }
+
+  auto keepNum = _cfg->dumpFileKeepNum;
+  if (keepNum != 0 && files.size() <= keepNum) {
+    return;
+  }
+
+  // sort by file last modify time
+  std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) {
+    return a.first < b.first;
+  });
+
+  auto numFilesToBeDeleted = files.size() - keepNum;
+  auto filesDeletedTimePoint = std::chrono::system_clock::now() -
+    std::chrono::hours(_cfg->dumpFileKeepHour);
+
+  for (size_t i = 0; i < numFilesToBeDeleted; i++) {
+    if (files[i].first < filesDeletedTimePoint) {
+      LOG(INFO) << "removing dumpfile: " << files[i].second.path();
+      filesystem::remove(files[i].second.path(), ec);
+      if (ec) {
+        LOG(ERROR) << "remove file:" << files[i].second.path()
+                   << " error:" << ec.message();
+        return;
+      }
+    } else {
+      break;
+    }
+  }
 }
 
 bool ReplManager::newBinlogFs(uint32_t storeId) {

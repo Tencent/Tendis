@@ -473,6 +473,8 @@ class ServerParams {
   uint64_t maxBinlogKeepNum = 1;
   uint32_t minBinlogKeepSec = 3600;
   uint64_t slaveBinlogKeepNum = 1;
+  uint64_t dumpFileKeepNum = 0;
+  uint64_t dumpFileKeepHour = 0;
 
   uint32_t maxClients = CONFIG_DEFAULT_MAX_CLIENTS;
   std::string slowlogPath = "./slowlog";

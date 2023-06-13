@@ -361,6 +361,8 @@ ServerParams::ServerParams() {
     maxBinlogKeepNum, nullptr, nullptr, 1, INT64_MAX, true);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(minBinlogKeepSec);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(slaveBinlogKeepNum);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("dump-file-keep-num", dumpFileKeepNum);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("dump-file-keep-hour", dumpFileKeepHour);
 
   REGISTER_VARS_ALLOW_DYNAMIC_SET(maxClients);
   REGISTER_VARS_DIFF_NAME("slowlog", slowlogPath);
