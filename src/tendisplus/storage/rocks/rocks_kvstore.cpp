@@ -1355,8 +1355,7 @@ rocksdb::Options RocksKVStore::options(const string cf) {
   options.level0_slowdown_writes_trigger = 20;
   options.max_write_buffer_number = 4;
   options.min_write_buffer_number_to_merge = 2;
-  options.max_background_compactions = 8;
-  options.max_background_flushes = 2;
+  options.max_background_jobs = 8;
   options.target_file_size_base = 64 * 1024 * 1024;  // 64MB
   options.level_compaction_dynamic_level_bytes = true;
   // level_1 max size: 512MB, in fact, things are more complex
