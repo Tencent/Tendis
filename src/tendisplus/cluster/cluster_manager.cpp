@@ -3,6 +3,7 @@
 // project for additional information.
 
 #include <math.h>
+#include <string.h>
 #include <bitset>
 #include <set>
 #include <sstream>
@@ -827,6 +828,8 @@ ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
     _failoverAuthCount(0),
     _failoverAuthSent(0),
     _failoverAuthRank(0),
+    _failedMasterRank(0),
+    _rankFailoverTimeout(0),
     _failoverAuthEpoch(0),
     _isVoteFailByDataAge(false),
     _state(ClusterHealth::CLUSTER_FAIL),
@@ -1339,8 +1342,22 @@ void ClusterState::addFailAuthTime(mstime_t t) {
   _failoverAuthTime += t;
 }
 
+void ClusterState::addRankFailoverTimeout(mstime_t t) {
+  std::lock_guard<myMutex> lk(_mutex);
+  _rankFailoverTimeout += t;
+}
+
+void ClusterState::setRankFailoverTimeout(mstime_t t) {
+  std::lock_guard<myMutex> lk(_mutex);
+  _rankFailoverTimeout = t;
+}
+
 void ClusterState::setFailAuthRank(uint32_t t) {
   _failoverAuthRank.store(t, std::memory_order_relaxed);
+}
+
+void ClusterState::setFailMasterRank(uint32_t t) {
+  _failedMasterRank.store(t, std::memory_order_relaxed);
 }
 
 void ClusterState::setFailAuthCount(uint32_t t) {
@@ -2447,6 +2464,8 @@ void ClusterState::resetFailoverState() {
     setFailAuthTime(0);
     setFailAuthCount(0);
     setFailAuthRank(0);
+    setFailMasterRank(0);
+    setRankFailoverTimeout(0);
     setFailAuthEpoch(0);
 }
 
@@ -2991,6 +3010,35 @@ Status ClusterState::clusterFailoverReplaceYourMaster(void) {
   resetFailoverState();
   return {ErrorCodes::ERR_OK, "finish replace master"};
 }
+
+/* This function returns the "rank" of this instance in the context of all failed master list.
+ * The master node will be ignored if failed time exceeds cluster_node_timeout*cluster_slave_validity_factor.
+ */
+uint32_t ClusterState::clusterFailedMasterRank() {
+  uint32_t rank = 0;
+  if (!_myself->nodeIsSlave()) {
+    return 0;
+  }
+  auto master = getMyMaster();
+  auto nodeTimeout = _server->getParams()->clusterNodeTimeout;
+  auto slavefactor = _server->getParams()->clusterSlaveValidityFactor;
+  for (auto& node : _nodes) {
+    if (node.second->nodeIsMaster()
+        && node.second->nodeFailed()
+        && node.second->getSlotNum() > 0
+        && node.second->getSlaves().value().size() > 0
+        && (msSinceEpoch() - node.second->getFailTime()
+            < nodeTimeout * slavefactor)) {
+      if (std::memcmp(node.second->getNodeName().c_str(),
+        master->getNodeName().c_str(), CLUSTER_NAME_LENGTH) < 0) {
+        rank++;
+      }
+    }
+  }
+  return rank;
+}
+#define MAX_MSG_PROPAGATE_TIMEOUT 500
+
 /* This function is called if we are a slave node and our master serving
  * a non-zero amount of hash slots is in FAIL state.
  *
@@ -3078,11 +3126,16 @@ Status ClusterState::clusterHandleSlaveFailover() {
    * elapsed, we can setup a new one. */
   if (auth_age > auth_retry_time) {
     // TODO(wayenchen) add API to get and set _failoverAuth** params
+    int failedMasterRank = clusterFailedMasterRank();
     auto delayTime = msSinceEpoch() +
       500 + /* Fixed delay of 500 milliseconds, let FAIL msg propagate. */
-      redis_port::random() %
-        500; /* Random delay between 0 and 500 milliseconds. */
+      redis_port::random() % 500 +
+        /* Random delay between 0 and 500 milliseconds. */
+      failedMasterRank * MAX_MSG_PROPAGATE_TIMEOUT;
+        /* 500ms for one node failover */
     setFailAuthTime(delayTime);
+    setRankFailoverTimeout(delayTime);
+    setFailMasterRank(failedMasterRank);
     setFailAuthCount(0);
     setFailAuthSent(0);
     setFailAuthRank(clusterGetSlaveRank());
@@ -3119,7 +3172,31 @@ Status ClusterState::clusterHandleSlaveFailover() {
    *
    * Not performed if this is a manual failover. */
   if (getFailAuthSent() == 0 && getMfEnd() == 0) {
+    int64_t delayTime =  _rankFailoverTimeout - msSinceEpoch();
     auto newrank = clusterGetSlaveRank();
+    uint32_t failedMasterRank = clusterFailedMasterRank();
+    if (failedMasterRank > _failedMasterRank.load()) {
+      int64_t added_delay =
+        (failedMasterRank - _failedMasterRank) * MAX_MSG_PROPAGATE_TIMEOUT;
+      addFailAuthTime(added_delay);
+      addRankFailoverTimeout(added_delay);
+      serverLog(LL_WARNING,
+                "Failed master rank updated to #%d, added %ld milliseconds"
+                " of delay. failover time changed to %" PRId64,
+                failedMasterRank, added_delay, _rankFailoverTimeout);
+    }
+    if (failedMasterRank <= 0 && delayTime > 0) {
+      // delay random()%200 ms for msg propagate.
+      addFailAuthTime(-delayTime);
+      addFailAuthTime(random() % 200);
+      serverLog(LL_NOTICE,
+                "The ranking of failed node is updated to #%d,"
+                " advanced %ld milliseconds, failover time changed to %" PRId64,
+                failedMasterRank, delayTime, _rankFailoverTimeout);
+      setRankFailoverTimeout(0);
+    }
+    setFailMasterRank(failedMasterRank);
+
     if (newrank > getFailAuthRank()) {
       int64_t added_delay = (newrank - getFailAuthRank()) * 1000ULL;
       addFailAuthTime(added_delay);
