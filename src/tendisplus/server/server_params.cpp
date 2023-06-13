@@ -555,6 +555,8 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC(
     "client-output-buffer-limit-normal-soft-second",
     clientOutputBufferLimitNormalSoftSecond);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("move-dir-when-restore-ckpt",
+                                  moveDirWhenRestoreCkpt);
 }
 
 ServerParams::~ServerParams() {

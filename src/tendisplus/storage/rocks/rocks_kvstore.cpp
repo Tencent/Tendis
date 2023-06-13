@@ -2477,7 +2477,13 @@ Expected<std::string> RocksKVStore::copyCkpt(const std::string& dir) {
       ss << "recover path:" << dir << " not exist when restore";
       return {ErrorCodes::ERR_INTERNAL, ss.str()};
     }
-    filesystem::copy(dir, path);
+    LOG(INFO) << (getCfg()->moveDirWhenRestoreCkpt ? "move" : "copy")
+      << " ckpt, src:" << dir << ", dst:" << path;
+    if (getCfg()->moveDirWhenRestoreCkpt) {
+      filesystem::rename(dir, path);
+    } else {
+      filesystem::copy(dir, path);
+    }
   } catch (const std::exception& ex) {
     LOG(WARNING) << "dbId:" << dbId() << "restore exception" << ex.what();
     return {ErrorCodes::ERR_INTERNAL, ex.what()};

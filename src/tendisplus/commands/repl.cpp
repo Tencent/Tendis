@@ -257,15 +257,17 @@ class RestoreBackupCommand : public Command {
       return clearStatus;
     }
 
+    // restoreBackup may move the dir, so get meta first.
+    auto backup_meta = store->getBackupMeta(dir);
+    if (!backup_meta.ok()) {
+      return backup_meta.status();
+    }
+
     Expected<std::string> ret = store->restoreBackup(dir);
     if (!ret.ok()) {
       return ret.status();
     }
 
-    auto backup_meta = store->getBackupMeta(dir);
-    if (!backup_meta.ok()) {
-      return backup_meta.status();
-    }
     uint64_t binlogpos = backup_meta.value().getBinlogPos();
     BinlogVersion binlogVersion = backup_meta.value().getBinlogVersion();
 
