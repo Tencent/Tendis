@@ -3109,6 +3109,50 @@ TEST(Command, testFlushallWithRocksDBPath) {
 #endif
 }
 
+void testHsize(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  for (uint32_t i = 0; i < 10; i++) {
+    sess.setArgs({"hset", "hkey", "field_" + std::to_string(i), "value"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+  }
+
+  sess.setArgs({"hsize", "hkey"});
+  auto expect = Command::runSessionCmd(&sess);
+  // the value is not constant, only check not be zero.
+  EXPECT_NE(expect.value(), Command::fmtLongLong(0));
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"hsize", "hkey", "withoutmemtables"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  // data is too little, havn't flush to disk.
+  EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
+
+  sess.setArgs({"hsize", "hkey", "err_arg"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(!expect.ok());
+}
+
+TEST(Command, XsizeCommand) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+
+  testHsize(server);
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
+
 // NOTE(takenliu): renameCommand may change command's name or behavior, so put
 // it in the end
 // INSTANTIATE_TEST_CASE_P may run later TEST(Command, renameCommand)

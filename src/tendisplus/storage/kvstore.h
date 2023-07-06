@@ -414,6 +414,11 @@ class KVStore {
                               const std::string* end) = 0;
   virtual Status fullCompact() = 0;
 
+  virtual Expected<uint64_t> GetApproximateSizes(ColumnFamilyNumber cf,
+                                                 const std::string* begin,
+                                                 const std::string* end,
+                                                 bool incl_mem) = 0;
+
   virtual Status assignBinlogIdIfNeeded(Transaction* txn) = 0;
   virtual void setNextBinlogSeq(uint64_t binlogId, Transaction* txn) = 0;
   virtual uint64_t getNextBinlogSeq() const = 0;
