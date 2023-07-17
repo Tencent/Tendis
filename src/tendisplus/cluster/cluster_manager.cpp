@@ -7,7 +7,7 @@
 #include <bitset>
 #include <set>
 #include <sstream>
-#include <thread>
+#include <thread>  // NOLINT
 #include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/varint.h"
@@ -5625,7 +5625,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
     if (sender &&
         (type == ClusterMsg::Type::PING || type == ClusterMsg::Type::PONG)) {
       if (sender->hasFlag(CLUSTER_NODE_ARBITER) !=
-          (flags & CLUSTER_NODE_ARBITER)) {
+        static_cast<bool>(flags & CLUSTER_NODE_ARBITER)) {
         serverLog(LL_WARNING,
                   "%s arbiter flags change %d",
                   sender->getNodeName().c_str(),
