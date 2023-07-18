@@ -1865,6 +1865,30 @@ Status RocksKVStore::compactRange(ColumnFamilyNumber cf,
   return {ErrorCodes::ERR_OK, ""};
 }
 
+// [begin, end)
+Expected<uint64_t> RocksKVStore::GetApproximateSizes(ColumnFamilyNumber cf,
+                                                     const std::string* begin,
+                                                     const std::string* end,
+                                                     bool incl_mem) {
+  auto db = getBaseDB();
+  std::array<rocksdb::Range, 1> ranges;
+  std::array<uint64_t, 1> sizes;
+  rocksdb::SizeApproximationOptions options;
+
+  options.include_memtabtles = incl_mem;
+  options.files_size_error_margin = 0.1;
+
+  ranges[0].start = rocksdb::Slice(*begin);
+  ranges[0].limit = rocksdb::Slice(*end);
+
+  rocksdb::Status s = db->GetApproximateSizes(options,
+    getColumnFamilyHandle(cf), ranges.data(), 1, sizes.data());
+  if (!s.ok()) {
+    return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+  }
+  return sizes[0];
+}
+
 Status RocksKVStore::fullCompact() {
   Status s;
   // compact data of default column family

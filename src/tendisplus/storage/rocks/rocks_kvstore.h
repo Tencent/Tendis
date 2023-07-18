@@ -311,6 +311,10 @@ class RocksKVStore : public KVStore {
                       const std::string* end) override;
   Status fullCompact() override;
 
+  Expected<uint64_t> GetApproximateSizes(ColumnFamilyNumber cf,
+                                         const std::string* begin,
+                                         const std::string* end,
+                                         bool incl_mem) override;
   Status saveMinBinlogId(uint64_t id, uint64_t ts);
   Status handleRocksdbError(rocksdb::Status s) const;
 

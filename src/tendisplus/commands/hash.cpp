@@ -203,6 +203,81 @@ class HLenCommand : public Command {
   }
 } hlenCommand;
 
+class HSizeCommand : public Command {
+ public:
+  HSizeCommand() : Command("hsize", "rF") {}
+
+  ssize_t arity() const {
+    return -2;
+  }
+
+  int32_t firstkey() const {
+    return 1;
+  }
+
+  int32_t lastkey() const {
+    return 1;
+  }
+
+  int32_t keystep() const {
+    return 1;
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    const std::vector<std::string>& args = sess->getArgs();
+    const std::string& key = args[1];
+    bool include_memtabtles = true;
+    if (args.size() == 3) {
+      if (toLower(args[2]) == "withoutmemtables") {
+        include_memtabtles = false;
+      } else {
+        return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
+      }
+    }
+    if (args.size() > 3) {
+      return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
+    }
+
+    SessionCtx* pCtx = sess->getCtx();
+    INVARIANT(pCtx != nullptr);
+
+    Expected<RecordValue> rv =
+      Command::expireKeyIfNeeded(sess, key, RecordType::RT_HASH_META);
+    if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+      return fmtZero();
+    } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+      return fmtZero();
+    } else if (!rv.status().ok()) {
+      return rv.status();
+    }
+
+    auto server = sess->getServerEntry();
+    auto expdb =
+      server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
+    if (!expdb.ok()) {
+      return expdb.status();
+    }
+
+    RecordKey mk(expdb.value().chunkId, sess->getCtx()->getDbId(),
+                 RecordType::RT_DATA_META, key, "");
+    RecordKey start(mk.getChunkId(), mk.getDbId(),
+                  RecordType::RT_HASH_ELE, mk.getPrimaryKey(),
+                  "", 0);
+    RecordKey end(mk.getChunkId(), mk.getDbId(),
+                  RecordType::RT_HASH_ELE, mk.getPrimaryKey(),
+                  "", UINT64_MAX);
+    std::string sbegin = start.prefixPk();
+    std::string send = end.prefixPk();
+    auto size = expdb.value().store->GetApproximateSizes(
+      ColumnFamilyNumber::ColumnFamily_Default, &sbegin, &send,
+      include_memtabtles);
+    if (!size.ok()) {
+      return size.status();
+    }
+    return fmtLongLong(size.value());
+  }
+} hsizeCommand;
+
 class HExistsCommand : public Command {
  public:
   HExistsCommand() : Command("hexists", "rF") {}
