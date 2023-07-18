@@ -220,12 +220,13 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   void unsetFlag(uint16_t flag);
   void changeFlags(uint16_t setFlag, uint16_t unsetFlag);
   bool hasFlag(uint16_t flag) const;
-  std::string toString() const;
+  std::string toString();
 
  protected:
   bool setSlotBit(uint32_t slot, uint32_t masterSlavesCount);
   uint32_t delAllSlots();
   uint32_t delAllSlotsNoLock();
+  std::string getSlotsInfoInLock();
 
  public:
   bool addSlave(std::shared_ptr<ClusterNode> slave);
@@ -248,6 +249,8 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   std::shared_ptr<BlockingTcpClient> _nodeClient;
   // slots handled by this node
   std::bitset<CLUSTER_SLOTS> _mySlots;
+  std::string _slotsInfo;  // string info of _mySlots
+  bool _slotsInfoIsOutOfDate;
   uint16_t _numSlaves;
   uint32_t _numSlots;
   uint16_t _flags;
