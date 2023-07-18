@@ -3104,6 +3104,91 @@ void testHsize(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(!expect.ok());
 }
 
+void testLsize(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  for (uint32_t i = 0; i < 10; i++) {
+    sess.setArgs({"lpush", "lkey", "field_" + std::to_string(i)});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+  }
+
+  sess.setArgs({"lsize", "lkey"});
+  auto expect = Command::runSessionCmd(&sess);
+  // the value is not constant, only check not be zero.
+  // EXPECT_NE(expect.value(), Command::fmtLongLong(0));
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"lsize", "lkey", "withoutmemtables"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  // data is too little, havn't flush to disk.
+  // EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
+
+  sess.setArgs({"lsize", "lkey", "err_arg"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(!expect.ok());
+}
+
+void testSsize(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  for (uint32_t i = 0; i < 10; i++) {
+    sess.setArgs({"sadd", "skey", "field_" + std::to_string(i)});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+  }
+
+  sess.setArgs({"ssize", "skey"});
+  auto expect = Command::runSessionCmd(&sess);
+  // the value is not constant, only check not be zero.
+  // EXPECT_NE(expect.value(), Command::fmtLongLong(0));
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"ssize", "skey", "withoutmemtables"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  // data is too little, havn't flush to disk.
+  // EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
+
+  sess.setArgs({"ssize", "skey", "err_arg"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(!expect.ok());
+}
+
+void testZsize(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  for (uint32_t i = 0; i < 10; i++) {
+    sess.setArgs(
+      {"zadd", "zkey", std::to_string(i), "field_" + std::to_string(i)});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+  }
+
+  sess.setArgs({"zsize", "zkey"});
+  auto expect = Command::runSessionCmd(&sess);
+  // the value is not constant, only check not be zero.
+  // EXPECT_NE(expect.value(), Command::fmtLongLong(0));
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"zsize", "zkey", "withoutmemtables"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  // data is too little, havn't flush to disk.
+  // EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
+
+  sess.setArgs({"zsize", "zkey", "err_arg"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(!expect.ok());
+}
+
 TEST(Command, XsizeCommand) {
   const auto guard = MakeGuard([] { destroyEnv(); });
 
@@ -3112,6 +3197,9 @@ TEST(Command, XsizeCommand) {
   auto server = makeServerEntry(cfg);
 
   testHsize(server);
+  testLsize(server);
+  testSsize(server);
+  testZsize(server);
 
 #ifndef _WIN32
   server->stop();
