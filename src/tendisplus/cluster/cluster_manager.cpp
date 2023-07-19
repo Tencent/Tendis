@@ -67,6 +67,8 @@ ClusterNode::ClusterNode(const std::string& nodeName,
     _nodeCport(cport),
     _nodeSession(nullptr),
     _nodeClient(nullptr),
+    _slotsInfo(""),
+    _slotsInfoIsOutOfDate(true),
     _numSlaves(0),
     _numSlots(0),
     _flags(flags),
@@ -251,6 +253,7 @@ Status ClusterNode::addSlot(uint32_t slot, uint32_t masterSlavesCount) {
     return {ErrorCodes::ERR_INTERNAL, ""};
   }
   _mySlots.set(slot);
+  _slotsInfoIsOutOfDate = true;
   _numSlots++;
   if (_numSlots == 1 && masterSlavesCount) {
     _flags |= CLUSTER_NODE_MIGRATE_TO;
@@ -262,6 +265,7 @@ bool ClusterNode::setSlotBit(uint32_t slot, uint32_t masterSlavesCount) {
   std::lock_guard<myMutex> lk(_mutex);
   bool old = _mySlots.test(slot);
   _mySlots.set(slot);
+  _slotsInfoIsOutOfDate = true;
   if (!old) {
     _numSlots++;
     //  When a master gets its first slot, even if it has no slaves,
@@ -289,6 +293,7 @@ bool ClusterNode::clearSlotBit(uint32_t slot) {
   std::lock_guard<myMutex> lk(_mutex);
   bool old = _mySlots.test(slot);
   _mySlots.reset(slot);
+  _slotsInfoIsOutOfDate = true;
   if (old)
     _numSlots--;
 
@@ -336,7 +341,7 @@ std::string ClusterNode::genDescription(const std::string& migrateInfo) {
          << " " << _pongReceived << " " << _configEpoch << " " << stateStr;
 
   if (nodeIsMaster()) {
-    std::string slotStr = bitsetStrEncode(_mySlots);
+    std::string slotStr = getSlotsInfoInLock();
     slotStr.erase(slotStr.end() - 1);
     stream << slotStr;
   }
@@ -672,17 +677,24 @@ bool ClusterNode::isMasterOk() const {
 }
 
 // Don't contain _flags, used by 'compareClusterInfo'
-std::string ClusterNode::toString() const {
+std::string ClusterNode::toString() {
   std::lock_guard<myMutex> lk(_mutex);
   std::ostringstream oss;
   oss << "nodeName:" << _nodeName << ", configEpoch:" << _configEpoch
       << ", ip:" << _nodeIp << ", port:" << _nodePort
-      << ", cport:" << _nodeCport << ", slots:" << bitsetStrEncode(_mySlots)
+      << ", cport:" << _nodeCport << ", slots:" << getSlotsInfoInLock()
       << ", slavesNum:" << _numSlaves;
 
   return oss.str();
 }
 
+std::string ClusterNode::getSlotsInfoInLock() {
+  if (_slotsInfoIsOutOfDate) {
+    _slotsInfo = bitsetStrEncode(_mySlots);
+    _slotsInfoIsOutOfDate = false;
+  }
+  return _slotsInfo;
+}
 ClusterNodeFailReport::ClusterNodeFailReport(const std::string& node,
                                              mstime_t time)
   : _nodeName(node), _time(time) {}
