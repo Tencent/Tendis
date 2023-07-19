@@ -500,7 +500,7 @@ std::shared_ptr<BlockingTcpClient> ReplManager::createClient(
       return nullptr;
     }
   }
-  return std::move(client);
+  return client;
 }
 
 void ReplManager::controlRoutine() {

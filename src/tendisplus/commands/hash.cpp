@@ -433,7 +433,7 @@ class HAllCommand : public Command {
                                     rcd.getRecordValue().getValue().size()));
       result.emplace_back(std::move(rcd));
     }
-    return std::move(result);
+    return result;
   }
 };
 

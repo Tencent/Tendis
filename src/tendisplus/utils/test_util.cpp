@@ -789,7 +789,7 @@ AllKeys writeKVDataToServer(const std::shared_ptr<ServerEntry>& server,
   auto kv_keys = work.writeWork(RecordType::RT_KV, count, 0, true, key_suffix);
   all_keys.emplace_back(kv_keys);
 
-  return std::move(all_keys);
+  return all_keys;
 }
 
 void testList(std::shared_ptr<ServerEntry> svr) {
@@ -3506,7 +3506,7 @@ std::vector<std::string> NoSchedNetSession::getResponse() {
   // be careful, mulit response will return a string
   ret.emplace_back(std::string(_sendBufferBack.data(), _sendBufferBack.size()));
 
-  return std::move(ret);
+  return ret;
 }
 
 }  // namespace tendisplus

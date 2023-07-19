@@ -95,7 +95,7 @@ std::vector<uint16_t> bitsetEncodeVec(const std::bitset<size>& bitmap) {
       idx++;
     }
   }
-  return std::move(slotBuff);
+  return slotBuff;
 }
 
 template <size_t size>

@@ -737,7 +737,7 @@ Expected<std::unique_ptr<Serializer>> getSerializer(Session* sess,
       return {ErrorCodes::ERR_INTERNAL, "type can not be dumped"};
   }
 
-  return std::move(ptr);
+  return ptr;
 }
 
 // restore
@@ -1426,7 +1426,7 @@ Expected<std::unique_ptr<Deserializer>> getDeserializer(
     default:
       return {ErrorCodes::ERR_INTERNAL, "Not implemented"};
   }
-  return std::move(ptr);
+  return ptr;
 }
 
 class RestoreMetaCommand : public Command {

@@ -46,7 +46,7 @@ std::shared_ptr<BlockingTcpClient> createClient(const string& ip,
       return nullptr;
     }
   }
-  return std::move(client);
+  return client;
 }
 
 Expected<BinlogResult> masterSendBinlogV2(

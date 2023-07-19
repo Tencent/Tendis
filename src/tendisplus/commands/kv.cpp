@@ -1060,7 +1060,7 @@ class CasCommand : public GetSetGeneral {
     }
 
     ret.setCas(ecas.value() + 1);
-    return std::move(ret);
+    return ret;
   }
 
   Expected<std::string> run(Session* sess) final {
