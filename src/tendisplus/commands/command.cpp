@@ -472,7 +472,7 @@ Expected<std::list<Record>> Command::scanSimple(
                                   rcd.getRecordValue().getValue().size()));
     result.emplace_back(std::move(exptRcd.value()));
   }
-  return std::move(result);
+  return result;
 }
 
 // requirement: intentionlock held

@@ -799,7 +799,7 @@ Expected<std::list<std::pair<double, std::string>>> SkipList::scanByScore(
       ln = tmp.value();
     }
   }
-  return std::move(result);
+  return result;
 }
 
 Expected<std::list<std::pair<double, std::string>>> SkipList::scanByLex(
@@ -884,7 +884,7 @@ Expected<std::list<std::pair<double, std::string>>> SkipList::scanByLex(
       ln = tmp.value();
     }
   }
-  return std::move(result);
+  return result;
 }
 
 Expected<std::list<std::pair<double, std::string>>> SkipList::scanByRank(
@@ -944,7 +944,7 @@ Expected<std::list<std::pair<double, std::string>>> SkipList::scanByRank(
       ln = tmp.value();
     }
   }
-  return std::move(result);
+  return result;
 }
 
 Status SkipList::insert(double score,

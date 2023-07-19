@@ -231,7 +231,7 @@ makeCluster(uint32_t startPort,
   }
   LOG(INFO) << "waiting servers ok using " << (msSinceEpoch() - t) << "ms.";
 
-  return std::move(servers);
+  return servers;
 }
 
 std::vector<std::shared_ptr<ServerEntry>> makeSingleCluster(
@@ -343,7 +343,7 @@ std::vector<std::shared_ptr<ServerEntry>> makeSingleCluster(
   }
   LOG(INFO) << "waiting servers ok using " << (msSinceEpoch() - t) << "ms.";
 
-  return std::move(servers);
+  return servers;
 }
 
 void waitNodeFail(const std::shared_ptr<ClusterState>& state,
