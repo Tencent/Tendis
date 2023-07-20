@@ -340,7 +340,7 @@ std::string ClusterNode::genDescription(const std::string& migrateInfo) {
          << " " << representClusterNodeFlags(_flags) << masterName << _pingSent
          << " " << _pongReceived << " " << _configEpoch << " " << stateStr;
 
-  if (nodeIsMaster()) {
+  if (nodeIsMaster() && !nodeIsArbiter()) {
     std::string slotStr = getSlotsInfoInLock();
     slotStr.erase(slotStr.end() - 1);
     stream << slotStr;
