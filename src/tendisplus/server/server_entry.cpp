@@ -247,6 +247,7 @@ ServerEntry::ServerEntry()
     _isShutdowned(false),
     _startupTime(nsSinceEpoch()),
     _network(nullptr),
+    _newExecutorThreadNum(0),
     _segmentMgr(nullptr),
     _replMgr(nullptr),
     _migrateMgr(nullptr),
@@ -287,7 +288,10 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
   _cfg = cfg;
   // set callback function when dynamically changing option
   _cfg->serverParamsVar("executorThreadNum")->setUpdate([this]() {
-    resizeExecutorThreadNum(_cfg->executorThreadNum);
+    if (_cfg->executorThreadNum !=
+        _executorList.size() * _executorList.back()->size()) {
+      _newExecutorThreadNum.store(_cfg->executorThreadNum);
+    }
   });
 #ifdef TENDIS_JEMALLOC
   _cfg->serverParamsVar("enable-jemalloc-bgthread")->setUpdate([this]() {
@@ -613,21 +617,21 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   RecordKey::prefixReplLogV2();
   RecordKey::prefixVersionMeta();
 
-  for (uint32_t i = 0; i < _cfg->executorThreadNum;
-       i += _cfg->executorWorkPoolSize) {
-    // TODO(takenliu): make sure whether multi worker_pool is ok?
-    // But each size of worker_pool should been not less than 8;
-    // uint32_t i = 0;
-    uint32_t curNum = i + _cfg->executorWorkPoolSize < _cfg->executorThreadNum
-      ? _cfg->executorWorkPoolSize
-      : _cfg->executorThreadNum - i;
-    LOG(INFO) << "ServerEntry::startup WorkerPool thread num:" << curNum;
+  if (_cfg->executorThreadNum % _cfg->executorWorkPoolSize) {
+    LOG(FATAL) << "need executorThreadNum % executorWorkPoolSize == 0";
+    exit(-1);
+  }
+  uint32_t wpNum = _cfg->executorThreadNum / _cfg->executorWorkPoolSize;
+  for (uint32_t i = 0; i < wpNum; i++) {
+    LOG(INFO) << "ServerEntry::startup WorkerPool thread num:"
+              << _cfg->executorWorkPoolSize;
     std::string workPoolName = "tx-worker";
     if (!_cfg->simpleWorkPoolName) {
       workPoolName += "-" + std::to_string(i);
     }
     auto executor = std::make_unique<WorkerPool>(workPoolName, _poolMatrix);
-    Status s = executor->startup(curNum, _cfg->simpleWorkPoolName);
+    Status s =
+      executor->startup(_cfg->executorWorkPoolSize, _cfg->simpleWorkPoolName);
     if (!s.ok()) {
       LOG(ERROR) << "ServerEntry::startup failed, executor->startup:"
                  << s.toString();
@@ -957,6 +961,9 @@ void ServerEntry::DelMonitorNoLock(uint64_t connId) {
 void ServerEntry::resizeExecutorThreadNum(uint64_t newThreadNum) {
   std::lock_guard<std::mutex> lk(_mutex);
   auto threadSum = _executorList.size() * _executorList.back()->size();
+  LOG(INFO) << "resizeExecutorThreadNum threadSum:" << threadSum
+            << " newThreadNum:" << newThreadNum;
+
   if (newThreadNum < threadSum) {
     resizeDecrExecutorThreadNum(newThreadNum);
   } else if (newThreadNum > threadSum) {
@@ -983,6 +990,8 @@ void ServerEntry::resizeDecrExecutorThreadNum(uint64_t newThreadNum) {
 
   // call resize() op, move workerpool to _executorSet.
   for (size_t i = 0; i < listNum; ++i) {
+    LOG(INFO) << "decr ExecutorThreadNum, WorkerPool name:"
+              << _executorList.back()->getName();
     _executorList.back()->resize(0);
     _executorRecycleSet.emplace(std::move(_executorList.back().release()));
     _executorList.pop_back();
@@ -997,13 +1006,19 @@ void ServerEntry::resizeDecrExecutorThreadNum(uint64_t newThreadNum) {
  * @todo workerpool's name now may be repetitive, should fix it later.
  */
 void ServerEntry::resizeIncrExecutorThreadNum(uint64_t newThreadNum) {
-  auto threadSum = _executorList.size() * _executorList.back()->size();
-  size_t listNum = (newThreadNum - threadSum) / _cfg->executorWorkPoolSize;
+  uint32_t wpNum = _executorList.size();
+  uint32_t perSize = _executorList.back()->size();
+  auto threadSum = wpNum * perSize;
+  size_t listNum = (newThreadNum - threadSum) / perSize;
   INVARIANT_D(newThreadNum > threadSum);
 
   for (size_t i = 0; i < listNum; ++i) {
+    uint32_t wpId = wpNum + i;
+    LOG(INFO) << "Incr ExecutorThreadNum, WorkerPool id:" << wpId
+              << ", perSize:" << perSize;
+
     auto executor = std::make_unique<WorkerPool>(
-      "tx-worker-" + std::to_string(_executorList.size() + i), _poolMatrix);
+      "tx-worker-wp" + std::to_string(wpId), _poolMatrix);
     Status s = executor->startup(_executorList.back()->size());
     if (!s.ok()) {
       LOG(ERROR) << "ServerEntry::startup failed, executor->startup:"

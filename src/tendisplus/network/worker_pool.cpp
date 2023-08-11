@@ -215,6 +215,8 @@ void WorkerPool::resizeIncrease(size_t size) {
  * occur bugs.
  */
 void WorkerPool::resizeDecrease(size_t size) {
+  LOG(INFO) << "WorkerPool::resizeDecrease name:" << _name
+            << " decrSize:" << size;
   for (size_t i = 0; i < size; ++i) {
     auto exceptionTask = []() { throw IOCtxException(); };
     this->schedule(std::move(exceptionTask));

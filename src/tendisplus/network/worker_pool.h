@@ -85,6 +85,9 @@ class WorkerPool {
   void stop();
   size_t size() const;
   void resize(size_t poolSize);
+  std::string getName() const {
+    return _name;
+  }
 
  private:
   void consumeTasks(size_t idx);
