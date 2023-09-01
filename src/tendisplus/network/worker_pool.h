@@ -49,7 +49,7 @@ class WorkerPool {
                       std::shared_ptr<PoolMatrix> poolMatrix);
   WorkerPool(const WorkerPool&) = delete;
   WorkerPool(WorkerPool&&) = delete;
-  Status startup(size_t poolSize);
+  Status startup(size_t poolSize, bool simpleName = false);
   bool isFull() const;
   template <typename fn>
   void schedule(fn&& task) {
