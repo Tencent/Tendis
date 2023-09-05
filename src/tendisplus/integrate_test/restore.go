@@ -80,7 +80,9 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
     slaveof(&s1, &s2)
     waitFullsync(&s2, kvstorecount)
 
-    addData(&m1, *num1, "aa")
+    ch := make(chan int)
+    util.AddData(&m1, *num1, 0, "aa", ch)
+    <-ch
 	sha, err := clim1.Cmd("script", "load", "return KEYS[1]").Str()
 	if err != nil {
 		log.Fatalf("script load on master1 err:%v", err)

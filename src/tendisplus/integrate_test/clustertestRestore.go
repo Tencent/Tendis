@@ -75,7 +75,7 @@ func testFun1(src_master *util.RedisServer, src_slave *util.RedisServer,
 	log.Infof("cluster adddata begin")
 	var channel chan int = make(chan int)
 	migSlot := 8373
-	go addDataInCoroutine(&predixy.RedisServer, num, "{12}", channel)
+	go addDataInCoroutine(&predixy.RedisServer, num, "{12}", channel, *benchtype)
 
 	log.Infof("cluster backup begin")
 	time.Sleep(1 * time.Second)
@@ -157,7 +157,7 @@ func testFun2(src_master *util.RedisServer, src_slave *util.RedisServer,
 	log.Infof("cluster adddata begin")
 	var channel chan int = make(chan int)
 	migSlot := 8373
-	go addDataInCoroutine(&predixy.RedisServer, num, "{12}", channel)
+	go addDataInCoroutine(&predixy.RedisServer, num, "{12}", channel, *benchtype)
 
 	// migrate
 	log.Infof("cluster migrate begin")
@@ -238,7 +238,7 @@ func testFun2(src_master *util.RedisServer, src_slave *util.RedisServer,
 	checkDbsize(dst_restore, num-1, predixy)
 }
 
-func testRestore(portStart int, num int, testFun int, commandType string) {
+func testClusterRestore(portStart int, num int, testFun int, commandType string) {
 	*benchtype = commandType
 	ip := "127.0.0.1"
 	kvstorecount := 2
@@ -342,15 +342,15 @@ func testRestore(portStart int, num int, testFun int, commandType string) {
 	shutdownServer(&src_restore, *shutdown, *clear)
 	shutdownServer(&dst_restore, *shutdown, *clear)
 	shutdownPredixy(&predixy, *shutdown, *clear)
-	log.Infof("testRestore sucess")
+	log.Infof("testClusterRestore sucess")
 }
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
 	flag.Parse()
 	// rand.Seed(time.Now().UnixNano())
-	testRestore(47000, 100000, 1, "set")
-	testRestore(47100, 100000, 2, "set")
+	testClusterRestore(47000, 100000, 1, "set")
+	testClusterRestore(47100, 100000, 2, "set")
 
 	// cmd1 := exec.Command("netstat", "-an|grep", "30200")
 	// data1, err1 := cmd1.Output()
@@ -359,9 +359,9 @@ func main() {
 	// data11, err11 := cmd11.Output()
 	// log.Infof("netstat -an |grep 30300 : %s , err: %v", string(data11), err11)
 
-	// testRestore(30200, 100000, 1, "sadd")
-	// testRestore(30300, 100000, 2, "sadd")
-	// log.Infof("clustertestRestore.go passed. command : %s", *benchtype)
+	// testClusterRestore(30200, 100000, 1, "sadd")
+	// testClusterRestore(30300, 100000, 2, "sadd")
+	// log.Infof("clustertestClusterRestore.go passed. command : %s", *benchtype)
 
 	// cmd2 := exec.Command("netstat", "-an|grep", "30400")
 	// data2, err2 := cmd2.Output()
@@ -370,21 +370,21 @@ func main() {
 	// data21, err21 := cmd21.Output()
 	// log.Infof("netstat -an |grep 30500 : %s, err: %v", string(data21), err21)
 
-	// testRestore(30400, 100000, 1, "hmset")
-	// testRestore(30500, 100000, 2, "hmset")
-	// log.Infof("clustertestRestore.go passed. command : %s", *benchtype)
+	// testClusterRestore(30400, 100000, 1, "hmset")
+	// testClusterRestore(30500, 100000, 2, "hmset")
+	// log.Infof("clustertestClusterRestore.go passed. command : %s", *benchtype)
 
 	// cmd3 := exec.Command("netstat", "-an|grep", "59600")
 	// data3, err3 := cmd3.Output()
 	// log.Infof("netstat -an |grep 59600 : %s, err: %v", string(data3), err3)
 
-	// testRestore(30600, 100000, 1, "rpush")
-	// testRestore(30700, 100000, 2, "rpush")
-	// log.Infof("clustertestRestore.go passed. command : %s", *benchtype)
+	// testClusterRestore(30600, 100000, 1, "rpush")
+	// testClusterRestore(30700, 100000, 2, "rpush")
+	// log.Infof("clustertestClusterRestore.go passed. command : %s", *benchtype)
 
-	// testRestore(30800, 100000, 1, "zadd")
-	// testRestore(30900, 100000, 2, "zadd")
-	// log.Infof("clustertestRestore.go passed.")
-	log.Infof("clustertestRestore.go passed. command : %s", *benchtype)
+	// testClusterRestore(30800, 100000, 1, "zadd")
+	// testClusterRestore(30900, 100000, 2, "zadd")
+	// log.Infof("clustertestClusterRestore.go passed.")
+	log.Infof("clustertestClusterRestore.go passed. command : %s", *benchtype)
 }
 

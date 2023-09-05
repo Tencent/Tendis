@@ -53,8 +53,7 @@ var (
 	valgrind  = flag.Bool("valgrind", false, "whether valgrind")
 )
 
-func addDataInCoroutine(m *util.RedisServer, num int, prefixkey string, channel chan int) {
-	var optype string = *benchtype
+func addDataInCoroutine(m *util.RedisServer, num int, prefixkey string, channel chan int, optype string) {
 	//log.Infof("optype is : %s", optype)
 	switch optype {
 	case "set":
@@ -145,7 +144,7 @@ func addSetData(m *util.RedisServer, num int, prefixkey string) {
 		args = append(args, "-h", m.Ip, "-p", strconv.Itoa(m.Port),
 			"-c", "-a", *auth, "sadd")
 
-		key := "key" + prefixkey + "_" + strconv.Itoa(i)
+		key := "setkey" + prefixkey + "_" + strconv.Itoa(i)
 		args = append(args, key)
 		for h := 0; h < 1; h++ {
 			value := "value" + prefixkey + "_" + strconv.Itoa(h)
@@ -170,7 +169,7 @@ func addHashData(m *util.RedisServer, num int, prefixkey string) {
 		args = append(args, "-h", m.Ip, "-p", strconv.Itoa(m.Port),
 			"-c", "-a", *auth, "hmset")
 
-		key := "key" + prefixkey + "_" + strconv.Itoa(i)
+		key := "hashkey" + prefixkey + "_" + strconv.Itoa(i)
 		args = append(args, key)
 		for h := 0; h < 1; h++ {
 			value := "value" + prefixkey + "_" + strconv.Itoa(h)
@@ -196,7 +195,7 @@ func addListData(m *util.RedisServer, num int, prefixkey string) {
 		args = append(args, "-h", m.Ip, "-p", strconv.Itoa(m.Port),
 			"-c", "-a", *auth, "rpush")
 
-		key := "key" + prefixkey + "_" + strconv.Itoa(i)
+		key := "listkey" + prefixkey + "_" + strconv.Itoa(i)
 		args = append(args, key)
 		for h := 0; h < 1; h++ {
 			value := "value" + prefixkey + "_" + strconv.Itoa(h)
@@ -221,7 +220,7 @@ func addSortedData(m *util.RedisServer, num int, prefixkey string) {
 		args = append(args, "-h", m.Ip, "-p", strconv.Itoa(m.Port),
 			"-c", "-a", *auth, "zadd")
 
-		key := "key" + prefixkey + "_" + strconv.Itoa(i)
+		key := "zsetkey" + prefixkey + "_" + strconv.Itoa(i)
 		args = append(args, key)
 		for h := 0; h < 1; h++ {
 			value := "value" + prefixkey + "_" + strconv.Itoa(h)
@@ -390,29 +389,11 @@ func checkSortedData(m *util.RedisServer, num int, prefixkey string) {
 }
 
 func createClient(m *util.RedisServer) *redis.Client {
-	cli, err := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", m.Ip, m.Port), 10*time.Second)
-	if err != nil {
-		log.Fatalf("can't connect to %s:%d err:%v", m.Ip, m.Port, err)
-	}
-	if *auth != "" {
-		if v, err := cli.Cmd("AUTH", *auth).Str(); err != nil || v != "OK" {
-			log.Fatalf("auth result:%s failed:%v. %s:%d auth:%s", v, err, m.Ip, m.Port, *auth)
-		}
-	}
-	return cli
+	return util.CreateClientWithAuth(m, 10, *auth)
 }
 
 func createClientWithTimeout(m *util.RedisServer, timeout int) *redis.Client {
-	cli, err := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", m.Ip, m.Port), time.Duration(timeout)*time.Second)
-	if err != nil {
-		log.Fatalf("can't connect to %s:%d err:%v", m.Ip, m.Port, err)
-	}
-	if *auth != "" {
-		if v, err := cli.Cmd("AUTH", *auth).Str(); err != nil || v != "OK" {
-			log.Fatalf("auth result:%s failed:%v. %s:%d auth:%s", v, err, m.Ip, m.Port, *auth)
-		}
-	}
-	return cli
+	return util.CreateClientWithAuth(m, timeout, *auth)
 }
 
 func addOnekeyEveryStore(m *util.RedisServer, kvstorecount int) {
@@ -459,6 +440,15 @@ func slaveof(m *util.RedisServer, s *util.RedisServer) {
 		return
 	}
 	log.Infof("slaveof sucess,mport:%d sport:%d", m.Port, s.Port)
+}
+
+func getDbsize(m *util.RedisServer) int {
+    cli := createClient(m)
+    r, err := cli.Cmd("dbsize").Int()
+    if err != nil {
+        log.Fatalf("cluster countkeysinslot failed:%v %s", err, r)
+    }
+    return r
 }
 
 func restoreBackup(m *util.RedisServer, dir string) {
