@@ -56,11 +56,14 @@ func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstoreco
         return
     }
 
-    addData(&m1, *num1, "aa")
+    ch := make(chan int)
+    util.AddData(&m1, *num1, 0, "aa", ch)
+    <-ch
     backup(&m1, backup_mode, "/tmp/back_test")
     restoreBackup(&m2, "/tmp/back_test")
 
-    addData(&m1, *num2, "bb")
+    util.AddData(&m1, *num2, 0, "bb", ch)
+    <-ch
     addOnekeyEveryStore(&m1, kvstorecount)
     waitDumpBinlog(&m1, kvstorecount)
     flushBinlog(&m1)

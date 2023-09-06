@@ -10,6 +10,7 @@ deletefilesinrange
 dts/dts
 dts/dts_sync
 memorylimit
+versiontest
 
 *.log
 slowlog
@@ -23,3 +24,4 @@ src_*
 dst_*
 redis-sync-*
 sync-*
+_version_test_

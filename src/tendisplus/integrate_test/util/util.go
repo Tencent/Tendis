@@ -281,12 +281,19 @@ func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
 		return err
 	}
 
+	return s.Start(valgrind, cfgFilePath)
+}
+
+func (s *RedisServer) Start(valgrind bool, cfgFilePath string) error {
 	args := []string{}
+	binPath := "../../../build/bin/tendisplus"
+	if s.binPath != "" {
+		binPath = s.binPath
+	}
 	if valgrind {
 		log.Infof("start by valgrind %d", s.Port)
 		// NOTE(takenliu) cmd cant be multi line.
-		cmd := fmt.Sprintf("nohup ./valgrind --tool=memcheck --leak-check=full ../../../build/bin/tendisplus %s >valgrind_Tendis_%d.log 2>&1 &",
-			cfgFilePath, s.Port)
+		cmd := fmt.Sprintf("nohup ./valgrind --tool=memcheck --leak-check=full %s %s >valgrind_Tendis_%d.log 2>&1 &", binPath, cfgFilePath, s.Port)
 		args = append(args, cmd)
 		inShell := true
 		StartProcess(args, []string{}, fmt.Sprintf("%s/tendisplus.pid", s.Path), 10*time.Second, inShell, CheckPidFile)
@@ -297,12 +304,7 @@ func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
 		//_, err := StartProcess(args, []string{}, fmt.Sprintf("%s/tendisplus.pid", s.Path), 10*time.Second, inShell, CheckPidFile)
 		logFilePath := fmt.Sprintf("%s/stdout.log", s.Path)
 		running := fmt.Sprintf("%s/stdout.log", s.Pwd)
-		var cmd string
-		binPath := "../../../build/bin/tendisplus"
-		if s.binPath != "" {
-			binPath = s.binPath
-		}
-		cmd = fmt.Sprintf("nohup %s %s |& tee %s > %s &", binPath, cfgFilePath, running, logFilePath)
+		cmd := fmt.Sprintf("nohup %s %s |& tee %s > %s &", binPath, cfgFilePath, running, logFilePath)
 		args := []string{}
 		args = append(args, cmd)
 		inShell := true
@@ -400,6 +402,10 @@ func (s *Predixy) Setup(valgrind bool, cfgArgs *map[string]string) error {
 		return err
 	}
 
+	return s.Start(valgrind, cfgFilePath, logFilePath)
+}
+
+func (s *Predixy) Start(valgrind bool, cfgFilePath string, logFilePath string) error {
 	var cmd string
 	if valgrind {
 		// NOTE(takenliu) cmd cant be multi line.
@@ -411,11 +417,11 @@ func (s *Predixy) Setup(valgrind bool, cfgArgs *map[string]string) error {
 	args := []string{}
 	args = append(args, cmd)
 	inShell := true
-	pid, err := StartProcess(args, []string{}, "", 10*time.Second, inShell, nil)
+	pid, _ := StartProcess(args, []string{}, "", 10*time.Second, inShell, nil)
 	s.Pid = pid
 
 	// Wait until port is in use
-	err = eventually(func() error {
+	err := eventually(func() error {
 		return CheckPortInUse(&s.RedisServer)
 	}, 10*time.Second)
 	if err != nil {
@@ -441,11 +447,29 @@ func StartSingleServer(dir string, port int, cfg *map[string]string) *RedisServe
 	return m
 }
 
-func ShutdownServer(m *RedisServer) {
-	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+func CreateClientWithAuth(m *RedisServer, timeout int, auth string) *redis.Client {
+	cli, err := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", m.Ip, m.Port), time.Duration(timeout)*time.Second)
 	if err != nil {
-		log.Fatalf("can't connect to %d: %v", m.Port, err)
+		log.Fatalf("can't connect to %s:%d err:%v", m.Ip, m.Port, err)
 	}
+	if auth != "" {
+		if v, err := cli.Cmd("AUTH", auth).Str(); err != nil || v != "OK" {
+			log.Fatalf("auth result:%s failed:%v. %s:%d auth:%s", v, err, m.Ip, m.Port, auth)
+		}
+	}
+	return cli
+}
+
+func CreateClientWithTimeout(m *RedisServer, timeout int) *redis.Client {
+	return CreateClientWithAuth(m, timeout, "")
+}
+
+func CreateClient(m *RedisServer) *redis.Client {
+	return CreateClientWithAuth(m, 10, "")
+}
+
+func ShutdownServer(m *RedisServer) {
+	cli := CreateClient(m)
 
 	defer cli.Close()
 
@@ -458,10 +482,7 @@ func ShutdownServer(m *RedisServer) {
 }
 
 func SlaveOf(m *RedisServer, s *RedisServer) {
-	cli, err := redis.DialTimeout("tcp", s.Addr(), 10*time.Second)
-	if err != nil {
-		log.Fatalf("can't connect to %d: %v", s.Port, err)
-	}
+	cli := CreateClient(s)
 
 	defer cli.Close()
 
@@ -476,10 +497,7 @@ func SlaveOf(m *RedisServer, s *RedisServer) {
 }
 
 func ConfigSet(s *RedisServer, k string, v string) {
-	cli, err := redis.DialTimeout("tcp", s.Addr(), 10*time.Second)
-	if err != nil {
-		log.Fatalf("can't connect to %d: %v", s.Port, err)
-	}
+	cli := CreateClient(s)
 
 	defer cli.Close()
 
@@ -494,10 +512,7 @@ func ConfigSet(s *RedisServer, k string, v string) {
 }
 
 func SetData(m *RedisServer) {
-	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
-	if err != nil {
-		log.Fatalf("can't connect to %d: %v", m.Port, err)
-	}
+	cli := CreateClient(m)
 
 	defer cli.Close()
 
@@ -509,10 +524,7 @@ func SetData(m *RedisServer) {
 }
 
 func ZaddData(m *RedisServer) {
-	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
-	if err != nil {
-		log.Fatalf("can't connect to %d: %v", m.Port, err)
-	}
+	cli := CreateClient(m)
 
 	defer cli.Close()
 
@@ -527,10 +539,7 @@ func ZaddData(m *RedisServer) {
 }
 
 func SaddData(m *RedisServer) {
-	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
-	if err != nil {
-		log.Fatalf("can't connect to %d: %v", m.Port, err)
-	}
+	cli := CreateClient(m)
 
 	defer cli.Close()
 
@@ -545,10 +554,7 @@ func SaddData(m *RedisServer) {
 }
 
 func LpushData(m *RedisServer) {
-	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
-	if err != nil {
-		log.Fatalf("can't connect to %d: %v", m.Port, err)
-	}
+	cli := CreateClient(m)
 
 	defer cli.Close()
 
@@ -563,10 +569,7 @@ func LpushData(m *RedisServer) {
 }
 
 func RpushData(m *RedisServer) {
-	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
-	if err != nil {
-		log.Fatalf("can't connect to %d: %v", m.Port, err)
-	}
+	cli := CreateClient(m)
 
 	defer cli.Close()
 
@@ -581,10 +584,7 @@ func RpushData(m *RedisServer) {
 }
 
 func HmsetData(m *RedisServer) {
-	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
-	if err != nil {
-		log.Fatalf("can't connect to %d: %v", m.Port, err)
-	}
+	cli := CreateClient(m)
 
 	defer cli.Close()
 
@@ -600,10 +600,7 @@ func HmsetData(m *RedisServer) {
 }
 
 func OtherData(m *RedisServer) {
-	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
-	if err != nil {
-		log.Fatalf("can't connect to %d: %v", m.Port, err)
-	}
+	cli := CreateClient(m)
 
 	defer cli.Close()
 
@@ -622,10 +619,7 @@ func OtherData(m *RedisServer) {
 }
 
 func SpecifHashData(m *RedisServer) {
-	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
-	if err != nil {
-		log.Fatalf("can't connect to %d: %v", m.Port, err)
-	}
+	cli := CreateClient(m)
 
 	defer cli.Close()
 
@@ -715,4 +709,197 @@ func CompareClusterDataWithAuth(addr1 string, passwd1 string, addr2 string, pass
 	if strings.Contains(stdoutComp.String(), "error") {
 		log.Fatal(stdoutComp.String())
 	}
+}
+
+func WriteSingleData(cli *redis.Client, expireMs int, keyPrefix string) {
+	maxError := 3
+	key := keyPrefix + "_kv_" + RandStrAlpha(20)
+	value := "kv_" + RandStrAlpha(20)
+	for maxError > 0 {
+		if r, err := cli.Cmd("set", key, value).Str(); err != nil || r != "OK" {
+			maxError--
+			message := fmt.Sprintf("set %v %v failed. ret:%v err:%v", key, value, r, err)
+			if maxError == 0 {
+				log.Fatal(message)
+			}
+			log.Warning(message)
+			time.Sleep(1 * time.Second)
+		} else {
+			break
+		}
+	}
+	if expireMs != 0 {
+		for maxError > 0 {
+			if r, err := cli.Cmd("pexpire", key, strconv.Itoa(expireMs)).Int(); err != nil || r != 1 {
+				maxError--
+				message := fmt.Sprintf("pexire %v %v failed. ret:%v err:%v", key, expireMs, r, err)
+				if maxError == 0 {
+					log.Fatal(message)
+				}
+				log.Warning(message)
+				time.Sleep(1 * time.Second)
+			} else {
+				break
+			}
+		}
+	}
+
+	key = keyPrefix + "_hash_" + RandStrAlpha(20)
+	value1 := "field_" + RandStrAlpha(20)
+	value2 := "hash_" + RandStrAlpha(20)
+	for maxError > 0 {
+		if r, err := cli.Cmd("hset", key, value1, value2).Int(); err != nil || r != 1 {
+			maxError--
+			message := fmt.Sprintf("hash %v %v %v failed. ret:%v err:%v", key, value1, value2, r, err)
+			if maxError == 0 {
+				log.Fatal(message)
+			}
+			log.Warning(message)
+			time.Sleep(1 * time.Second)
+		} else {
+			break
+		}
+	}
+	if expireMs != 0 {
+		for maxError > 0 {
+			if r, err := cli.Cmd("pexpire", key, strconv.Itoa(expireMs)).Int(); err != nil || r != 1 {
+				maxError--
+				message := fmt.Sprintf("pexire %v %v failed. ret:%v err:%v", key, expireMs, r, err)
+				if maxError == 0 {
+					log.Fatal(message)
+				}
+				log.Warning(message)
+				time.Sleep(1 * time.Second)
+			} else {
+				break
+			}
+		}
+	}
+
+	key = keyPrefix + "_list_" + RandStrAlpha(20)
+	value = "list_" + RandStrAlpha(20)
+	for maxError > 0 {
+		if r, err := cli.Cmd("lpush", key, value).Int(); err != nil {
+			maxError--
+			message := fmt.Sprintf("lpush %v %v failed. ret:%v err:%v", key, value, r, err)
+			if maxError == 0 {
+				log.Fatal(message)
+			}
+			log.Warning(message)
+			time.Sleep(1 * time.Second)
+		} else {
+			break
+		}
+	}
+	if expireMs != 0 {
+		for maxError > 0 {
+			if r, err := cli.Cmd("pexpire", key, strconv.Itoa(expireMs)).Int(); err != nil || r != 1 {
+				maxError--
+				message := fmt.Sprintf("pexire %v %v failed. ret:%v err:%v", key, expireMs, r, err)
+				if maxError == 0 {
+					log.Fatal(message)
+				}
+				log.Warning(message)
+				time.Sleep(1 * time.Second)
+			} else {
+				break
+			}
+		}
+	}
+
+	key = keyPrefix + "_set_" + RandStrAlpha(20)
+	value = "set_" + RandStrAlpha(20)
+	for maxError > 0 {
+		if r, err := cli.Cmd("sadd", key, value).Int(); err != nil {
+			maxError--
+			message := fmt.Sprintf("sadd %v %v failed. ret:%v err:%v", key, value, r, err)
+			if maxError == 0 {
+				log.Fatal(message)
+			}
+			log.Warning(message)
+			time.Sleep(1 * time.Second)
+		} else {
+			break
+		}
+	}
+	if expireMs != 0 {
+		for maxError > 0 {
+			if r, err := cli.Cmd("pexpire", key, strconv.Itoa(expireMs)).Int(); err != nil || r != 1 {
+				maxError--
+				message := fmt.Sprintf("pexire %v %v failed. ret:%v err:%v", key, expireMs, r, err)
+				if maxError == 0 {
+					log.Fatal(message)
+				}
+				log.Warning(message)
+				time.Sleep(1 * time.Second)
+			} else {
+				break
+			}
+		}
+	}
+
+	key = keyPrefix + "_zset_" + RandStrAlpha(20)
+	score := rand.Float64()
+	value = "zset_" + RandStrAlpha(20)
+	for maxError > 0 {
+		if r, err := cli.Cmd("zadd", key, fmt.Sprintf("%f", score), value).Int(); err != nil {
+			maxError--
+			message := fmt.Sprintf("zadd %v %v %v failed. ret:%v err:%v", key, score, value, r, err)
+			if maxError == 0 {
+				log.Fatal(message)
+			}
+			log.Warning(message)
+			time.Sleep(1 * time.Second)
+		} else {
+			break
+		}
+	}
+	if expireMs != 0 {
+		for maxError > 0 {
+			if r, err := cli.Cmd("pexpire", key, strconv.Itoa(expireMs)).Int(); err != nil || r != 1 {
+				maxError--
+				message := fmt.Sprintf("pexire %v %v failed. ret:%v err:%v", key, expireMs, r, err)
+				if maxError == 0 {
+					log.Fatal(message)
+				}
+				log.Warning(message)
+				time.Sleep(1 * time.Second)
+			} else {
+				break
+			}
+		}
+	}
+}
+
+func AddData(m *RedisServer, keyNumber int, expireMs int, keyPrefix string, ch chan int) {
+	log.Infof("m.ip:%v, m.port:%v", m.Ip, m.Port)
+	go func() {
+		cli := CreateClientWithAuth(m, 10, "tendis+test")
+		for i := 0; i < keyNumber; i++ {
+			WriteSingleData(cli, expireMs, keyPrefix)
+		}
+		ch <- keyNumber * 5
+	}()
+}
+
+// about 8,000 - 10,000 qps
+func AddDataWithTime(m *RedisServer, second int, expireMs int, keyPrefix string, ch chan int) {
+	log.Infof("m.ip:%v, m.port:%v", m.Ip, m.Port)
+	localChan := make(chan int)
+	isRunning := true
+	go func() {
+		cli := CreateClientWithAuth(m, 10, "tendis+test")
+		num := 0
+		for isRunning {
+			WriteSingleData(cli, expireMs, keyPrefix)
+			num++
+			time.Sleep(500 * time.Microsecond)
+		}
+		localChan <- num * 5
+	}()
+	go func() {
+		time.Sleep(time.Duration(second) * time.Second)
+		isRunning = false
+		ch <- <-localChan
+	}()
 }

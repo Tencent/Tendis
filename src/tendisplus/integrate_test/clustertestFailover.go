@@ -10,7 +10,6 @@ import (
     "github.com/ngaut/log"
     "tendisplus/integrate_test/util"
     "os/exec"
-    "strconv"
     "strings"
     "time"
 )
@@ -20,26 +19,6 @@ var (
 	sport = flag.Int("slaveport", 41102, "slave port")
 	tport = flag.Int("targetport", 41203, "target port")
 )
-
-func getDbsize(m *util.RedisServer) (int) {
-    cli := createClient(m)
-    r, err := cli.Cmd("dbsize").Int()
-    if err != nil {
-        log.Fatalf("cluster countkeysinslot failed:%v %s", err, r)
-        return 0
-    }
-    return r
-}
-
-func getClusterNodes(m *util.RedisServer) (string) {
-    cli := createClient(m)
-    r, err := cli.Cmd("cluster", "nodes").Str()
-    if err != nil {
-        log.Fatalf("cluster countkeysinslot failed:%v %s", err, r)
-        return "failed"
-    }
-    return r
-}
 
 func checkBinlog(servers *[]util.RedisServer, index int, num int) {
     var expectLog string = "clusterSetMaster incrSync:1"
@@ -54,24 +33,6 @@ func checkBinlog(servers *[]util.RedisServer, index int, num int) {
     log.Infof("check incrSync log end")
 }
 
-func checkFullsyncSuccTimes(m *util.RedisServer, num int) {
-    cli := createClient(m)
-    r, err := cli.Cmd("info", "replication").Str()
-    if err != nil {
-        log.Fatalf("cluster countkeysinslot failed:%v %s", err, r)
-        return
-    }
-    // role is slave contain "fullsync_succ_times=*"
-    log.Infof("check FullsyncSuccTimes r:%s", r)
-    arr:=strings.Split(r, "fullsync_succ_times=")
-    arr2:=strings.Split(arr[1],",");
-    f_times,err:=strconv.Atoi(arr2[0])
-    if (f_times != num){
-        log.Fatalf("checkFullsyncSuccTimes failed num:%d info:%s", num, r);
-    }
-    log.Infof("check FullsyncSuccTimes end Path:%s fullsync_succ_times:%d", m.Path, num)
-}
-
 func testClusterManualFailoverIncrSync() {
 	cfg := make(map[string]string)
 	cfg["aof-enabled"] = "yes"
@@ -82,7 +43,7 @@ func testClusterManualFailoverIncrSync() {
 	cfg["cluster-enabled"] = "yes"
 	cfg["masterauth"] = "tendis+test"
 
-    var servers, predixy, _ = startCluster("127.0.0.1", *mport, 3, map[string]string{"minBinlogKeepSec": "60"})
+    var servers, predixy, _ = startCluster("127.0.0.1", *mport, 3, map[string]string{"minBinlogKeepSec": "60"}, util.GetCurrentDirectory(), "")
 
 	master := (*servers)[0]
 	// defer shutdownServer(master, *shutdown, *clear)
@@ -106,7 +67,7 @@ func testClusterManualFailoverIncrSync() {
     // add data in goroutine for a while
     log.Info("start add data in coroutine")
     var channel chan int = make(chan int)
-    go addDataInCoroutine(&predixy.RedisServer, 500000, "tag", channel)
+    go addDataInCoroutine(&predixy.RedisServer, 500000, "tag", channel, *benchtype)
 
 	// check master sync_full and partial_sync times
 	if !cluster_check_sync_full(&master, 4) {
@@ -165,7 +126,7 @@ func testClusterShutdownFailoverIncrSync() {
 	cfg["masterauth"] = "tendis+test"
     cfg["minBinlogKeepSec"] = "3600"
 
-    var servers, predixy, _ = startCluster("127.0.0.1", *mport, 3, map[string]string{"minBinlogKeepSec": "3600"})
+    var servers, predixy, _ = startCluster("127.0.0.1", *mport, 3, map[string]string{"minBinlogKeepSec": "3600"}, util.GetCurrentDirectory(), "")
 
 	master := (*servers)[0]
 	// defer shutdownServer(master, *shutdown, *clear)
@@ -197,7 +158,7 @@ func testClusterShutdownFailoverIncrSync() {
     // add data in goroutine for a while
     log.Info("start add data in coroutine")
     var channel chan int = make(chan int)
-    go addDataInCoroutine(&predixy.RedisServer, 500000, "tag", channel)
+    go addDataInCoroutine(&predixy.RedisServer, 500000, "tag", channel, *benchtype)
 
     time.Sleep(5 * time.Second)
 
@@ -274,10 +235,10 @@ func testClusterShutdownFailoverIncrSync() {
     log.Debugf("test shutdownFailover incr-sync ok!")
 }
 
-func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int,
+func testClusterFailover(clusterIp string, clusterPortStart int, clusterNodeNum int,
     failoverQuickly bool) {
-    log.Infof("testCluster begin failoverQuickly:%t", failoverQuickly)
-    var servers, predixy, _ = startCluster(clusterIp, clusterPortStart, clusterNodeNum, map[string]string{})
+    log.Infof("testClusterFailover begin failoverQuickly:%t", failoverQuickly)
+    var servers, predixy, _ = startCluster(clusterIp, clusterPortStart, clusterNodeNum, map[string]string{}, util.GetCurrentDirectory(), "")
     //nodeInfoArray
 
     // add data
@@ -293,7 +254,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int,
     }
     log.Infof("failoverQuickly:%t num:%d sleepInter:%d", failoverQuickly, num, sleepInter)
     var channel chan int = make(chan int)
-    go addDataInCoroutine(&predixy.RedisServer, num, "abcd", channel)
+    go addDataInCoroutine(&predixy.RedisServer, num, "abcd", channel, *benchtype)
 
     time.Sleep(1 * time.Second)
     checkFullsyncSuccTimes(&(*servers)[clusterNodeNum], 1)
@@ -426,8 +387,8 @@ func main(){
     log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
     flag.Parse()
     // rand.Seed(time.Now().UnixNano())
-    testCluster(*clusterIp, 45200, 3, false)
-    testCluster(*clusterIp, 45300, 3, true)
+    testClusterFailover(*clusterIp, 45200, 3, false)
+    testClusterFailover(*clusterIp, 45300, 3, true)
     testClusterManualFailoverIncrSync()
     testClusterShutdownFailoverIncrSync()
     log.Infof("clustertestFilover.go passed.")

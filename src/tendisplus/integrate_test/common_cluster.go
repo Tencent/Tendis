@@ -235,7 +235,7 @@ type NodeInfo struct {
 
 func startCluster(
     clusterIp string, clusterPortStart int,
-    clusterNodeNum int, externalArgs map[string]string,
+    clusterNodeNum int, externalArgs map[string]string, pwd string, binpath string,
 ) (*[]util.RedisServer, *util.Predixy, *[]NodeInfo) {
     var nodeInfoArray []NodeInfo
     for i := 0; i <= clusterNodeNum; i++ {
@@ -248,7 +248,6 @@ func startCluster(
             NodeInfo{i, startSlot, endSlot, 0, 0})
     }
 
-    pwd := util.GetCurrentDirectory()
     log.Infof("current pwd:" + pwd)
     kvstorecount := 2
 
@@ -262,6 +261,9 @@ func startCluster(
         log.Infof("start server i:%d port:%d", i, port)
         //port := clusterPortStart + i
         server.Init(clusterIp, port, pwd, "m" + strconv.Itoa(i) + "_")
+        if binpath != "" {
+            server.WithBinPath(binpath)
+        }
         cfgArgs := make(map[string]string)
         cfgArgs["maxBinlogKeepNum"] = "100"
         cfgArgs["kvstorecount"] = strconv.Itoa(kvstorecount)
@@ -343,4 +345,36 @@ func stopCluster(servers *[]util.RedisServer, clusterNodeNum int, predixy *util.
         shutdownServer(&(*servers)[i], *shutdown, *clear);
     }
     shutdownPredixy(predixy, *shutdown, *clear)
+}
+
+func checkFullsyncSuccTimes(m *util.RedisServer, num int) {
+    cli := createClient(m)
+    r, err := cli.Cmd("info", "replication").Str()
+    if err != nil {
+        log.Fatalf("cluster countkeysinslot failed:%v %s", err, r)
+    }
+    // role is slave contain "fullsync_succ_times=*"
+    log.Infof("check FullsyncSuccTimes r:%s", r)
+    arr:=strings.Split(r, "fullsync_succ_times=")
+    arr2:=strings.Split(arr[1],",");
+    f_times,err:=strconv.Atoi(arr2[0])
+    if (f_times != num){
+        log.Fatalf("checkFullsyncSuccTimes failed num:%d info:%s", num, r);
+    }
+    log.Infof("check FullsyncSuccTimes end Path:%s fullsync_succ_times:%d", m.Path, num)
+}
+
+func getClusterNodes(m *util.RedisServer) string {
+    cli := createClient(m)
+    r, err := cli.Cmd("cluster", "nodes").Str()
+    if err != nil {
+        log.Fatalf("cluster countkeysinslot failed:%v %s", err, r)
+    }
+    return r
+}
+
+func isMaster(m *util.RedisServer) bool {
+    expectMaster := "myself,master"
+    nodeString := getClusterNodes(m)
+    return strings.Contains(nodeString, expectMaster)
 }

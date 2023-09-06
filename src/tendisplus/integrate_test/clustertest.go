@@ -567,7 +567,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     log.Infof("cluster add data begin")
     var channel chan int = make(chan int)
     for i := 0; i < clusterNodeNum; i++ {
-        go addDataInCoroutine(&predixy.RedisServer, *num1, strconv.Itoa(i), channel)
+        util.AddData(&predixy.RedisServer, *num1, 0, strconv.Itoa(i), channel)
     }
 
     // if add 10000 key, need about 15s
@@ -603,8 +603,9 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     }
 
     // wait addDataInCoroutine
+    totalInsertedNum := 0;
     for i := 0; i < clusterNodeNum; i++ {
-        <- channel
+        totalInsertedNum += <- channel
     }
     log.Infof("cluster add data end")
 
@@ -687,7 +688,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
         nodesKeyNum = append(nodesKeyNum, nodeKeyNum)
     }
     log.Infof("check keys num masterTotalKeyNum:%d slaveTotalKeyNum:%d", masterTotalKeyNum, slaveTotalKeyNum)
-    if masterTotalKeyNum != clusterNodeNum * *num1 {
+    if masterTotalKeyNum != totalInsertedNum {
         var fake_servers []util.RedisServer
         fake_servers = append(fake_servers, predixy.RedisServer)
         for i := 0; i < clusterNodeNum; i++ {
@@ -696,10 +697,10 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
         for i := 0; i < clusterNodeNum; i++ {
             <- channel
         }
-        log.Fatalf("check keys num failed:%d != %d", masterTotalKeyNum, clusterNodeNum * *num1)
+        log.Fatalf("check keys num failed:%d != %d", masterTotalKeyNum, totalInsertedNum)
     }
-    if slaveTotalKeyNum != clusterNodeNum * *num1 {
-        log.Fatalf("check keys num failed:%d != %d", slaveTotalKeyNum, clusterNodeNum * *num1)
+    if slaveTotalKeyNum != totalInsertedNum {
+        log.Fatalf("check keys num failed:%d != %d", slaveTotalKeyNum, totalInsertedNum)
     }
 
     for i := 0; i <= clusterNodeNum*2 + 1; i++ {
