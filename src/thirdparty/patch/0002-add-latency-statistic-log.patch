@@ -1,47 +1,76 @@
-From 7804bbd8535f700149dd5214ab4be87455a994ec Mon Sep 17 00:00:00 2001
+From 6e6c0fc3e2e8f4f9a36a1caef1012e5ae3eec875 Mon Sep 17 00:00:00 2001
 From: raffertyyu <raffertyyu@tencent.com>
-Date: Thu, 20 Oct 2022 15:51:50 +0800
-Subject: [PATCH] add tendis latency extension
+Date: Mon, 4 Sep 2023 10:49:24 +0800
+Subject: [PATCH] add latency statistic log
 
 ---
- CMakeLists.txt                     |  2 +
+ CMakeLists.txt                     | 10 ++--
  db/db_impl/db_impl_write.cc        | 25 +++++++++
- db/memtable.cc                     | 26 +++++++--
+ db/memtable.cc                     | 22 +++++++-
  env/tendis_extension.cc            | 30 +++++++++++
  include/rocksdb/tendis_extension.h | 85 ++++++++++++++++++++++++++++++
- table/block_fetcher.cc             |  4 ++
- 6 files changed, 169 insertions(+), 3 deletions(-)
+ table/block_fetcher.cc             |  7 +++
+ 6 files changed, 174 insertions(+), 5 deletions(-)
  create mode 100644 env/tendis_extension.cc
  create mode 100644 include/rocksdb/tendis_extension.h
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 7b587f54c..9185d0cd8 100644
+index 4e30f6631..d64723096 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -954,6 +954,8 @@ else()
+@@ -65,7 +65,7 @@ if(CCACHE_FOUND)
+ endif(CCACHE_FOUND)
+ 
+ option(WITH_JEMALLOC "build with JeMalloc" OFF)
+-option(WITH_LIBURING "build with liburing" ON)
++option(WITH_LIBURING "build with liburing" OFF)
+ option(WITH_SNAPPY "build with SNAPPY" OFF)
+ option(WITH_LZ4 "build with lz4" OFF)
+ option(WITH_ZLIB "build with zlib" OFF)
+@@ -405,8 +405,8 @@ if (ASSERT_STATUS_CHECKED)
+ endif()
+ 
+ 
+-# RTTI is by default AUTO which enables it in debug and disables it in release.
+-set(USE_RTTI AUTO CACHE STRING "Enable RTTI in builds")
++# RTTI is by default ON.
++set(USE_RTTI ON CACHE STRING "Enable RTTI in builds")
+ set_property(CACHE USE_RTTI PROPERTY STRINGS AUTO ON OFF)
+ if(USE_RTTI STREQUAL "AUTO")
+   message(STATUS "Enabling RTTI in Debug builds only (default)")
+@@ -431,6 +431,8 @@ else()
+     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fno-rtti")
+   endif()
+ endif()
++set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ldl")
++set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -ldl")
+ 
+ # Used to run CI build and tests so we can run faster
+ option(OPTDBG "Build optimized debug build with MSVC" OFF)
+@@ -1018,6 +1020,8 @@ else()
      env/io_posix.cc)
  endif()
  
 +list(APPEND SOURCES env/tendis_extension.cc)
 +
- if(WITH_FOLLY_DISTRIBUTED_MUTEX)
+ if(USE_FOLLY_LITE)
    list(APPEND SOURCES
-     third-party/folly/folly/detail/Futex.cpp
+     third-party/folly/folly/container/detail/F14Table.cpp
 diff --git a/db/db_impl/db_impl_write.cc b/db/db_impl/db_impl_write.cc
-index 9191b6ea6..9b0c51b8c 100644
+index 8a1a6ce31..fe5971716 100644
 --- a/db/db_impl/db_impl_write.cc
 +++ b/db/db_impl/db_impl_write.cc
-@@ -13,6 +13,7 @@
- #include "db/event_helpers.h"
+@@ -14,6 +14,7 @@
+ #include "logging/logging.h"
  #include "monitoring/perf_context_imp.h"
  #include "options/options_helper.h"
 +#include "rocksdb/tendis_extension.h"
  #include "test_util/sync_point.h"
  #include "util/cast_util.h"
  
-@@ -163,9 +164,14 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
-   StopWatch write_sw(immutable_db_options_.clock, immutable_db_options_.stats,
-                      DB_WRITE);
+@@ -308,9 +309,14 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
+                         post_memtable_callback);
+   StopWatch write_sw(immutable_db_options_.clock, stats_, DB_WRITE);
  
 +  ROCKSDB_START_TIME_RECORD();
 +  ROCKSDB_DECLARE_ENDPOINT(1);
@@ -54,7 +83,7 @@ index 9191b6ea6..9b0c51b8c 100644
  
      if (w.ShouldWriteToMemtable()) {
        PERF_TIMER_STOP(write_pre_and_post_process_time);
-@@ -179,6 +185,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
+@@ -324,6 +330,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
            write_options.ignore_missing_column_families, 0 /*log_number*/, this,
            true /*concurrent_memtable_writes*/, seq_per_batch_, w.batch_cnt,
            batch_per_txn_, write_options.memtable_insert_hint_per_batch);
@@ -62,7 +91,7 @@ index 9191b6ea6..9b0c51b8c 100644
  
        PERF_TIMER_START(write_pre_and_post_process_time);
      }
-@@ -193,6 +200,9 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
+@@ -348,6 +355,9 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
      }
      assert(w.state == WriteThread::STATE_COMPLETED);
      // STATE_COMPLETED conditional below handles exit
@@ -72,7 +101,7 @@ index 9191b6ea6..9b0c51b8c 100644
    }
    if (w.state == WriteThread::STATE_COMPLETED) {
      if (log_used != nullptr) {
-@@ -206,6 +216,11 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
+@@ -361,6 +371,11 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
    }
    // else we are the leader of the write batch group
    assert(w.state == WriteThread::STATE_GROUP_LEADER);
@@ -84,15 +113,15 @@ index 9191b6ea6..9b0c51b8c 100644
    Status status;
    // Once reaches this point, the current writer "w" will try to do its write
    // job.  It may also pick up some of the remaining writers in the "writers_"
-@@ -240,6 +255,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
-   log::Writer* log_writer = logs_.back().writer;
+@@ -390,6 +405,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
  
-   mutex_.Unlock();
+     PERF_TIMER_START(write_pre_and_post_process_time);
+   }
 +  ROCKSDB_SET_ENDPOINT(2);
  
    // Add to log and apply to memtable.  We can release the lock
    // during this phase since &w is currently responsible for logging
-@@ -320,12 +336,14 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
+@@ -482,6 +498,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
      }
  
      PERF_TIMER_STOP(write_pre_and_post_process_time);
@@ -100,14 +129,15 @@ index 9191b6ea6..9b0c51b8c 100644
  
      if (!two_write_queues_) {
        if (status.ok() && !write_options.disableWAL) {
-         PERF_TIMER_GUARD(write_wal_time);
-         io_s = WriteToWAL(write_group, log_writer, log_used, need_log_sync,
-                           need_log_dir_sync, last_sequence + 1);
+@@ -493,6 +510,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
+             WriteToWAL(write_group, log_context.writer, log_used,
+                        log_context.need_log_sync, log_context.need_log_dir_sync,
+                        last_sequence + 1, log_file_number_size);
 +        ROCKSDB_SET_ENDPOINT(4);
        }
      } else {
        if (status.ok() && !write_options.disableWAL) {
-@@ -334,6 +352,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
+@@ -501,6 +519,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
          // wal_write_mutex_ to ensure ordered events in WAL
          io_s = ConcurrentWriteToWAL(write_group, log_used, &last_sequence,
                                      seq_inc);
@@ -115,7 +145,7 @@ index 9191b6ea6..9b0c51b8c 100644
        } else {
          // Otherwise we inc seq number for memtable writes
          last_sequence = versions_->FetchAddLastAllocatedSequence(seq_inc);
-@@ -386,6 +405,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
+@@ -553,6 +572,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
              write_options.ignore_missing_column_families,
              0 /*recovery_log_number*/, this, parallel, seq_per_batch_,
              batch_per_txn_);
@@ -123,7 +153,7 @@ index 9191b6ea6..9b0c51b8c 100644
        } else {
          write_group.last_sequence = last_sequence;
          write_thread_.LaunchParallelMemTableWriters(&write_group);
-@@ -404,6 +424,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
+@@ -571,6 +591,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
                this, true /*concurrent_memtable_writes*/, seq_per_batch_,
                w.batch_cnt, batch_per_txn_,
                write_options.memtable_insert_hint_per_batch);
@@ -131,7 +161,7 @@ index 9191b6ea6..9b0c51b8c 100644
          }
        }
        if (seq_used != nullptr) {
-@@ -462,6 +483,8 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
+@@ -651,6 +672,8 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
    if (status.ok()) {
      status = w.FinalStatus();
    }
@@ -140,29 +170,29 @@ index 9191b6ea6..9b0c51b8c 100644
    return status;
  }
  
-@@ -1070,7 +1093,9 @@ IOStatus DBImpl::WriteToWAL(const WriteBatch& merged_batch,
-   if (UNLIKELY(needs_locking)) {
-     log_write_mutex_.Lock();
+@@ -1334,7 +1357,9 @@ IOStatus DBImpl::WriteToWAL(const WriteBatch& merged_batch,
+   if (!io_s.ok()) {
+     return io_s;
    }
 +  ROCKSDB_START_TIME_RECORD();
-   IOStatus io_s = log_writer->AddRecord(log_entry);
+   io_s = log_writer->AddRecord(log_entry, rate_limiter_priority);
 +  ROCKSDB_STOP_TIME_RECORD_IO_WRITE(GetDBOptions().info_log, log_entry.size());
  
    if (UNLIKELY(needs_locking)) {
      log_write_mutex_.Unlock();
 diff --git a/db/memtable.cc b/db/memtable.cc
-index 5c872ec5f..efdaafea2 100644
+index dfef13a15..9df0d3679 100644
 --- a/db/memtable.cc
 +++ b/db/memtable.cc
-@@ -32,6 +32,7 @@
+@@ -34,6 +34,7 @@
  #include "rocksdb/iterator.h"
  #include "rocksdb/merge_operator.h"
  #include "rocksdb/slice_transform.h"
 +#include "rocksdb/tendis_extension.h"
+ #include "rocksdb/types.h"
  #include "rocksdb/write_buffer_manager.h"
  #include "table/internal_iterator.h"
- #include "table/iterator_wrapper.h"
-@@ -554,14 +555,24 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
+@@ -703,14 +704,24 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
    KeyHandle handle = table->Allocate(encoded_len, &buf);
  
    char* p = EncodeVarint32(buf, internal_key_size);
@@ -186,38 +216,35 @@ index 5c872ec5f..efdaafea2 100644
 +    ROCKSDB_STOP_TIME_RECORD_MEM_WRITE(GetImmutableMemTableOptions()->info_log,
 +                                       size_t(val_size));
 +  }
-   assert((unsigned)(p + val_size - buf) == (unsigned)encoded_len);
-   if (kv_prot_info != nullptr) {
-     Slice encoded(buf, encoded_len);
-@@ -1077,7 +1088,12 @@ Status MemTable::Update(SequenceNumber seq, const Slice& key,
+   assert((unsigned)(p + val_size - buf + moptions_.protection_bytes_per_key) ==
+          (unsigned)encoded_len);
+ 
+@@ -1495,7 +1506,10 @@ Status MemTable::Update(SequenceNumber seq, ValueType value_type,
            char* p =
                EncodeVarint32(const_cast<char*>(key_ptr) + key_length, new_size);
            WriteLock wl(GetLock(lkey.user_key()));
--          memcpy(p, value.data(), value.size());
-+          {
-+            ROCKSDB_START_TIME_RECORD();
-+            memcpy(p, value.data(), value.size());
-+            ROCKSDB_STOP_TIME_RECORD_MEM_WRITE(
-+                GetImmutableMemTableOptions()->info_log, value.size());
-+          }
++          ROCKSDB_START_TIME_RECORD();
+           memcpy(p, value.data(), value.size());
++          ROCKSDB_STOP_TIME_RECORD_MEM_WRITE(
++              GetImmutableMemTableOptions()->info_log, value.size());
            assert((unsigned)((p + value.size()) - entry) ==
                   (unsigned)(VarintLength(key_length) + key_length +
                              VarintLength(value.size()) + value.size()));
-@@ -1150,7 +1166,11 @@ Status MemTable::UpdateCallback(SequenceNumber seq, const Slice& key,
-                                        new_prev_size);
-               if (VarintLength(new_prev_size) < VarintLength(prev_size)) {
-                 // shift the value buffer as well.
-+                ROCKSDB_START_TIME_RECORD();
-                 memcpy(p, prev_buffer, new_prev_size);
-+                ROCKSDB_STOP_TIME_RECORD_MEM_WRITE(
-+                    GetImmutableMemTableOptions()->info_log,
-+                    size_t(new_prev_size));
-               }
+@@ -1567,7 +1581,11 @@ Status MemTable::UpdateCallback(SequenceNumber seq, const Slice& key,
+                                      new_prev_size);
+             if (VarintLength(new_prev_size) < VarintLength(prev_size)) {
+               // shift the value buffer as well.
++              ROCKSDB_START_TIME_RECORD();
+               memcpy(p, prev_buffer, new_prev_size);
++              ROCKSDB_STOP_TIME_RECORD_MEM_WRITE(
++                  GetImmutableMemTableOptions()->info_log,
++                  size_t(new_prev_size));
+               prev_buffer = p;
              }
-             RecordTick(moptions_.statistics, NUMBER_KEYS_UPDATED);
+           }
 diff --git a/env/tendis_extension.cc b/env/tendis_extension.cc
 new file mode 100644
-index 000000000..f7298d09c
+index 000000000..be880a2e2
 --- /dev/null
 +++ b/env/tendis_extension.cc
 @@ -0,0 +1,30 @@
@@ -235,7 +262,7 @@ index 000000000..f7298d09c
 +uint64_t G_ROCKSDB_LATENCY_LIMIT = 0;  // us
 +
 +const std::string& getCurThreadId() {
-+  thread_local static std::string threadid = "";
++  thread_local static std::string threadid("");
 +  if (threadid.empty()) {
 +    std::stringstream ss;
 +    ss << std::this_thread::get_id();
@@ -251,10 +278,9 @@ index 000000000..f7298d09c
 +}
 +
 +}  // namespace ROCKSDB_NAMESPACE
-\ No newline at end of file
 diff --git a/include/rocksdb/tendis_extension.h b/include/rocksdb/tendis_extension.h
 new file mode 100644
-index 000000000..b69722c60
+index 000000000..7f43abcee
 --- /dev/null
 +++ b/include/rocksdb/tendis_extension.h
 @@ -0,0 +1,85 @@
@@ -343,32 +369,43 @@ index 000000000..b69722c60
 +  ROCKSDB_STOP_TIME_RECORD((LOGGER), (SIZE), "memory write")
 +
 +}  // namespace ROCKSDB_NAMESPACE
-\ No newline at end of file
 diff --git a/table/block_fetcher.cc b/table/block_fetcher.cc
-index 90558168e..cd1f2587c 100644
+index b2fa6d4b5..5ff6bade6 100644
 --- a/table/block_fetcher.cc
 +++ b/table/block_fetcher.cc
-@@ -16,6 +16,7 @@
- #include "memory/memory_allocator.h"
+@@ -18,6 +18,7 @@
  #include "monitoring/perf_context_imp.h"
+ #include "rocksdb/compression_type.h"
  #include "rocksdb/env.h"
 +#include "rocksdb/tendis_extension.h"
  #include "table/block_based/block.h"
  #include "table/block_based/block_based_table_reader.h"
- #include "table/block_based/reader_common.h"
-@@ -242,9 +243,12 @@ IOStatus BlockFetcher::ReadBlockContents() {
+ #include "table/block_based/block_type.h"
+@@ -259,18 +260,24 @@ IOStatus BlockFetcher::ReadBlockContents() {
+       if (file_->use_direct_io()) {
+         PERF_TIMER_GUARD(block_read_time);
+         PERF_CPU_TIMER_GUARD(block_read_cpu_time, nullptr);
++        ROCKSDB_START_TIME_RECORD();
+         io_status_ = file_->Read(
+             opts, handle_.offset(), block_size_with_trailer_, &slice_, nullptr,
+             &direct_io_buf_, read_options_.rate_limiter_priority);
++        ROCKSDB_STOP_TIME_RECORD_IO_READ(ioptions_.info_log,
++                                         block_size_with_trailer_);
+         PERF_COUNTER_ADD(block_read_count, 1);
+         used_buf_ = const_cast<char*>(slice_.data());
        } else {
          PrepareBufferForBlockFromFile();
          PERF_TIMER_GUARD(block_read_time);
+         PERF_CPU_TIMER_GUARD(block_read_cpu_time, nullptr);
 +        ROCKSDB_START_TIME_RECORD();
-         io_status_ =
-             file_->Read(opts, handle_.offset(), block_size_with_trailer_,
-                         &slice_, used_buf_, nullptr, for_compaction_);
+         io_status_ = file_->Read(opts, handle_.offset(),
+                                  block_size_with_trailer_, &slice_, used_buf_,
+                                  nullptr, read_options_.rate_limiter_priority);
 +        ROCKSDB_STOP_TIME_RECORD_IO_READ(ioptions_.info_log,
 +                                         block_size_with_trailer_);
          PERF_COUNTER_ADD(block_read_count, 1);
  #ifndef NDEBUG
          if (slice_.data() == &stack_buf_[0]) {
 -- 
-2.38.1
+2.42.0
 

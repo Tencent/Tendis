@@ -199,7 +199,7 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
                                                  uint32_t end,
                                                  uint32_t* totalNum) {
   // need add IS lock for chunks ???
-  auto cursor = std::move(txn->createSlotsCursor(begin, end));
+  auto cursor = txn->createSlotsCursor(begin, end);
   uint32_t totalWriteNum = 0;
   uint32_t curWriteLen = 0;
   uint32_t curWriteNum = 0;
@@ -285,7 +285,7 @@ Status ChunkMigrateSender::sendRangeByBatch(Transaction* txn,
                                             uint32_t end,
                                             uint32_t* totalNum) {
   // need add IS lock for chunks ???
-  auto cursor = std::move(txn->createSlotsCursor(begin, end));
+  auto cursor = txn->createSlotsCursor(begin, end);
   uint32_t timeoutSec = _cfg->migrateNetworkTimeout;
   Status s;
   MigrateBatch migratebatch(

@@ -1681,7 +1681,7 @@ Status ClusterState::clusterSaveNodes() {
 
       std::bitset<CLUSTER_SLOTS> slots = node->getSlots();
 
-      auto slotBuff = std::move(bitsetEncodeVec(slots));
+      auto slotBuff = bitsetEncodeVec(slots);
 
       auto meta = std::make_unique<ClusterMeta>(node->getNodeName(),
                                                 node->getNodeIp(),
@@ -5100,7 +5100,7 @@ uint64_t ClusterManager::countKeysInSlot(uint32_t slot) {
     LOG_STATUS(ptxn.status());
     return 0;
   }
-  auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
+  auto slotCursor = ptxn.value()->createSlotCursor(slot);
 
   uint64_t keyNum = 0;
   while (true) {
@@ -5135,7 +5135,7 @@ std::vector<std::string> ClusterManager::getKeyBySlot(uint32_t slot,
     LOG_STATUS(ptxn.status());
     return keysList;
   }
-  auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
+  auto slotCursor = ptxn.value()->createSlotCursor(slot);
 
   uint32_t n = 0;
   while (true) {
@@ -5172,7 +5172,7 @@ bool ClusterManager::emptySlot(uint32_t slot) {
     LOG_STATUS(ptxn.status());
     return false;
   }
-  auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
+  auto slotCursor = ptxn.value()->createSlotCursor(slot);
   auto v = slotCursor->next();
 
   if (!v.ok()) {

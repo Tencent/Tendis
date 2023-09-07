@@ -38,8 +38,8 @@ endif()
 # configure compiler requirement
 message(${CMAKE_CXX_COMPILER})
 if(CMAKE_COMPILER_IS_GNUCC)
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.5)
-        message(FATAL_ERROR "g++ version ${CMAKE_CXX_COMPILER_VERSION}, Require at least gcc-5.5, \
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
+        message(FATAL_ERROR "g++ version ${CMAKE_CXX_COMPILER_VERSION}, Require at least gcc-8, \
         you may remove CMakeCache.txt and run export CXX=/path/to/your/prefered/cxx_compiler before run cmake \
         to solve this problem")
     endif()
@@ -65,9 +65,8 @@ if(CMAKE_COMPILER_IS_GNUCC)
 	set(STDFS_LIB "stdc++fs")
     option(NEW_ROCKSDB "new rocksdb version" ON)
     if(NEW_ROCKSDB)
-        message("using rocksdb-6.23.3")
-		set(patchCommand "cd ${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb/rocksdb\; git am -s ../../patch/0001-add-property-rocksdb.levelstatsex-in-rocksdb.patch\; git am -s ../../patch/0002-add-tendis-latency-extension.patch\; git am -s ../../patch/0003-add-property-rocksdb.levelstatsex-in-rocksdb.patch\; git am -s ../../patch/0004-modify-for-gcc-13.patch\;")
-		message("RocksDB git patch, we apply add-property-rocksdb.levelstatsex-in-rocksdb")
+        message("using rocksdb-v8.5.3")
+		set(patchCommand "cd ${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb/rocksdb\; git am -s ../../patch/0001-add-statistic-for-sst-file-info.patch\; git am -s ../../patch/0002-add-latency-statistic-log.patch\; ")
 		execute_process(COMMAND bash "-c" ${patchCommand})
         set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb")
     else()
@@ -146,7 +145,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
                 # NOTE(takenliu) support jemalloc profile, before start tendisplus need export as below:
                 #     export MALLOC_CONF="prof:true,prof_prefix:jeprof.out"
-				COMMAND ./autogen.sh --enable-prof --disable-shared
+				COMMAND ./autogen.sh --enable-prof --disable-shared CFLAGS=-Wno-missing-attributes CXXFLAGS=-Wno-missing-attributes
 				WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR})
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/lib/libjemalloc_pic.a"
 				COMMAND make -j16
@@ -223,7 +222,7 @@ set(WARN_C_CXX
 -Wno-missing-field-initializers \
 -Wno-implicit-fallthrough \
 -Wendif-labels \
--Wfloat-equal \
+-Wno-float-equal \
 -Wformat=2 \
 -Wframe-larger-than=69632 \
 -Wmissing-include-dirs \
@@ -297,6 +296,7 @@ include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog/src")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/rapidjson/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/lua/src")
+include_directories(${ROCKSDB_DIR})
 include_directories(${ROCKSDB_DIR}/rocksdb)
 include_directories(${ROCKSDB_DIR}/rocksdb/include)
 
@@ -311,6 +311,6 @@ add_subdirectory(src/tendisplus/replication)
 add_subdirectory(src/tendisplus/cluster)
 add_subdirectory(src/tendisplus/lock)
 add_subdirectory(src/tendisplus/script)
-if(NEW_ROCKSDB)
+if(NOT WITH_ASAN AND NOT WITH_TSAN AND NEW_ROCKSDB)
 add_subdirectory(src/tendisplus/tools)
 endif()

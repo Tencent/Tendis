@@ -12,7 +12,7 @@
 
 #include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
-#include "rocksdb/utilities/backupable_db.h"
+#include "rocksdb/utilities/backup_engine.h"
 #include "rocksdb/utilities/checkpoint.h"
 #include "rocksdb/options.h"
 
@@ -230,7 +230,7 @@ TEST(RocksKVStore, RocksOptions) {
   EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().create_if_missing,
             true);
 
-#if ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 13
+#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 13)
   rocksdb::BlockBasedTableOptions* option =
     (rocksdb::BlockBasedTableOptions*)kvstore->getUnderlayerPesDB()
       ->GetOptions()
@@ -287,7 +287,7 @@ TEST(RocksKVStore, BinlogRightMost) {
             4);
   EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().create_if_missing,
             true);
-#if ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 13
+#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 13)
   rocksdb::BlockBasedTableOptions* option =
     (rocksdb::BlockBasedTableOptions*)kvstore->getUnderlayerPesDB()
       ->GetOptions()

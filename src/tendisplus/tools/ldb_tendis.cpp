@@ -3,7 +3,6 @@
 // project for additional information.
 
 #include "rocksdb/ldb_tool.h"
-#include "rocksdb/util/cast_util.h"
 #include "rocksdb/utilities/ldb_cmd.h"
 #include "rocksdb/utilities/ttl/db_ttl_impl.h"
 #include "tendisplus/storage/record.h"

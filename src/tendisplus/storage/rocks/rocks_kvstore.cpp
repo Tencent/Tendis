@@ -23,7 +23,7 @@
 #include "rocksdb/slice.h"
 #include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
-#include "rocksdb/utilities/backupable_db.h"
+#include "rocksdb/utilities/backup_engine.h"
 #include "rocksdb/utilities/checkpoint.h"
 #include "rocksdb/options.h"
 #include "rocksdb/iostats_context.h"
@@ -257,7 +257,7 @@ std::unique_ptr<Cursor> RocksTxn::createCursor(
   iter = getIterator(readOpts, handle);
 
   return std::unique_ptr<Cursor>(
-    new RocksKVCursor(std::move(std::unique_ptr<rocksdb::Iterator>(iter))));
+    new RocksKVCursor(std::unique_ptr<rocksdb::Iterator>(iter)));
 }
 
 Expected<uint64_t> RocksTxn::commit() {
@@ -1009,13 +1009,11 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
     options.inplace_update_support = static_cast<bool>(value);
   } else if (key == "inplace_update_num_locks") {
     options.inplace_update_num_locks = static_cast<size_t>(value);
-  }
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
-  else if (key == "memtable_whole_key_filtering") {  // NOLINT
+  } else if (key == "memtable_whole_key_filtering") {
     options.memtable_whole_key_filtering = static_cast<bool>(value);
-  }
 #endif
-  else if (key == "memtable_huge_page_size") {  // NOLINT
+  } else if (key == "memtable_huge_page_size") {
     options.memtable_huge_page_size = static_cast<size_t>(value);
   } else if (key == "bloom_locality") {
     options.bloom_locality = static_cast<uint32_t>(value);
@@ -1051,16 +1049,10 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
     options.force_consistency_checks = static_cast<bool>(value);
   } else if (key == "report_bg_io_stats") {
     options.report_bg_io_stats = static_cast<bool>(value);
-  }
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
-  else if (key == "ttl") {  // NOLINT
+  } else if (key == "ttl") {
     options.ttl = (uint64_t)value;
-  }
 #endif
-  else if (key == "rate_limit_delay_max_milliseconds") {  // NOLINT
-    options.rate_limit_delay_max_milliseconds = (unsigned int)value;
-  } else if (key == "purge_redundant_kvs_while_flush") {
-    options.purge_redundant_kvs_while_flush = static_cast<bool>(value);
   } else if (key == "write_buffer_size") {
     options.write_buffer_size = static_cast<size_t>(value);
   } else if (key == "level0_file_num_compaction_trigger") {
@@ -1089,14 +1081,8 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
     options.delete_obsolete_files_period_micros = (uint64_t)value;
   } else if (key == "max_background_jobs") {
     options.max_background_jobs = static_cast<int>(value);
-  } else if (key == "base_background_compactions") {
-    options.base_background_compactions = static_cast<int>(value);
-  } else if (key == "max_background_compactions") {
-    options.max_background_compactions = static_cast<int>(value);
   } else if (key == "max_subcompactions") {
     options.max_subcompactions = static_cast<uint32_t>(value);
-  } else if (key == "max_background_flushes") {
-    options.max_background_flushes = static_cast<int>(value);
   } else if (key == "max_log_file_size") {
     options.max_log_file_size = static_cast<size_t>(value);
   } else if (key == "log_file_time_to_roll") {
@@ -1127,24 +1113,18 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
     options.allow_fallocate = static_cast<bool>(value);
   } else if (key == "is_fd_close_on_exec") {
     options.is_fd_close_on_exec = static_cast<bool>(value);
-  } else if (key == "skip_log_error_on_recovery") {
-    options.skip_log_error_on_recovery = static_cast<bool>(value);
   } else if (key == "stats_dump_period_sec") {
     options.stats_dump_period_sec = static_cast<int>(value);
-  }
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
-  else if (key == "stats_persist_period_sec") {  // NOLINT
+  } else if (key == "stats_persist_period_sec") {
     options.stats_persist_period_sec = static_cast<int>(value);
   } else if (key == "stats_history_buffer_size") {
     options.stats_history_buffer_size = static_cast<size_t>(value);
-  }
 #endif
-  else if (key == "advise_random_on_open") {  // NOLINT
+  } else if (key == "advise_random_on_open") {
     options.advise_random_on_open = static_cast<bool>(value);
   } else if (key == "db_write_buffer_size") {
     options.db_write_buffer_size = static_cast<size_t>(value);
-  } else if (key == "new_table_reader_for_compaction_inputs") {
-    options.new_table_reader_for_compaction_inputs = static_cast<bool>(value);
   } else if (key == "compaction_readahead_size") {
     options.compaction_readahead_size = static_cast<size_t>(value);
   } else if (key == "random_access_max_buffer_size") {
@@ -1185,20 +1165,16 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
     options.avoid_flush_during_shutdown = static_cast<bool>(value);
   } else if (key == "allow_ingest_behind") {
     options.allow_ingest_behind = static_cast<bool>(value);
-  } else if (key == "preserve_deletes") {
-    options.preserve_deletes = static_cast<bool>(value);
   } else if (key == "two_write_queues") {
     options.two_write_queues = static_cast<bool>(value);
   } else if (key == "manual_wal_flush") {
     options.manual_wal_flush = static_cast<bool>(value);
-  }
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
-  else if (key == "atomic_flush") {  // NOLINT
+  } else if (key == "atomic_flush") {
     options.atomic_flush = static_cast<bool>(value);
-  }
 #endif
 #if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 18)
-  else if (key == "enable_blob_files") {  // NOLINT
+  } else if (key == "enable_blob_files") {
     options.enable_blob_files = static_cast<bool>(value);
   } else if (key == "min_blob_size") {
     options.min_blob_size = static_cast<uint32_t>(value);
@@ -1217,9 +1193,8 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
     } else {
       LOG(ERROR) << "error param, not double, " << key << ":" << rawValue;
     }
-  }
 #endif
-  else {  // NOLINT
+  } else {
     return {ErrorCodes::ERR_PARSEOPT, "invalid rocksdb option :" + key};
   }
 
@@ -1250,14 +1225,10 @@ Status rocksdbTableOptionsSet(rocksdb::BlockBasedTableOptions& options,
       static_cast<bool>(value);
   } else if (key == "pin_l0_filter_and_index_blocks_in_cache") {
     options.pin_l0_filter_and_index_blocks_in_cache = static_cast<bool>(value);
-  }
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
-  else if (key == "pin_top_level_index_and_filter") {  // NOLINT
+  } else if (key == "pin_top_level_index_and_filter") {
     options.pin_top_level_index_and_filter = static_cast<bool>(value);
-  }
 #endif
-  else if (key == "hash_index_allow_collision") {  // NOLINT
-    options.hash_index_allow_collision = static_cast<bool>(value);
   } else if (key == "no_block_cache") {
     options.no_block_cache = static_cast<bool>(value);
   } else if (key == "block_size") {
@@ -1284,13 +1255,11 @@ Status rocksdbTableOptionsSet(rocksdb::BlockBasedTableOptions& options,
     options.format_version = static_cast<uint32_t>(value);
   } else if (key == "enable_index_compression") {
     options.enable_index_compression = static_cast<bool>(value);
-  }
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
-  else if (key == "block_align") {  // NOLINT
+  } else if (key == "block_align") {
     options.block_align = static_cast<bool>(value);
-  }
 #endif
-  else {  // NOLINT
+  } else {
     return {ErrorCodes::ERR_PARSEOPT, "invalid rocksdb  option :" + key};
   }
 
@@ -1875,7 +1844,7 @@ Expected<uint64_t> RocksKVStore::GetApproximateSizes(ColumnFamilyNumber cf,
   std::array<uint64_t, 1> sizes;
   rocksdb::SizeApproximationOptions options;
 
-  options.include_memtabtles = incl_mem;
+  options.include_memtables = incl_mem;
   options.files_size_error_margin = 0.1;
 
   ranges[0].start = rocksdb::Slice(*begin);
@@ -2307,7 +2276,7 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
   } else {
     rocksdb::BackupEngine* bkEngine = nullptr;
     auto s = rocksdb::BackupEngine::Open(
-      rocksdb::Env::Default(), rocksdb::BackupableDBOptions(dir), &bkEngine);
+      rocksdb::Env::Default(), rocksdb::BackupEngineOptions(dir), &bkEngine);
     if (!s.ok()) {
       if (bkEngine)
         delete bkEngine;
@@ -2468,7 +2437,7 @@ Expected<std::string> RocksKVStore::restoreBackup(const std::string& dir) {
 Expected<std::string> RocksKVStore::loadCopy(const std::string& dir) {
   rocksdb::BackupEngineReadOnly* backup_engine;
   rocksdb::Status s = rocksdb::BackupEngineReadOnly::Open(
-    rocksdb::Env::Default(), rocksdb::BackupableDBOptions(dir), &backup_engine);
+    rocksdb::Env::Default(), rocksdb::BackupEngineOptions(dir), &backup_engine);
   if (!s.ok()) {
     LOG(ERROR) << "BackupEngineReadOnly::Open failed." << s.ToString()
                << " dir:" << dir;
@@ -2542,7 +2511,7 @@ Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction(
     INVARIANT_D(0);
   }
   addUnCommitedTxnInLock(txnId);
-  return std::move(ret);
+  return ret;
 }
 
 Status RocksKVStore::assignBinlogIdIfNeeded(Transaction* txn) {

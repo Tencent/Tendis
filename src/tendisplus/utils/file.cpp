@@ -82,7 +82,7 @@ std::unique_ptr<rocksdb::WritableFile> openWritableFile(
     LOG(ERROR) << "open WritableFile failed:" << rS.ToString();
     return nullptr;
   }
-  return std::move(writable_file);
+  return writable_file;
 }
 
 }  // namespace tendisplus

@@ -41,7 +41,7 @@ StoreMeta::StoreMeta(uint32_t id_,
     replState(replState_) {}
 
 std::unique_ptr<StoreMeta> StoreMeta::copy() const {
-  return std::move(std::unique_ptr<StoreMeta>(new StoreMeta(*this)));
+  return std::unique_ptr<StoreMeta>(new StoreMeta(*this));
 }
 
 
@@ -62,16 +62,16 @@ ChunkMeta::ChunkMeta(uint32_t id_,
     migrateState(migrateState_) {}
 
 std::unique_ptr<ChunkMeta> ChunkMeta::copy() const {
-  return std::move(std::unique_ptr<ChunkMeta>(new ChunkMeta(*this)));
+  return std::unique_ptr<ChunkMeta>(new ChunkMeta(*this));
 }
 
 
 std::unique_ptr<StoreMainMeta> StoreMainMeta::copy() const {
-  return std::move(std::unique_ptr<StoreMainMeta>(new StoreMainMeta(*this)));
+  return std::unique_ptr<StoreMainMeta>(new StoreMainMeta(*this));
 }
 
 std::unique_ptr<MainMeta> MainMeta::copy() const {
-  return std::move(std::unique_ptr<MainMeta>(new MainMeta(*this)));
+  return std::unique_ptr<MainMeta>(new MainMeta(*this));
 }
 
 // server first start in cluster mode
@@ -131,7 +131,7 @@ ClusterMeta::ClusterMeta(const std::string& nodeName_,
 
 
 std::unique_ptr<ClusterMeta> ClusterMeta::copy() const {
-  return std::move(std::unique_ptr<ClusterMeta>(new ClusterMeta(*this)));
+  return std::unique_ptr<ClusterMeta>(new ClusterMeta(*this));
 }
 
 // get prefix with "store_cluster_"

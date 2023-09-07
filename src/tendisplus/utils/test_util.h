@@ -42,7 +42,7 @@ using AllKeys = std::vector<KeysWritten>;
 class NoSchedNetSession : public NetSession {
  public:
   NoSchedNetSession(std::shared_ptr<ServerEntry> server,
-                    asio::ip::tcp::socket sock,
+                    asio::ip::tcp::socket&& sock,
                     uint64_t connid,
                     bool initSock,
                     std::shared_ptr<NetworkMatrix> netMatrix,

@@ -9,11 +9,12 @@
 #include <utility>
 #include <memory>
 
+#include "rocksdb/port/lang.h"
+
 #include "tendisplus/lock/mgl/mgl.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/network/session_ctx.h"
 #include "tendisplus/lock/mgl/mgl_mgr.h"
-#include "tendisplus/utils/portable.h"
 
 namespace tendisplus {
 

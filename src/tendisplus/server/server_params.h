@@ -18,11 +18,11 @@
 #include <memory>
 #include <vector>
 #include "glog/logging.h"
+#include "rocksdb/port/lang.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
-#include "tendisplus/utils/portable.h"
 
 namespace tendisplus {
 using namespace std;  // NOLINT

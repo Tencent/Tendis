@@ -13,9 +13,6 @@
 #include <algorithm>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/storage/varint.h"
-#ifndef _WIN32
-#include <experimental/string_view>
-#endif
 
 namespace tendisplus {
 

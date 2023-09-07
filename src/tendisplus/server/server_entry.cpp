@@ -211,7 +211,7 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(
       new_entry.argv.push_back(std::move(remain_arg));
     } else {
       if (args[i].size() > max_string) {
-        std::string brief_arg = std::move(args[i].substr(0, max_string));
+        std::string brief_arg = args[i].substr(0, max_string);
         brief_arg.append("... (");
         brief_arg.append(to_string(args[i].size() - max_string));
         brief_arg.append(" more bytes)");
