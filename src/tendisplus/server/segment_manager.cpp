@@ -74,6 +74,10 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
     return {ErrorCodes::ERR_INTERNAL, ss.str()};
   }
 
+  // only for test
+  if (cfg->ignoreKeyLock) {
+    mode = mgl::LockMode::LOCK_NONE;
+  }
   if (sess->getCtx() &&
       _instances[segId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
     sess->getCtx()->setReplOnly(isSessionReplOnly);

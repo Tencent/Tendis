@@ -28,6 +28,10 @@ static int FLAGS_num = 100000;
 // Number of concurrent threads to run.
 static int FLAGS_threads = 10;
 
+static bool FLAGS_directWriteRocksdb = false;
+static bool FLAGS_ignoreKeyLock = false;
+
+
 // Size of each value
 // static int FLAGS_value_size = 100;
 
@@ -385,6 +389,8 @@ std::shared_ptr<ServerParams> GenServerParams() {
   myfile << "kvStoreCount " << FLAGS_kvStoreCount << "\n";
   myfile << "maxBinlogKeepNum 1000000\n";
   myfile << "slaveBinlogKeepNum 1000000\n";
+  myfile << "ignorekeylock " << FLAGS_ignoreKeyLock << "\n";
+
 #ifdef _WIN32
   myfile << "rocks.compress_type none\n";
 #endif
@@ -459,6 +465,50 @@ void DoWriteKV(ThreadState* thread) {
   }
 }
 
+void DoWriteKVToRocksdb(ThreadState* thread) {
+  std::fprintf(stdout, "Thread %d write (%d ops) \n", thread->tid, FLAGS_num);
+  auto ctx = std::make_shared<asio::io_context>();
+  asio::ip::tcp::socket socket(*ctx);
+  auto sess = std::make_shared<NetSession>(
+    g_server, std::move(socket), 0, false, nullptr, nullptr);
+
+  for (int i = 0; i < FLAGS_num; ++i) {
+    KeyBuffer key;
+    key.Set(thread->rand.Uniform(FLAGS_num));
+    auto keyStr = std::to_string(thread->tid) + key.slice().ToString();
+    auto value = std::to_string(i);
+    sess->setArgs({"set", keyStr, std::to_string(i)});
+
+    auto expdb = g_server->getSegmentMgr()->getDbWithKeyLock(
+      sess.get(), keyStr, mgl::LockMode::LOCK_NONE);
+    EXPECT_TRUE(expdb.ok());
+
+    PStore kvstore = expdb.value().store;
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
+    EXPECT_TRUE(ptxn.ok());
+
+    SessionCtx* pCtx = sess->getCtx();
+    INVARIANT(pCtx != nullptr);
+    RecordKey rk(expdb.value().chunkId,
+                 pCtx->getDbId(),
+                 RecordType::RT_KV,
+                 keyStr,
+                 "");
+
+    uint64_t ts = 0;
+    RecordValue rv(value, RecordType::RT_KV, pCtx->getVersionEP(), ts);
+
+    Status status = kvstore->setKV(rk, rv, ptxn.value());
+    TEST_SYNC_POINT("setGeneric::SetKV::1");
+    EXPECT_TRUE(status.ok());
+    Expected<uint64_t> exptCommit =
+      sess->getCtx()->commitTransaction(ptxn.value());
+    EXPECT_TRUE(exptCommit.ok());
+
+    thread->stats.FinishedSingleOp();
+  }
+}
+
 static void ThreadBody(void* v) {
   ThreadArg* arg = reinterpret_cast<ThreadArg*>(v);
   SharedState* shared = arg->shared;
@@ -530,6 +580,9 @@ void RunBenchmark(int n, Slice name, void (*method)(ThreadState*)) {
 void Run() {
   Open();
   auto method = &DoWriteKV;
+  if (FLAGS_directWriteRocksdb) {
+    method = &DoWriteKVToRocksdb;
+  }
   rocksdb::Slice name("kvwrite");
   LOG(INFO) << "Start benchmark :" << name.data();
   auto start = g_env->NowMicros();
@@ -615,8 +668,13 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; i++) {
     int n;
     char junk;
-
-    if (sscanf(argv[i], "--binlogEnabled=%d%c", &n, &junk) &&
+    if (sscanf(argv[i], "--directWriteRocksdb=%d%c", &n, &junk) &&
+      (n == 0 || n == 1)) {
+      FLAGS_directWriteRocksdb = n;
+    } else if (sscanf(argv[i], "--ignoreKeyLock=%d%c", &n, &junk) &&
+    (n == 0 || n == 1)) {
+      FLAGS_ignoreKeyLock = n;
+    } else if (sscanf(argv[i], "--binlogEnabled=%d%c", &n, &junk) &&
         (n == 0 || n == 1)) {
       FLAGS_binlogEnabled = n;
     } else if (sscanf(argv[i], "--binlogSaveLogs=%d%c", &n, &junk) &&
