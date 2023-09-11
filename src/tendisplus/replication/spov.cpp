@@ -509,8 +509,8 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
   });
 
 
-  std::shared_ptr<BlockingTcpClient> client = std::move(
-    createClient(metaSnapshot, _connectMasterTimeoutMs, CLIENT_MASTER));
+  std::shared_ptr<BlockingTcpClient> client =
+    createClient(metaSnapshot, _connectMasterTimeoutMs, CLIENT_MASTER);
   if (client == nullptr) {
     errStr = errPrefix + "reconn master failed";
     return;
@@ -604,7 +604,7 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
 
   std::unique_ptr<StoreMeta> metaSnapshot = [this, storeId]() {
     std::lock_guard<std::mutex> lk(_mutex);
-    return std::move(_syncMeta[storeId]->copy());
+    return _syncMeta[storeId]->copy();
   }();
 
   if (metaSnapshot->syncFromHost == "") {

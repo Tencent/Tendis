@@ -766,8 +766,7 @@ class ClusterCommand : public Command {
     auto ip = srcNode->getNodeIp();
     auto port = srcNode->getPort();
 
-    std::shared_ptr<BlockingTcpClient> client =
-      std::move(createClient(ip, port, svr));
+    std::shared_ptr<BlockingTcpClient> client = createClient(ip, port, svr);
 
     if (client == nullptr) {
       LOG(ERROR) << "Connect to sender:" << ip << ":" << port

@@ -155,8 +155,8 @@ std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
   size_t readBuf, uint64_t rateLimit) {
   auto rwCtx = getRwCtx();
   INVARIANT(rwCtx != nullptr);
-  return std::move(std::make_unique<BlockingTcpClient>(
-    rwCtx, readBuf, _cfg->netBatchSize, _cfg->netBatchTimeoutSec, rateLimit));
+  return std::make_unique<BlockingTcpClient>(
+    rwCtx, readBuf, _cfg->netBatchSize, _cfg->netBatchTimeoutSec, rateLimit);
 }
 
 std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
@@ -165,16 +165,16 @@ std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
   uint64_t rateLimit,
   uint32_t netBatchTimeoutSec) {
   if (netBatchTimeoutSec == 0) {
-    netBatchTimeoutSec =  _cfg->netBatchTimeoutSec;
+    netBatchTimeoutSec = _cfg->netBatchTimeoutSec;
   }
   auto rwCtx = getRwCtx(socket);
   INVARIANT(rwCtx != nullptr);
-  return std::move(std::make_unique<BlockingTcpClient>(rwCtx,
-                                                       std::move(socket),
-                                                       readBuf,
-                                                       _cfg->netBatchSize,
-                                                       netBatchTimeoutSec,
-                                                       rateLimit));
+  return std::make_unique<BlockingTcpClient>(rwCtx,
+                                             std::move(socket),
+                                             readBuf,
+                                             _cfg->netBatchSize,
+                                             netBatchTimeoutSec,
+                                             rateLimit);
 }
 
 Status NetworkAsio::prepare(const std::string& ip,
@@ -407,7 +407,7 @@ Status NetworkAsio::run(bool forGossip) {
 }
 
 NetSession::NetSession(std::shared_ptr<ServerEntry> server,
-                       tcp::socket sock,
+                       tcp::socket&& sock,
                        uint64_t connid,
                        bool initSock,
                        std::shared_ptr<NetworkMatrix> netMatrix,

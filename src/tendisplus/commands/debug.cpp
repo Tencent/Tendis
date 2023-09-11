@@ -30,6 +30,7 @@
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
+#include "rocksdb/advanced_cache.h"
 #include "rocksdb/perf_context.h"
 #include "rocksdb/iostats_context.h"
 #include "tendisplus/utils/sync_point.h"

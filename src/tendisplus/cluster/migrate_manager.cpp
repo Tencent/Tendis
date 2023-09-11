@@ -184,7 +184,7 @@ Status MigrateManager::stopSrcNode(const std::string& taskid,
   std::string srcHost = srcIp;
   auto srcPort = port;
   std::shared_ptr<BlockingTcpClient> client =
-    std::move(createClient(srcHost, srcPort, _svr));
+    createClient(srcHost, srcPort, _svr);
 
   if (client == nullptr) {
     LOG(ERROR) << "stop command send to: " << srcHost << ":" << srcPort
@@ -1300,7 +1300,7 @@ void MigrateReceiveTask::fullReceive() {
   bool srcNodeFail = false;
   auto retryCnt = _svr->getParams()->snapShotRetryCnt;
   std::shared_ptr<BlockingTcpClient> client =
-    std::move(createClient(_srcIp, _srcPort, _svr));
+    createClient(_srcIp, _srcPort, _svr);
 
   /* NOTE(wayenchen) if src node is not fail but connect fail,
    * retry again to create client */

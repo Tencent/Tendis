@@ -5,9 +5,6 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#ifndef _WIN32
-#include <experimental/optional>
-#endif
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/string.h"

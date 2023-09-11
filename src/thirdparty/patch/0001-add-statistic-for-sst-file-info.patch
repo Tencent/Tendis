@@ -1,24 +1,24 @@
-From c1d48f02029b1b06d82dae07e208198a5471c39e Mon Sep 17 00:00:00 2001
-From: jingjunli <jingjunli@tencent.com>
-Date: Thu, 23 Sep 2021 16:53:14 +0800
-Subject: [PATCH] add property "rocksdb.levelstatsex" in rocksdb
+From 04a53073d45a3587fa4de3f38274f6021e4d13ec Mon Sep 17 00:00:00 2001
+From: raffertyyu <raffertyyu@tencent.com>
+Date: Thu, 10 Aug 2023 17:47:20 +0800
+Subject: [PATCH] add statistic for sst file info
 
-Signed-off-by: jingjunli <jingjunli@tencent.com>
+Signed-off-by: raffertyyu <raffertyyu@tencent.com>
 ---
- db/compaction/compaction.cc | 16 ++++++++++++++++
- db/compaction/compaction.h  |  2 ++
- db/internal_stats.cc        | 23 +++++++++++++++++++++++
+ db/compaction/compaction.cc | 24 ++++++++++++++++++++++++
+ db/compaction/compaction.h  |  3 +++
+ db/internal_stats.cc        | 26 ++++++++++++++++++++++++++
  db/internal_stats.h         |  1 +
- db/version_set.cc           | 12 ++++++++++++
- db/version_set.h            |  6 ++++++
- include/rocksdb/db.h        |  5 +++++
- 7 files changed, 65 insertions(+)
+ db/version_set.cc           | 18 ++++++++++++++++++
+ db/version_set.h            |  9 +++++++++
+ include/rocksdb/db.h        |  6 ++++++
+ 7 files changed, 87 insertions(+)
 
 diff --git a/db/compaction/compaction.cc b/db/compaction/compaction.cc
-index f2de4f0e8..b172eaff6 100644
+index ceed9d104..f2b794672 100644
 --- a/db/compaction/compaction.cc
 +++ b/db/compaction/compaction.cc
-@@ -65,6 +65,22 @@ uint64_t TotalFileSize(const std::vector<FileMetaData*>& files) {
+@@ -64,6 +64,30 @@ uint64_t TotalFileSize(const std::vector<FileMetaData*>& files) {
    return sum;
  }
  
@@ -38,51 +38,61 @@ index f2de4f0e8..b172eaff6 100644
 +  return sum;
 +}
 +
++uint64_t TotalNumRangeDeletions(const std::vector<FileMetaData*>& files) {
++  uint64_t sum = 0;
++  for (size_t i = 0; i < files.size() && files[i]; i++) {
++    sum += files[i]->num_range_deletions;
++  }
++  return sum;
++}
++
  void Compaction::SetInputVersion(Version* _input_version) {
    input_version_ = _input_version;
    cfd_ = input_version_->cfd();
 diff --git a/db/compaction/compaction.h b/db/compaction/compaction.h
-index 7854c1c7a..f5cfe5253 100644
+index 1bd406bc9..8a2373ad6 100644
 --- a/db/compaction/compaction.h
 +++ b/db/compaction/compaction.h
-@@ -404,5 +404,7 @@ class Compaction {
+@@ -580,5 +580,8 @@ struct PerKeyPlacementContext {
  
  // Return sum of sizes of all files in `files`.
  extern uint64_t TotalFileSize(const std::vector<FileMetaData*>& files);
 +extern uint64_t TotalNumEntries(const std::vector<FileMetaData*>& files);
 +extern uint64_t TotalNumDeletions(const std::vector<FileMetaData*>& files);
++extern uint64_t TotalNumRangeDeletions(const std::vector<FileMetaData*>& files);
  
  }  // namespace ROCKSDB_NAMESPACE
 diff --git a/db/internal_stats.cc b/db/internal_stats.cc
-index 2fe2e644a..4cd96c093 100644
+index 6ef4b4302..90c7438d1 100644
 --- a/db/internal_stats.cc
 +++ b/db/internal_stats.cc
-@@ -225,6 +225,7 @@ static const std::string cfstats_no_file_histogram =
- static const std::string cf_file_histogram = "cf-file-histogram";
+@@ -252,6 +252,7 @@ static const std::string cf_write_stall_stats = "cf-write-stall-stats";
  static const std::string dbstats = "dbstats";
+ static const std::string db_write_stall_stats = "db-write-stall-stats";
  static const std::string levelstats = "levelstats";
 +static const std::string levelstatsex = "levelstatsex";
  static const std::string block_cache_entry_stats = "block-cache-entry-stats";
- static const std::string num_immutable_mem_table = "num-immutable-mem-table";
- static const std::string num_immutable_mem_table_flushed =
-@@ -292,6 +293,7 @@ const std::string DB::Properties::kCFFileHistogram =
-     rocksdb_prefix + cf_file_histogram;
+ static const std::string fast_block_cache_entry_stats =
+     "fast-block-cache-entry-stats";
+@@ -337,6 +338,7 @@ const std::string DB::Properties::kDBWriteStallStats =
+     rocksdb_prefix + db_write_stall_stats;
  const std::string DB::Properties::kDBStats = rocksdb_prefix + dbstats;
  const std::string DB::Properties::kLevelStats = rocksdb_prefix + levelstats;
 +const std::string DB::Properties::kLevelStatsEx = rocksdb_prefix + levelstatsex;
  const std::string DB::Properties::kBlockCacheEntryStats =
      rocksdb_prefix + block_cache_entry_stats;
- const std::string DB::Properties::kNumImmutableMemTable =
-@@ -380,6 +382,8 @@ const std::unordered_map<std::string, DBPropertyInfo>
+ const std::string DB::Properties::kFastBlockCacheEntryStats =
+@@ -450,6 +452,9 @@ const UnorderedMap<std::string, DBPropertyInfo>
            nullptr, nullptr}},
          {DB::Properties::kLevelStats,
           {false, &InternalStats::HandleLevelStats, nullptr, nullptr, nullptr}},
 +        {DB::Properties::kLevelStatsEx,
-+         {false, &InternalStats::HandleLevelStatsEx, nullptr, nullptr, nullptr}},
++         {false, &InternalStats::HandleLevelStatsEx, nullptr, nullptr,
++          nullptr}},
          {DB::Properties::kStats,
           {false, &InternalStats::HandleStats, nullptr, nullptr, nullptr}},
          {DB::Properties::kCFStats,
-@@ -771,6 +775,25 @@ bool InternalStats::HandleLevelStats(std::string* value, Slice /*suffix*/) {
+@@ -1046,6 +1051,27 @@ bool InternalStats::HandleLevelStats(std::string* value, Slice /*suffix*/) {
    return true;
  }
  
@@ -95,10 +105,12 @@ index 2fe2e644a..4cd96c093 100644
 +    if (numFiles > 0) {
 +      snprintf(buf, sizeof(buf),
 +               "rocksdb.level-%d:bytes=%" PRIu64 ",num_entries=%" PRIu64
-+               ",num_deletions=%" PRIu64 ",num_files=%d\n",
++               ",num_deletions=%" PRIu64 ",num_range_deletions=%" PRIu64
++               ",num_files=%d\n",
 +               level, vstorage->NumLevelBytes(level),
 +               vstorage->NumLevelEntires(level),
-+               vstorage->NumLevelDeletions(level), numFiles);
++               vstorage->NumLevelDeletions(level),
++               vstorage->NumLevelRangeDeletions(level), numFiles);
 +      value->append(buf);
 +    }
 +  }
@@ -109,10 +121,10 @@ index 2fe2e644a..4cd96c093 100644
    if (!HandleCFStats(value, suffix)) {
      return false;
 diff --git a/db/internal_stats.h b/db/internal_stats.h
-index e3a869a63..879b08c1e 100644
+index 85c1a6bb1..41b226571 100644
 --- a/db/internal_stats.h
 +++ b/db/internal_stats.h
-@@ -604,6 +604,7 @@ class InternalStats {
+@@ -760,6 +760,7 @@ class InternalStats {
    bool HandleNumFilesAtLevel(std::string* value, Slice suffix);
    bool HandleCompressionRatioAtLevelPrefix(std::string* value, Slice suffix);
    bool HandleLevelStats(std::string* value, Slice suffix);
@@ -121,10 +133,10 @@ index e3a869a63..879b08c1e 100644
    bool HandleCFMapStats(std::map<std::string, std::string>* compaction_stats,
                          Slice suffix);
 diff --git a/db/version_set.cc b/db/version_set.cc
-index 8880c2903..2a9de042b 100644
+index e95e98f79..85d9a5326 100644
 --- a/db/version_set.cc
 +++ b/db/version_set.cc
-@@ -3334,6 +3334,18 @@ uint64_t VersionStorageInfo::NumLevelBytes(int level) const {
+@@ -4438,6 +4438,24 @@ uint64_t VersionStorageInfo::NumLevelBytes(int level) const {
    return TotalFileSize(files_[level]);
  }
  
@@ -140,42 +152,52 @@ index 8880c2903..2a9de042b 100644
 +  return TotalNumDeletions(files_[level]);
 +}
 +
++uint64_t VersionStorageInfo::NumLevelRangeDeletions(int level) const {
++  assert(level >= 0);
++  assert(level < num_levels());
++  return TotalNumRangeDeletions(files_[level]);
++}
++
  const char* VersionStorageInfo::LevelSummary(
      LevelSummaryStorage* scratch) const {
    int len = 0;
 diff --git a/db/version_set.h b/db/version_set.h
-index d4fc17baa..6497f13d0 100644
+index e32d0ff11..0c1a70a61 100644
 --- a/db/version_set.h
 +++ b/db/version_set.h
-@@ -284,6 +284,12 @@ class VersionStorageInfo {
+@@ -321,6 +321,15 @@ class VersionStorageInfo {
    // Return the combined file size of all files at the specified level.
    uint64_t NumLevelBytes(int level) const;
  
-+  // Return the combined entires of all files at the specified level.
++  // Return the number of entires at the specified level.
 +  uint64_t NumLevelEntires(int level) const;
 +
-+  // Return the combined deleted entires of all files at the specified level.
++  // Return the number of deletions at the specified level.
 +  uint64_t NumLevelDeletions(int level) const;
 +
-   // REQUIRES: This version has been saved (see VersionSet::SaveTo)
++  // Return the number of range deletions at the specified level.
++  uint64_t NumLevelRangeDeletions(int level) const;
++
+   // REQUIRES: This version has been saved (see VersionBuilder::SaveTo)
    const std::vector<FileMetaData*>& LevelFiles(int level) const {
      return files_[level];
 diff --git a/include/rocksdb/db.h b/include/rocksdb/db.h
-index 645ecfb45..db581fc78 100644
+index 436b430f1..57d645c97 100644
 --- a/include/rocksdb/db.h
 +++ b/include/rocksdb/db.h
-@@ -789,6 +789,11 @@ class DB {
+@@ -977,6 +977,12 @@ class DB {
      //      of files per level and total size of each level (MB).
      static const std::string kLevelStats;
  
 +    //  "rocksdb.levelstatsex" - returns multi-line string containing the number
-+    //      of files per level, total size of each level (MB), total number of
-+    //      entires and total number of deletion entries per level
++    //      of files per level, total size, total number of entires, total
++    //      number of deletions and total number of range deletions of each
++    //      level.
 +    static const std::string kLevelStatsEx;
 +
      //  "rocksdb.block-cache-entry-stats" - returns a multi-line string or
-     //      map with statistics on block cache usage.
-     static const std::string kBlockCacheEntryStats;
+     //      map with statistics on block cache usage. See
+     //      `BlockCacheEntryStatsMapKeys` for structured representation of keys
 -- 
-2.19.1
+2.42.0
 
