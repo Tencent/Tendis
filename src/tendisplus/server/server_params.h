@@ -515,6 +515,7 @@ class ServerParams {
   uint32_t keysDefaultLimit = 100;
   uint32_t lockWaitTimeOut = 3600;
   uint32_t lockDbXWaitTimeout = 1;
+  bool ignoreKeyLock = false;  // only for test
 
   // parameter for scan command
   uint32_t scanDefaultLimit = 10;
