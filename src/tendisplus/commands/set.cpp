@@ -502,7 +502,7 @@ class SrandMemberCommand : public Command {
 
 class SpopCommand : public Command {
  public:
-  SpopCommand() : Command("spop", "wRsF") {}
+  SpopCommand() : Command("spop", "wRF") {}
 
   ssize_t arity() const {
     return -2;
