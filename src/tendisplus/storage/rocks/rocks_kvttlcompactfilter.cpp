@@ -2,18 +2,21 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <string>
-#include <memory>
-#include <limits>
-#include "rocksdb/compaction_filter.h"
 #include "tendisplus/storage/rocks/rocks_kvttlcompactfilter.h"
+
+#include <limits>
+#include <memory>
+#include <string>
+
+#include "rocksdb/compaction_filter.h"
+
 #include "tendisplus/storage/record.h"
 #include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/time.h"
 #include "tendisplus/utils/sync_point.h"
-#include "glog/logging.h"
+#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
+
 class KVTtlCompactionFilter : public CompactionFilter {
  public:
   explicit KVTtlCompactionFilter(KVStore* store,

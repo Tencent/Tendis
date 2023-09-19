@@ -5,6 +5,7 @@
 #include "tendisplus/utils/atomic_utility.h"
 
 namespace tendisplus {
+
 TEST(Atom, Common) {
   Atom<uint64_t> v, v1;
   ++v;

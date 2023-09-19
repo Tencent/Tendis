@@ -2,25 +2,26 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <string>
-#include <utility>
-#include <memory>
 #include <algorithm>
 #include <cctype>
 #include <clocale>
+#include <memory>
+#include <string>
+#include <utility>
 #include <vector>
-#include "glog/logging.h"
-#include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/string.h"
+
+#include "tendisplus/commands/command.h"
+#include "tendisplus/storage/record.h"
+#include "tendisplus/storage/skiplist.h"
+#include "tendisplus/storage/varint.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/commands/command.h"
-#include "tendisplus/storage/varint.h"
-#include "tendisplus/storage/skiplist.h"
-#include "tendisplus/storage/record.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
+
 class ScanGenericCommand : public Command {
  public:
   ScanGenericCommand(const std::string& name, const char* sflags)
@@ -428,14 +429,15 @@ class ScanCommand : public Command {
    * @return Expected<std::string>
    */
   Expected<std::string> run(Session* sess) final {
-    std::string pattern;                      // subcommand "MATCH"
+    std::string pattern;  // subcommand "MATCH"
     uint64_t count = sess->getServerEntry()
-            ->getParams()->scanDefaultLimit;  // subcommand "COUNT"
-    std::string type;                         // subcommand "TYPE"
-    std::bitset<CLUSTER_SLOTS> slots;         // subcommand "SLOTS"
-    int64_t seqId{0};                         // subcommand "SEQ"
-    uint64_t cursor{0};                       // used for arg "cursor"
-    bool enableSlots{false};                  // check whether has "SLOTS"
+                       ->getParams()
+                       ->scanDefaultLimit;  // subcommand "COUNT"
+    std::string type;                       // subcommand "TYPE"
+    std::bitset<CLUSTER_SLOTS> slots;       // subcommand "SLOTS"
+    int64_t seqId{0};                       // subcommand "SEQ"
+    uint64_t cursor{0};                     // used for arg "cursor"
+    bool enableSlots{false};                // check whether has "SLOTS"
     std::list<RecordKey> batch;
     uint32_t kvstoreCount = sess->getServerEntry()->getParams()->kvStoreCount;
 
@@ -445,14 +447,20 @@ class ScanCommand : public Command {
                       ->getClusterState()
                       ->getMyselfNode();
       slots = myself->nodeIsMaster() ? myself->getSlots()
-                : myself->getMaster()->getSlots();
+                                     : myself->getMaster()->getSlots();
     } else {
       slots.set();
     }
 
     // Step 1: get args and parse options. COUNT, MATCH, TYPE, SLOTS
-    auto status = parseSessionArgs(sess->getArgs(), &slots, &pattern, &type,
-                                   &count, &cursor, &seqId, &enableSlots);
+    auto status = parseSessionArgs(sess->getArgs(),
+                                   &slots,
+                                   &pattern,
+                                   &type,
+                                   &count,
+                                   &cursor,
+                                   &seqId,
+                                   &enableSlots);
     RET_IF_ERR(status);
 
     Filter filter;
@@ -467,8 +475,8 @@ class ScanCommand : public Command {
     if (!expMapping.ok()) {
       if (expMapping.status().code() == ErrorCodes::ERR_NOTFOUND) {
         kvstoreId = 0;
-        cursor = 0;          // invalid cursor, should reset as 0, back to start
-                             // lastScanKey is still empty string
+        cursor = 0;  // invalid cursor, should reset as 0, back to start
+                     // lastScanKey is still empty string
       } else {
         return expMapping.status();
       }
@@ -515,8 +523,8 @@ class ScanCommand : public Command {
 
       // use scope to control expdb life-time. (RAII)
       {
-        auto expdb = server->getSegmentMgr()->getDb(
-                sess, id, mgl::LockMode::LOCK_IS);
+        auto expdb =
+          server->getSegmentMgr()->getDb(sess, id, mgl::LockMode::LOCK_IS);
         RET_IF_ERR_EXPECTED(expdb);
         auto* pCtx = sess->getCtx();
         auto kvstore = expdb.value().store;
@@ -537,10 +545,16 @@ class ScanCommand : public Command {
             return genRecordKey(0, pCtx->getDbId(), "");
           }
         }();
-        auto expRecordKeys = scanKvstore(slots, filter, recordKey,
+        auto expRecordKeys = scanKvstore(slots,
+                                         filter,
+                                         recordKey,
                                          pCtx->getDbId(),
-                                         id, kvstoreCount, count - batch.size(),
-                                         &seq, &scanTimes, scanMaxTimes,
+                                         id,
+                                         kvstoreCount,
+                                         count - batch.size(),
+                                         &seq,
+                                         &scanTimes,
+                                         scanMaxTimes,
                                          ptxn.value());
         RET_IF_ERR_EXPECTED(expRecordKeys);
         const auto& recordKeys = expRecordKeys.value();
@@ -554,9 +568,9 @@ class ScanCommand : public Command {
       }
     }
 
-    id -= 1;                        // id need operator-- after loop
-    filter.reset();                // reset _filter condition
-    cursor += seq;                  // seq is real cursor position.
+    id -= 1;         // id need operator-- after loop
+    filter.reset();  // reset _filter condition
+    cursor += seq;   // seq is real cursor position.
 
     // means ERR_EXHAUST, should set cursor to 0
     if (batch.size() < count && scanTimes < scanMaxTimes) {
@@ -605,8 +619,7 @@ class ScanCommand : public Command {
             false)) {
         return false;
       }
-      if (enableType() &&
-          record.getRecordValue().getRecordType() != _type) {
+      if (enableType() && record.getRecordValue().getRecordType() != _type) {
         return false;
       }
       // add any sub filter you need here.
@@ -639,7 +652,7 @@ class ScanCommand : public Command {
      * @brief set filter _type
      * @param type TYPE "type" (after toLower() operation)
      */
-    void setType(std::string& type) {   // NOLINT
+    void setType(std::string& type) {  // NOLINT
       if (recordTypeMap.count(type)) {
         _type = recordTypeMap[type];
       } else if (!type.empty()) {
@@ -703,8 +716,9 @@ class ScanCommand : public Command {
    * @param lastScanKey
    * @return
    */
-  inline static RecordKey genRecordKey(uint32_t slotsId, uint32_t dbId,
-                                const std::string &primaryKey) {
+  inline static RecordKey genRecordKey(uint32_t slotsId,
+                                       uint32_t dbId,
+                                       const std::string& primaryKey) {
     return {slotsId, dbId, RecordType::RT_DATA_META, primaryKey, ""};
   }
 
@@ -801,8 +815,7 @@ class ScanCommand : public Command {
         // WARNING: scan this kvstore over no need this record ! ! !
         if (*scanTimes == scanMaxTimes &&
             expRecord.status().code() != ErrorCodes::ERR_EXHAUST) {
-          if (result.empty() ||
-              (result.back() != record.getRecordKey())) {
+          if (result.empty() || (result.back() != record.getRecordKey())) {
             result.emplace_back(record.getRecordKey());
           }
         }
@@ -812,9 +825,8 @@ class ScanCommand : public Command {
       auto recordSlotId = record.getRecordKey().getChunkId();
       auto recordDbId = record.getRecordKey().getDbId();
       auto recordType = record.getRecordKey().getRecordType();
-      if (!kvstoreSlots.test(recordSlotId)
-          || recordDbId != dbId
-          || recordType != RecordType::RT_DATA_META) {
+      if (!kvstoreSlots.test(recordSlotId) || recordDbId != dbId ||
+          recordType != RecordType::RT_DATA_META) {
         // seq: this key in DBID db's position
         // means, recordDbId == dbId && recordType == RT_DATA_META
         // seq should NOT include this key.
@@ -843,8 +855,8 @@ class ScanCommand : public Command {
        * expired key shouldn't increase scanTimes,
        * they only haven't been removed yet.
        */
-      if (record.getRecordValue().getTtl() > 0
-          && record.getRecordValue().getTtl() < msSinceEpoch()) {
+      if (record.getRecordValue().getTtl() > 0 &&
+          record.getRecordValue().getTtl() < msSinceEpoch()) {
         continue;
       }
 

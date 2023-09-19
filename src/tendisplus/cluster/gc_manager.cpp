@@ -2,17 +2,16 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <thread>
-#include "glog/logging.h"
 #include "tendisplus/cluster/gc_manager.h"
+
+#include <thread>
+
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
 
 GCManager::GCManager(std::shared_ptr<ServerEntry> svr)
-  : _svr(svr),
-    _isRunning(false),
-    _waitTimeAfterMigrate(0) {}
+  : _svr(svr), _isRunning(false), _waitTimeAfterMigrate(0) {}
 
 Status GCManager::startup() {
   std::lock_guard<std::mutex> lk(_mutex);
@@ -127,8 +126,7 @@ Status GCManager::deleteSlots(const DeleteRangeTask& task) {
   for (uint32_t i = task._slotStart; i <= task._slotEnd; ++i) {
     if (_svr->getSegmentMgr()->getStoreid(i) == task._storeid) {
       auto lock = ChunkLock::AquireChunkLock(
-        task._storeid, i, mgl::LockMode::LOCK_X,
-        nullptr, _svr->getMGLockMgr());
+        task._storeid, i, mgl::LockMode::LOCK_X, nullptr, _svr->getMGLockMgr());
       RET_IF_ERR_EXPECTED(lock);
       lockList.push_back(std::move(lock.value()));
     }
@@ -140,22 +138,26 @@ Status GCManager::deleteSlots(const DeleteRangeTask& task) {
         _svr->getClusterMgr()->getClusterState()->isSlotBelongToMe(i)) {
       return {ErrorCodes::ERR_CLUSTER,
               "Deleting slot " + std::to_string(i) +
-              " belong to current node."};
+                " belong to current node."};
     }
   }
 
-  const auto& begin = RecordKey(
-    task._slotStart, 0, RecordType::RT_INVALID, "", "").prefixChunkid();
-  const auto& end = RecordKey(
-    task._slotEnd + 1, 0, RecordType::RT_INVALID, "", "").prefixChunkid();
+  const auto& begin =
+    RecordKey(task._slotStart, 0, RecordType::RT_INVALID, "", "")
+      .prefixChunkid();
+  const auto& end =
+    RecordKey(task._slotEnd + 1, 0, RecordType::RT_INVALID, "", "")
+      .prefixChunkid();
   LOG(INFO) << "deleteslots [" << task._slotStart << ", " << task._slotEnd + 1
-            << ") on storeid: " << task._storeid<< ", begin...";
+            << ") on storeid: " << task._storeid << ", begin...";
   auto s = expdb.value().store->deleteRange(
-    begin, end, _svr->getParams()->deleteFilesInRangeForMigrateGc,
+    begin,
+    end,
+    _svr->getParams()->deleteFilesInRangeForMigrateGc,
     _svr->getParams()->compactRangeAfterDeleteRange);
   RET_IF_ERR(s);
   LOG(INFO) << "deleteslots [" << task._slotStart << ", " << task._slotEnd + 1
-            << ") on storeid: " << task._storeid<< ", done.";
+            << ") on storeid: " << task._storeid << ", done.";
 
   {
     std::lock_guard<std::mutex> lk(_mutex);
@@ -216,8 +218,9 @@ Status GCManager::deleteBitMap(const SlotsBitmap& slots, bool dumpIfError) {
   return {ErrorCodes::ERR_OK, ""};
 }
 
-Status GCManager::deleteBitMap(
-  const SlotsBitmap& slots, uint32_t storeid, bool dumpIfError) {
+Status GCManager::deleteBitMap(const SlotsBitmap& slots,
+                               uint32_t storeid,
+                               bool dumpIfError) {
   // check slots not belong to storeid
   for (uint32_t i = 0; i < slots.size(); i++) {
     if (slots.test(i) && _svr->getSegmentMgr()->getStoreid(i) != storeid) {
@@ -228,7 +231,7 @@ Status GCManager::deleteBitMap(
       }
       return {ErrorCodes::ERR_INTERNAL,
               "slot " + std::to_string(i) + " not belong to storeid " +
-              std::to_string(storeid)};
+                std::to_string(storeid)};
     }
   }
 

@@ -37,9 +37,9 @@ var (
 	clusterIp        = flag.String("clusterIp", "127.0.0.1", "clustertest ip")
 	clusterNodeNum   = flag.Int("clusterNodeNum", 5, "clustertest node num")
 
-	num1         = flag.Int("num1", 100, "first add data nums")
-	num2         = flag.Int("num2", 100, "first add data nums")
-	shutdown     = flag.Int("shutdown", 1, "whether shutdown the dir")
+	num1     = flag.Int("num1", 100, "first add data nums")
+	num2     = flag.Int("num2", 100, "first add data nums")
+	shutdown = flag.Int("shutdown", 1, "whether shutdown the dir")
 	// do not clear log file for AddressSanitizer/ThreadSanitizer info
 	clear        = flag.Int("clear", 0, "whether clear the dir")
 	startup      = flag.Int("startup", 1, "whether startup")
@@ -443,12 +443,12 @@ func slaveof(m *util.RedisServer, s *util.RedisServer) {
 }
 
 func getDbsize(m *util.RedisServer) int {
-    cli := createClient(m)
-    r, err := cli.Cmd("dbsize").Int()
-    if err != nil {
-        log.Fatalf("cluster countkeysinslot failed:%v %s", err, r)
-    }
-    return r
+	cli := createClient(m)
+	r, err := cli.Cmd("dbsize").Int()
+	if err != nil {
+		log.Fatalf("cluster countkeysinslot failed:%v %s", err, r)
+	}
+	return r
 }
 
 func restoreBackup(m *util.RedisServer, dir string) {

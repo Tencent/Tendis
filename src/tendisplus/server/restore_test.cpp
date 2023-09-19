@@ -2,27 +2,25 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <stdlib.h>
-
-#include <memory>
-#include <utility>
-#include <thread>  // NOLINT
-#include <string>
-#include <vector>
 #include <algorithm>
+#include <cstdlib>
+#include <memory>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
 
 #include "gtest/gtest.h"
-#include "glog/logging.h"
 
-#include "tendisplus/server/server_entry.h"
-#include "tendisplus/server/index_manager.h"
-#include "tendisplus/server/segment_manager.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/network/network.h"
-#include "tendisplus/utils/test_util.h"
+#include "tendisplus/server/index_manager.h"
+#include "tendisplus/server/segment_manager.h"
+#include "tendisplus/server/server_entry.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/test_util.h"
 
 namespace tendisplus {
 
@@ -32,8 +30,6 @@ const char* slave1_dir = "restoretest_slave1";
 uint32_t master1_port = 12001;
 uint32_t master2_port = 12002;
 uint32_t slave1_port = 12003;
-
-
 
 void addOneKeyEveryKvstore(const std::shared_ptr<ServerEntry>& server,
                            const char* key) {
@@ -208,8 +204,9 @@ void waitBinlogDump(const std::shared_ptr<ServerEntry>& server) {
 
       // wait only one binlog left in rocksdb
       if (minBinlogId == maxBinlogId) {
-        LOG(INFO) << "BinlogOpt waitBinlogDump, store=" << i << ",path="
-                  << kvstore->dbPath() << ",minBinlogId=" << minBinlogId
+        LOG(INFO) << "BinlogOpt waitBinlogDump, store=" << i
+                  << ",path=" << kvstore->dbPath()
+                  << ",minBinlogId=" << minBinlogId
                   << ",maxBinlogId=" << maxBinlogId;
         break;
       } else {
@@ -362,8 +359,8 @@ void checkNumAllowDiff(std::vector<uint32_t> nums1,
       // master has one datakey less.
       // if only store one key, master2 has no datakey and binlogkey, so
       // be 2 num less.
-      LOG(INFO) << "checkNumAllowDiff, i:" << i
-        << "nums1:" << nums1[i] << " nums2:" << nums2[i];
+      LOG(INFO) << "checkNumAllowDiff, i:" << i << "nums1:" << nums1[i]
+                << " nums2:" << nums2[i];
       EXPECT_TRUE(nums1[i] == nums2[i] + 1 || nums1[i] == nums2[i] + 2);
     }
   }

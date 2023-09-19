@@ -1,22 +1,22 @@
 // Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
-#include <fstream>
-#include <utility>
-#include <memory>
-#include <vector>
-#include <limits>
-#include <algorithm>
-#include <random>
 
-#include "gtest/gtest.h"
-#include "glog/logging.h"
 #include "tendisplus/utils/test_util.h"
-#include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/utils/portable.h"
-#include "tendisplus/utils/invariant.h"
-#include "tendisplus/storage/rocks/rocks_kvstore.h"
+
+#include <algorithm>
+#include <fstream>
+#include <limits>
+#include <memory>
+#include <random>
+#include <utility>
+#include <vector>
+
 #include "tendisplus/commands/command.h"
+#include "tendisplus/storage/rocks/rocks_kvstore.h"
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/portable.h"
+#include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/string.h"
 
 namespace tendisplus {
@@ -156,8 +156,7 @@ std::string getBulkValue(const std::string& reply, uint32_t index) {
   size_t size = 0;
 
   if (ptr[i] == '*') {
-    while (ptr[++i] != '\r') {
-    }
+    while (ptr[++i] != '\r') {}
 
     i += 2;  // skip the '\n'
   }
@@ -641,9 +640,9 @@ bool WorkLoad::manualFailover() {
 
 void WorkLoad::stopMigrate(const std::string& taskid, bool stopMyself) {
   if (!stopMyself) {
-      _session->setArgs({"cluster", "setslot", "stop", taskid});
+    _session->setArgs({"cluster", "setslot", "stop", taskid});
   } else {
-      _session->setArgs({"cluster", "setslot", "stopme", taskid});
+    _session->setArgs({"cluster", "setslot", "stopme", taskid});
   }
   auto expect = Command::runSessionCmd(_session.get());
   EXPECT_TRUE(expect.ok());
@@ -662,10 +661,10 @@ void WorkLoad::restartAllMigTasks() {
 }
 
 std::string WorkLoad::getWaitingJobs() {
-    _session->setArgs({"cluster", "setslot", "taskinfo", "waiting"});
-    auto expect = Command::runSessionCmd(_session.get());
-    EXPECT_TRUE(expect.ok());
-    return  expect.value();
+  _session->setArgs({"cluster", "setslot", "taskinfo", "waiting"});
+  auto expect = Command::runSessionCmd(_session.get());
+  EXPECT_TRUE(expect.ok());
+  return expect.value();
 }
 
 int genRand() {
@@ -722,8 +721,8 @@ AllKeys writeComplexDataToServer(const std::shared_ptr<ServerEntry>& server,
   auto kv_keys = work.writeWork(RecordType::RT_KV, count, 0, true, s);
   all_keys.emplace_back(kv_keys);
 
-  auto list_keys = work.writeWork(
-    RecordType::RT_LIST_META, count, maxEleCnt, true, s);
+  auto list_keys =
+    work.writeWork(RecordType::RT_LIST_META, count, maxEleCnt, true, s);
   all_keys.emplace_back(list_keys);
 
   // work.flush was used in repl_test, we just keep same
@@ -736,16 +735,16 @@ AllKeys writeComplexDataToServer(const std::shared_ptr<ServerEntry>& server,
     // #endif
   }
 
-  auto hash_keys = work.writeWork(
-    RecordType::RT_HASH_META, count, maxEleCnt, true, s);
+  auto hash_keys =
+    work.writeWork(RecordType::RT_HASH_META, count, maxEleCnt, true, s);
   all_keys.emplace_back(hash_keys);
 
-  auto set_keys = work.writeWork(
-    RecordType::RT_SET_META, count, maxEleCnt, true, s);
+  auto set_keys =
+    work.writeWork(RecordType::RT_SET_META, count, maxEleCnt, true, s);
   all_keys.emplace_back(set_keys);
 
-  auto zset_keys = work.writeWork(
-    RecordType::RT_ZSET_META, count, maxEleCnt, true, s);
+  auto zset_keys =
+    work.writeWork(RecordType::RT_ZSET_META, count, maxEleCnt, true, s);
   all_keys.emplace_back(zset_keys);
   LOG(INFO) << "End write data to server";
 
@@ -778,7 +777,7 @@ AllKeys writeComplexDataWithTTLToServer(
 
 AllKeys writeKVDataToServer(const std::shared_ptr<ServerEntry>& server,
                             uint32_t count,
-                            const std::string & key_suffix) {
+                            const std::string& key_suffix) {
   auto ctx1 = std::make_shared<asio::io_context>();
   auto sess1 = makeSession(server, ctx1);
   WorkLoad work(server, sess1);
@@ -1842,7 +1841,6 @@ void testPf(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOne());
 
-
     sess.setArgs({"pfadd", "pf1", "a", "b", "c"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
@@ -2015,7 +2013,6 @@ void testPf(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(expect.ok());
   EXPECT_EQ(expect.value(), Command::fmtOne());
 
-
   sess.setArgs({"pfdebug", "todense", "bigpf"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
@@ -2038,7 +2035,6 @@ void testPf(std::shared_ptr<ServerEntry> svr) {
   auto estr1 = expect.value();
 
   EXPECT_EQ(estr, estr1);
-
 
   uint32_t count = 0;
   std::vector<std::string> strvec;
@@ -2796,8 +2792,7 @@ void testExpireForAlreadyExpired2(std::shared_ptr<ServerEntry> svr) {
     }
 
     for (uint32_t i = 0; i < v; i++) {
-      sess.setArgs(
-        {"hset", key_hash, std::to_string(i), std::to_string(i)});
+      sess.setArgs({"hset", key_hash, std::to_string(i), std::to_string(i)});
       auto expect = Command::runSessionCmd(&sess);
       EXPECT_TRUE(expect.ok());
       EXPECT_EQ(expect.value(), Command::fmtOne());
@@ -2823,7 +2818,6 @@ void testExpireForAlreadyExpired2(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOne());
 
-
     sess.setArgs({"llen", key_list});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
@@ -2843,7 +2837,7 @@ void testExpireForNotExpired(std::shared_ptr<ServerEntry> svr) {
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
   for (uint32_t v = 0; v < 1000; ++v) {
-    string key = "testExpireForNotExpired_"+to_string(v);
+    string key = "testExpireForNotExpired_" + to_string(v);
     sess.setArgs({"set", key, "value"});
     auto expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
@@ -3120,7 +3114,6 @@ void testExpireKeyWhenCompaction(std::shared_ptr<ServerEntry> svr) {
   expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
   EXPECT_EQ(expect.value(), Command::fmtBulk("v"));
-
 
   // delete expired key by compaction and indexMgr
   sess.setArgs({"config", "set", "noexpire", "no"});

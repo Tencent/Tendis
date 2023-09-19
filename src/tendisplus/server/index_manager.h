@@ -2,17 +2,17 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-// Copyright [2017] <eliotwang, deyukong>
 #ifndef SRC_TENDISPLUS_SERVER_INDEX_MANAGER_H_
 #define SRC_TENDISPLUS_SERVER_INDEX_MANAGER_H_
 
-#include <unordered_map>
 #include <list>
-#include <string>
 #include <memory>
+#include <string>
+#include <unordered_map>
 #include <vector>
-#include "tendisplus/server/server_entry.h"
+
 #include "tendisplus/network/worker_pool.h"
+#include "tendisplus/server/server_entry.h"
 
 namespace tendisplus {
 

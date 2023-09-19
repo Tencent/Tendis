@@ -2,28 +2,28 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <string.h>
-#include <inttypes.h>
+#include "tendisplus/utils/string.h"
 
 #include <algorithm>
-#include <string>
-#include <iostream>
-#include <cmath>
 #include <cctype>
+#include <cinttypes>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <limits>
 #include <locale>
+#include <random>
 #include <sstream>
+#include <string>
+#include <thread>
 #include <utility>
 #include <vector>
-#include <cstdlib>
-#include <random>
-#include <limits>
-#include <thread>  // NOLINT
 
-#include "tendisplus/utils/status.h"
-#include "tendisplus/utils/string.h"
-#include "tendisplus/utils/redis_port.h"
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/redis_port.h"
+#include "tendisplus/utils/status.h"
 
 namespace tendisplus {
 
@@ -33,7 +33,7 @@ std::string toLower(const std::string& s) {
   return result;
 }
 
-std::string toUpper(const std::string &s) {
+std::string toUpper(const std::string& s) {
   std::string result(s);
   std::transform(result.begin(), result.end(), result.begin(), toupper);
   return result;
@@ -96,8 +96,8 @@ Expected<long double> stold(const std::string& s) {
   try {
     size_t pos = 0;
     result = std::stold(s, &pos);
-    if (s.size() == 0 || isspace(s[0]) ||
-        pos != s.size() || std::isnan(result)) {
+    if (s.size() == 0 || isspace(s[0]) || pos != s.size() ||
+        std::isnan(result)) {
       return {ErrorCodes::ERR_FLOAT, ""};
     }
     return result;
@@ -129,8 +129,8 @@ Expected<double> stod(const std::string& s) {
     char* end;
     result = std::strtod(s.c_str(), &end);
     pos = end - s.c_str();
-    if (s.size() == 0 || isspace(s[0]) ||
-        pos != s.size() || std::isnan(result)) {
+    if (s.size() == 0 || isspace(s[0]) || pos != s.size() ||
+        std::isnan(result)) {
       return {ErrorCodes::ERR_FLOAT, ""};
     }
     return result;
@@ -229,7 +229,6 @@ bool isOptionOn(const std::string& s) {
   }
   return false;
 }
-
 
 // trim from start (in place)
 static inline void sdsltrim(std::string& s, const char* cset) {  // NOLINT
@@ -330,7 +329,6 @@ const std::string& getCurThreadId() {
   }
   return threadid;
 }
-
 
 size_t lenStrEncode(std::stringstream& ss, const std::string& val) {
   auto sizeStr = varintEncodeStr(val.size());

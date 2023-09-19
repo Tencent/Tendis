@@ -81,7 +81,6 @@ endif()
 
 set(CMAKE_MODULE_PATH "${ROCKSDB_DIR}/cmake/modules/")
 
-
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -121,11 +120,11 @@ if(WITH_TSAN)
 endif()
 
 option(WITH_COVER "build with COVER" OFF)
-if(WITH_COVER) 
-   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-arcs -ftest-coverage")	
+if(WITH_COVER)
+   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-arcs -ftest-coverage")
    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-arcs -ftest-coverage")
    add_definitions(-DWITH_COVER)
-endif()		 
+endif()
 
 if(CMAKE_COMPILER_IS_GNUCC)
 	if(ENABLE_JEMALLOC)

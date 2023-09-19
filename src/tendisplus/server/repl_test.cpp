@@ -3,21 +3,20 @@
 // project for additional information.
 
 #include <memory>
+#include <thread>
 #include <utility>
-#include <thread>  // NOLINT
 
 #include "gtest/gtest.h"
-#include "glog/logging.h"
 
-#include "tendisplus/server/server_entry.h"
-#include "tendisplus/server/index_manager.h"
-#include "tendisplus/server/segment_manager.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/network/network.h"
-#include "tendisplus/utils/test_util.h"
+#include "tendisplus/server/index_manager.h"
+#include "tendisplus/server/segment_manager.h"
+#include "tendisplus/server/server_entry.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/test_util.h"
 
 namespace tendisplus {
 
@@ -267,8 +266,7 @@ TEST(Repl, KVTtlCompactionFilter) {
     auto slave1 = makeAnotherSlave(slave1_dir, i, slave1_port, master_port);
     waitSlaveCatchup(master, slave1);
     sleep(2);
-    runCommand(slave1,
-               {"compactrange", "default", "0", "16383"});
+    runCommand(slave1, {"compactrange", "default", "0", "16383"});
 
     sleep(2);
 
@@ -515,15 +513,11 @@ TEST_P(MasterBinlogDisabledTest, BinlogDisabled) {
       runCmd(single, {"set", "a", "1"});
       runCmd(single, {"set", "a", "2"});
     }
-    {
-      writeComplexDataToServer(single, 100, 10, nullptr, true);
-    }
+    { writeComplexDataToServer(single, 100, 10, nullptr, true); }
 
     // need wait enough time.
     std::this_thread::sleep_for(std::chrono::seconds(5));
-    {
-      runCmd(single, {"binlogflush", "all"});
-    }
+    { runCmd(single, {"binlogflush", "all"}); }
     std::this_thread::sleep_for(std::chrono::seconds(5));
 
 #ifndef _WIN32
@@ -539,7 +533,7 @@ INSTANTIATE_TEST_CASE_P(BinlogDisabledTest,
                         testing::Bool());
 
 void testSlaveDontDeleteExpiredKey(std::shared_ptr<NetSession> sessionMaster,
-        std::shared_ptr<NetSession> sessionSlave) {
+                                   std::shared_ptr<NetSession> sessionSlave) {
   sessionMaster->setArgs({"setex", "a", "2", "3"});
   auto expect = Command::runSessionCmd(sessionMaster.get());
   EXPECT_TRUE(expect.ok());
@@ -685,7 +679,6 @@ TEST(Repl, repairSyncErrorForOneStore) {
     cfg1->maxBinlogKeepNum = 1;
     cfg1->minBinlogKeepSec = 0;
 
-
     auto master = std::make_shared<ServerEntry>(cfg1);
     auto s = master->startup(cfg1);
     INVARIANT(s.ok());
@@ -757,8 +750,8 @@ TEST(Repl, repairSyncErrorForOneStore) {
       expect = Command::runSessionCmd(session2.get());
       EXPECT_TRUE(expect.ok());
 
-      session2->setArgs({"slaveof", "127.0.0.1", std::to_string(master_port),
-                         "5", "5"});
+      session2->setArgs(
+        {"slaveof", "127.0.0.1", std::to_string(master_port), "5", "5"});
       expect = Command::runSessionCmd(session2.get());
       EXPECT_TRUE(expect.ok());
 
@@ -1082,7 +1075,8 @@ TEST(Repl, BinlogKeepNum_Test) {
     ASSERT_EQ(single.use_count(), 1);
 #endif
 
-    LOG(INFO) << ">>>>>> BinlogKeepNum_Test" << " end;";
+    LOG(INFO) << ">>>>>> BinlogKeepNum_Test"
+              << " end;";
   }
 }
 

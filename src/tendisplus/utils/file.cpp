@@ -2,15 +2,18 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include "tendisplus/utils/file.h"
+
 #ifndef _WIN32
 #include <sys/file.h>
 #include <sys/statfs.h>
 #endif
 #include <sys/stat.h>
-#include <stdlib.h>
+
+#include <cstdlib>
 #include <utility>
+
 #include "glog/logging.h"
-#include "tendisplus/utils/file.h"
 
 namespace tendisplus {
 
@@ -38,9 +41,8 @@ int posix_memalign(void** ptr, size_t align, size_t size) {
 }
 #endif
 
-
 std::shared_ptr<AlignedBuff> newAlignedBuff(const std::string& path,
-        int32_t sizeMultiple) {
+                                            int32_t sizeMultiple) {
 #ifdef _WIN32
   size_t logicalBlockSize = 512;
 #else
@@ -54,8 +56,8 @@ std::shared_ptr<AlignedBuff> newAlignedBuff(const std::string& path,
 
   size_t bufSize = logicalBlockSize * sizeMultiple;
   char* buf;
-  int ret = posix_memalign(reinterpret_cast<void **>(&buf),
-          logicalBlockSize, bufSize);
+  int ret =
+    posix_memalign(reinterpret_cast<void**>(&buf), logicalBlockSize, bufSize);
   if (ret) {
     LOG(ERROR) << "posix_memalign failed:" << bufSize;
     return nullptr;
@@ -66,7 +68,7 @@ std::shared_ptr<AlignedBuff> newAlignedBuff(const std::string& path,
 }
 
 std::unique_ptr<rocksdb::WritableFile> openWritableFile(
-        const std::string& fullFileName, bool use_direct_writes, bool reOpen) {
+  const std::string& fullFileName, bool use_direct_writes, bool reOpen) {
   std::unique_ptr<rocksdb::WritableFile> writable_file;  // PosixWritableFile
   rocksdb::EnvOptions options;
   options.use_direct_writes = use_direct_writes;

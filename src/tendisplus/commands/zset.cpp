@@ -2,27 +2,29 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <string>
-#include <utility>
-#include <memory>
 #include <algorithm>
 #include <cctype>
 #include <clocale>
-#include <vector>
-#include <map>
 #include <cmath>
-#include "glog/logging.h"
-#include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/string.h"
+#include <map>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "tendisplus/commands/command.h"
+#include "tendisplus/storage/skiplist.h"
+#include "tendisplus/storage/varint.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
-#include "tendisplus/storage/skiplist.h"
-#include "tendisplus/commands/command.h"
-#include "tendisplus/storage/varint.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
-Expected<bool> delGeneric(Session* sess, const std::string& key,
-        Transaction* txn);
+
+Expected<bool> delGeneric(Session* sess,
+                          const std::string& key,
+                          Transaction* txn);
 Expected<std::string> genericZrem(Session* sess,
                                   PStore kvstore,
                                   const RecordKey& mk,
@@ -98,8 +100,8 @@ Expected<std::string> genericZrem(Session* sess,
   if (!s.ok()) {
     return s;
   }
-  Expected<uint64_t> commitStatus = sess->getCtx()->commitTransaction(
-          ptxn.value());
+  Expected<uint64_t> commitStatus =
+    sess->getCtx()->commitTransaction(ptxn.value());
   if (!commitStatus.ok()) {
     return commitStatus.status();
   }
@@ -443,8 +445,8 @@ class ZRemByRangeGenericCommand : public Command {
     if (!s.ok()) {
       return s;
     }
-    Expected<uint64_t> commitStatus = sess->getCtx()->commitTransaction(
-            ptxn.value());
+    Expected<uint64_t> commitStatus =
+      sess->getCtx()->commitTransaction(ptxn.value());
     if (!commitStatus.ok()) {
       return commitStatus.status();
     }
@@ -713,7 +715,6 @@ class ZRankCommand : public Command {
   }
 } zrankCmd;
 
-
 class ZRevRankCommand : public Command {
  public:
   ZRevRankCommand() : Command("zrevrank", "rF") {}
@@ -826,9 +827,13 @@ class ZIncrCommand : public Command {
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      Expected<std::string> s =
-        genericZadd(sess, kvstore, metaRk, rv, {{subkey, score.value()}},
-                flag, ptxn.value());
+      Expected<std::string> s = genericZadd(sess,
+                                            kvstore,
+                                            metaRk,
+                                            rv,
+                                            {{subkey, score.value()}},
+                                            flag,
+                                            ptxn.value());
       if (!s.ok()) {
         return s.status();
       }
@@ -1932,8 +1937,8 @@ class ZUnionInterGenericCommand : public Command {
 
     // delete before store
     const std::string& storeKey = args[1];
-    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, storeKey,
-            mgl::LockMode::LOCK_X);
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
+      sess, storeKey, mgl::LockMode::LOCK_X);
     if (!expdb.ok()) {
       return expdb.status();
     }

@@ -3,25 +3,25 @@
 // project for additional information.
 
 #ifndef _WIN32
+#include <sys/resource.h>
 #include <sys/time.h>
 #include <sys/utsname.h>
-#include <sys/resource.h>
 #endif
 
-#include <string>
-#include <sstream>
-#include <utility>
-#include <memory>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <clocale>
-#include <vector>
-#include <set>
 #include <list>
 #include <map>
-#include <thread>  // NOLINT
-#include <chrono>  // NOLINT
-#include "glog/logging.h"
+#include <memory>
+#include <set>
+#include <sstream>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
+
 #ifndef WIN32
 #ifdef TENDIS_JEMALLOC
 #include "jemalloc/jemalloc.h"
@@ -31,17 +31,18 @@
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
 #include "rocksdb/advanced_cache.h"
-#include "rocksdb/perf_context.h"
 #include "rocksdb/iostats_context.h"
-#include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/string.h"
-#include "tendisplus/utils/invariant.h"
+#include "rocksdb/perf_context.h"
+
+#include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/commands/release.h"
 #include "tendisplus/commands/version.h"
 #include "tendisplus/storage/varint.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/cluster/cluster_manager.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
 
@@ -257,7 +258,6 @@ class DbsizeCommand : public Command {
       }
       auto cursor = ptxn.value()->createDataCursor();
       cursor->seek("");
-
 
       while (true) {
         Expected<Record> exptRcd = cursor->next();
@@ -483,7 +483,6 @@ class TimeCommand : public Command {
   }
 } timeCmd;
 
-
 class IterAllKeysCommand : public Command {
  public:
   IterAllKeysCommand() : Command("iterallkeys", "r") {}
@@ -622,7 +621,6 @@ class IterAllKeysCommand : public Command {
     return ss.str();
   }
 } iterAllKeysCmd;
-
 
 class IterAllCommand : public Command {
  public:
@@ -1508,7 +1506,7 @@ class BinlogStartCommand : public Command {
       return ptxn.status();
     }
     // only get from cursor, beside the min binlog meta
-    if (args.size() >=3 && toLower(args[2]) == "fromcursor") {
+    if (args.size() >= 3 && toLower(args[2]) == "fromcursor") {
       auto expBinlogid = RepllogCursorV2::getMinBinlogByCursor(ptxn.value());
       if (expBinlogid.status().code() == ErrorCodes::ERR_EXHAUST) {
         return Command::fmtZero();
@@ -1563,7 +1561,7 @@ class BinlogMetaCommand : public Command {
     }
 
     auto expdb = server->getSegmentMgr()->getDb(
-            sess, storeId.value(), mgl::LockMode::LOCK_IS, false, 0);
+      sess, storeId.value(), mgl::LockMode::LOCK_IS, false, 0);
     if (!expdb.ok()) {
       return expdb.status();
     }
@@ -1582,7 +1580,7 @@ class BinlogMetaCommand : public Command {
     }
     std::stringstream ss;
     ss << "minbinlogid:" << expBinlogid.value().id
-      << " ts:" << expBinlogid.value().ts;
+       << " ts:" << expBinlogid.value().ts;
     return Command::fmtBulk(ss.str());
   }
 } binlogmetaCommand;
@@ -2127,14 +2125,14 @@ class InfoCommand : public Command {
       auto server = sess->getServerEntry();
       std::stringstream ss;
       ss << "# Clients\r\n"
-         << "connected_clients:"
-         << server->getSessionCount() << "\r\n"
-         << "net_clients:"
-         << server->getSessionCount(Session::Type::NET) << "\r\n"
-         << "local_clients:"
-         << server->getSessionCount(Session::Type::LOCAL) << "\r\n"
+         << "connected_clients:" << server->getSessionCount() << "\r\n"
+         << "net_clients:" << server->getSessionCount(Session::Type::NET)
+         << "\r\n"
+         << "local_clients:" << server->getSessionCount(Session::Type::LOCAL)
+         << "\r\n"
          << "cluster_clients:"
-         << server->getSessionCount(Session::Type::CLUSTER) << "\r\n";;
+         << server->getSessionCount(Session::Type::CLUSTER) << "\r\n";
+      ;
       ss << "\r\n";
       result << ss.str();
     }
@@ -2434,7 +2432,8 @@ class InfoCommand : public Command {
                totalMemtables = 0, tablereaderMem = 0;
       uint64_t numCompaction = 0, mem_pending = 0, compaction_pending = 0;
       server->getTotalIntProperty(sess, "rocksdb.estimate-num-keys", &numkeys);
-      server->getTotalIntProperty(sess, "rocksdb.estimate-num-keys",
+      server->getTotalIntProperty(sess,
+                                  "rocksdb.estimate-num-keys",
                                   &numkeysBinlog,
                                   ColumnFamilyNumber::ColumnFamily_Binlog);
       server->getTotalIntProperty(
@@ -2469,8 +2468,8 @@ class InfoCommand : public Command {
       ss << "rocksdb.estimate-live-data-size:" << estimate << "\r\n";
       ss << "rocksdb.estimate-num-keys:" << numkeys << "\r\n";
       ss << "rocksdb.estimate-num-keys-binlogcf:" << numkeysBinlog << "\r\n";
-      ss << "rocksdb.total-memory:" <<
-        totalMemtables + tablereaderMem + blockUsage << "\r\n";
+      ss << "rocksdb.total-memory:"
+         << totalMemtables + tablereaderMem + blockUsage << "\r\n";
       ss << "rocksdb.cur-size-all-mem-tables:" << curMemtables << "\r\n";
       ss << "rocksdb.size-all-mem-tables:" << totalMemtables << "\r\n";
       ss << "rocksdb.estimate-table-readers-mem:" << tablereaderMem << "\r\n";
@@ -3993,14 +3992,14 @@ class deleteFilesInRangeGenericCommand : public Command {
     if (start > end) {
       return {ErrorCodes::ERR_PARSEOPT,
               std::to_string(end) + " must be greater than or equal to " +
-              std::to_string(start)};
+                std::to_string(start)};
     }
 
     // uint64_t start and end must in [0, CLUSTER_SLOTS)
     if (start >= CLUSTER_SLOTS || end >= CLUSTER_SLOTS) {
       return {ErrorCodes::ERR_PARSEOPT,
-              "'start' and 'end' must in [0, "
-              + std::to_string(CLUSTER_SLOTS) + ")"};
+              "'start' and 'end' must in [0, " + std::to_string(CLUSTER_SLOTS) +
+                ")"};
     }
 
     bool checkSpecifiedStore = false;
@@ -4033,7 +4032,7 @@ class deleteFilesInRangeGenericCommand : public Command {
         if (myNode->getSlotBit(i)) {
           if (!checkSpecifiedStore ||
               (checkSpecifiedStore &&
-              server->getSegmentMgr()->getStoreid(i) == storeID)) {
+               server->getSegmentMgr()->getStoreid(i) == storeID)) {
             return {ErrorCodes::ERR_PARSEOPT,
                     "couldn't do deleteFilesInRange on normal slot."};
           }
@@ -4088,15 +4087,15 @@ class deleteFilesInRangeGenericCommand : public Command {
     if (start > end) {
       return {ErrorCodes::ERR_PARSEOPT,
               std::to_string(end) + " must be greater than or equal to " +
-              std::to_string(start)};
+                std::to_string(start)};
     }
 
     auto expStoreID = ::tendisplus::stoull(args[4]);
     RET_IF_ERR_EXPECTED(expStoreID);
     uint64_t storeID = expStoreID.value();
 
-    auto expDb = server->getSegmentMgr()->getDb(
-      sess, storeID, mgl::LockMode::LOCK_IX);
+    auto expDb =
+      server->getSegmentMgr()->getDb(sess, storeID, mgl::LockMode::LOCK_IX);
     RET_IF_ERR_EXPECTED(expDb);
     auto kvStore = expDb.value().store;
     auto txn = kvStore->createTransaction(sess);
@@ -4106,8 +4105,8 @@ class deleteFilesInRangeGenericCommand : public Command {
     if (end >= expMinBinlogID.value()) {
       return {ErrorCodes::ERR_PARSEOPT,
               "endpos: " + std::to_string(end) +
-              " shouldn't greater than or equal to min binlogid: " +
-              std::to_string(expMinBinlogID.value())};
+                " shouldn't greater than or equal to min binlogid: " +
+                std::to_string(expMinBinlogID.value())};
     }
 
     // binlog in [start, end]
@@ -4132,7 +4131,7 @@ class deleteFilesInRangeGenericCommand : public Command {
       LOG(ERROR) << "deletefilesinrange cmd with wrong cf: " << cfName;
       return {ErrorCodes::ERR_PARSEOPT,
               "invalid column family " + cfName +
-              ", it must be data/default/binlog"};
+                ", it must be data/default/binlog"};
     }
   }
 
@@ -4140,8 +4139,7 @@ class deleteFilesInRangeGenericCommand : public Command {
   bool _force;
 };
 
-class deleteFilesInRangeCommand
-  : public deleteFilesInRangeGenericCommand {
+class deleteFilesInRangeCommand : public deleteFilesInRangeGenericCommand {
  public:
   deleteFilesInRangeCommand()
     : deleteFilesInRangeGenericCommand("deletefilesinrange", "sM") {}
@@ -4150,8 +4148,7 @@ class deleteFilesInRangeCommand
 // for test case under debug mode
 // force do deleteFilesInRange without check slot state.
 #ifdef TENDIS_DEBUG
-class deleteFilesInRangeForceCommand
-  : public deleteFilesInRangeGenericCommand {
+class deleteFilesInRangeForceCommand : public deleteFilesInRangeGenericCommand {
  public:
   deleteFilesInRangeForceCommand()
     : deleteFilesInRangeGenericCommand("deletefilesinrangeforce", "sM") {}
@@ -4266,8 +4263,7 @@ class compactSlotsCommand : public Command {
     for (uint32_t storeid = 0; storeid < server->getKVStoreCount(); storeid++) {
       uint32_t myBegin = UINT32_MAX;
       uint32_t myEnd = UINT32_MAX;
-      for (uint32_t chunkid = beginChunkid; chunkid <= endChunkid;
-           chunkid++) {
+      for (uint32_t chunkid = beginChunkid; chunkid <= endChunkid; chunkid++) {
         if (server->getSegmentMgr()->getStoreid(chunkid) == storeid) {
           if (myBegin == UINT32_MAX) {
             myBegin = chunkid;

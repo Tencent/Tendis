@@ -2,19 +2,19 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <string>
-#include <utility>
-#include <memory>
 #include <algorithm>
 #include <cctype>
 #include <clocale>
+#include <memory>
+#include <string>
+#include <utility>
 #include <vector>
-#include "glog/logging.h"
-#include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/string.h"
+
+#include "tendisplus/commands/command.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/commands/command.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
 
@@ -622,7 +622,7 @@ class LtrimCommand : public Command {
     uint64_t head = lm.getHead();
     uint64_t cnt = 0;
     auto functor = [kvstore, sess, &cnt, &ptxn, &mk](int64_t start,
-                                                    int64_t end) -> Status {
+                                                     int64_t end) -> Status {
       SessionCtx* pCtx = sess->getCtx();
       for (int64_t i = start; i < end; ++i) {
         RecordKey subRk(mk.getChunkId(),
@@ -1057,8 +1057,8 @@ class LSetCommand : public Command {
         return s;
       }
 
-      Expected<uint64_t> expCmt = sess->getCtx()->commitTransaction(
-              ptxn.value());
+      Expected<uint64_t> expCmt =
+        sess->getCtx()->commitTransaction(ptxn.value());
       if (expCmt.ok()) {
         return Command::fmtOK();
       }

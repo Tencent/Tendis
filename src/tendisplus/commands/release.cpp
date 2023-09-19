@@ -2,22 +2,24 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <string.h>
-
 #include "tendisplus/commands/release.h"
-#include "tendisplus/commands/version.h"
-#include "tendisplus/utils/redis_port.h"
-#include "tendisplus/commands/version.h"
-#include "rocksdb/version.h"
+
+#include <cstring>
 #include <iostream>
 #include <sstream>
 #include <string>
 
+#include "rocksdb/version.h"
+
+#include "tendisplus/commands/version.h"
+#include "tendisplus/utils/redis_port.h"
+
 uint64_t redisBuildId(void) {
   std::stringstream buildidstr;
-  buildidstr << TENDISPLUS_VERSION_PRE << __ROCKSDB_MAJOR__ << "." 
-    << __ROCKSDB_MINOR__ << "." << __ROCKSDB_PATCH__ << TENDISPLUS_BUILD_ID 
-    << TENDISPLUS_GIT_DIRTY << TENDISPLUS_GIT_SHA1;
+  buildidstr << TENDISPLUS_VERSION_PRE << __ROCKSDB_MAJOR__ << "."
+             << __ROCKSDB_MINOR__ << "." << __ROCKSDB_PATCH__
+             << TENDISPLUS_BUILD_ID << TENDISPLUS_GIT_DIRTY
+             << TENDISPLUS_GIT_SHA1;
 
   std::string buildid = buildidstr.str();
   return tendisplus::redis_port::crc64(
@@ -28,6 +30,6 @@ std::string getTendisPlusVersion() {
   std::stringstream tendisver;
 
   tendisver << TENDISPLUS_VERSION_PRE << __ROCKSDB_MAJOR__ << "."
-     << __ROCKSDB_MINOR__ << "." << __ROCKSDB_PATCH__;
+            << __ROCKSDB_MINOR__ << "." << __ROCKSDB_PATCH__;
   return tendisver.str();
 }

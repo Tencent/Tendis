@@ -2,8 +2,10 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <chrono>  // NOLINT
+#include "tendisplus/replication/repl_manager.h"
+
 #include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <limits>
 #include <list>
@@ -12,15 +14,14 @@
 #include <string>
 #include <thread>
 
-#include "glog/logging.h"
 #include "rapidjson/document.h"
 #include "rapidjson/error/en.h"
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/writer.h"
+
 #include "tendisplus/commands/command.h"
 #include "tendisplus/lock/lock.h"
 #include "tendisplus/network/network.h"
-#include "tendisplus/replication/repl_manager.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/storage/record.h"
 #include "tendisplus/utils/invariant.h"
@@ -251,20 +252,18 @@ Status ReplManager::startup() {
       fileSeq = efileSeq.value();
     }
 
-    auto recBinlogStat =
-      std::unique_ptr<RecycleBinlogStatus>(new RecycleBinlogStatus{
-        false,
-        tp,
-        Transaction::TXNID_UNINITED,
-        Transaction::TXNID_UNINITED,
-        fileSeq,
-        0,
-        tp,
-        0,
-        nullptr,
-        false,
-        Transaction::TXNID_UNINITED
-      });
+    auto recBinlogStat = std::unique_ptr<RecycleBinlogStatus>(
+      new RecycleBinlogStatus{false,
+                              tp,
+                              Transaction::TXNID_UNINITED,
+                              Transaction::TXNID_UNINITED,
+                              fileSeq,
+                              0,
+                              tp,
+                              0,
+                              nullptr,
+                              false,
+                              Transaction::TXNID_UNINITED});
 
     if (isOpen) {
       auto ptxn = store->createTransaction(nullptr);
@@ -281,8 +280,8 @@ Status ReplManager::startup() {
 
         uint64_t dump = recBinlogStat->minValidBinlogID;
         auto expid = getDumpBinlogID(i, fileSeq);
-        if (!expid.ok() && expid.status().code() != ErrorCodes::ERR_NOTFOUND
-          && expid.status().code() != ErrorCodes::ERR_NO_KEY) {
+        if (!expid.ok() && expid.status().code() != ErrorCodes::ERR_NOTFOUND &&
+            expid.status().code() != ErrorCodes::ERR_NO_KEY) {
           LOG(ERROR) << "recycleBinlog get save binlog id failed:"
                      << expid.status().toString();
         }
@@ -411,7 +410,6 @@ Expected<uint32_t> ReplManager::maxDumpFileSeq(uint32_t storeId) {
   }
   return maxFno;
 }
-
 
 Status ReplManager::resetRecycleState(uint32_t storeId) {
   // set _logRecycStatus::minValidBinlogID with MinBinlog get from rocksdb
@@ -592,7 +590,7 @@ void ReplManager::recycleFullPushStatus() {
   auto now = SCLOCK::now();
   for (size_t i = 0; i < _fullPushStatus.size(); i++) {
     for (auto mpov = _fullPushStatus[i].begin();
-      mpov != _fullPushStatus[i].end();) {
+         mpov != _fullPushStatus[i].end();) {
       // if timeout, delte it.
       if (mpov->second->state == FullPushState::SUCESS &&
           now > mpov->second->endTime + std::chrono::seconds(600)) {
@@ -623,9 +621,9 @@ void ReplManager::onFlush(uint32_t storeId, uint64_t binlogid) {
 #ifdef TENDIS_DEBUG
 // NOTE(takenliu): be careful, this interface is only for test case.
 void ReplManager::updateSyncTime(uint32_t storeId) {
-    std::lock_guard<std::mutex> lk(_mutex);
-    auto& v = _syncStatus[storeId];
-    v->lastSyncTime = SCLOCK::now();
+  std::lock_guard<std::mutex> lk(_mutex);
+  auto& v = _syncStatus[storeId];
+  v->lastSyncTime = SCLOCK::now();
 }
 
 // NOTE(takenliu): be careful, this interface is only for test case.
@@ -674,8 +672,7 @@ bool ReplManager::isSlaveFullSyncDone() {
       return false;
     }
     auto rstate = _syncMeta[i]->replState;
-    if (rstate != ReplState::REPL_CONNECTED &&
-        rstate != ReplState::REPL_ERR) {
+    if (rstate != ReplState::REPL_CONNECTED && rstate != ReplState::REPL_ERR) {
       return false;
     }
   }
@@ -728,9 +725,9 @@ uint64_t ReplManager::getfullsyncSuccTime() {
   std::lock_guard<std::mutex> lk(_mutex);
   for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
     if (_syncMeta[i]->syncFromHost != "") {
-       if (_syncStatus[i]->fullsyncSuccTimes > maxSucc) {
-         maxSucc = _syncStatus[i]->fullsyncSuccTimes;
-       }
+      if (_syncStatus[i]->fullsyncSuccTimes > maxSucc) {
+        maxSucc = _syncStatus[i]->fullsyncSuccTimes;
+      }
     }
   }
   return maxSucc;
@@ -832,8 +829,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     }
   }
 
-  if (_svr->isClusterEnabled() &&
-      _svr->getMigrateManager() &&
+  if (_svr->isClusterEnabled() && _svr->getMigrateManager() &&
       _svr->getMigrateManager()->isRunning()) {
     end = std::min(end, _svr->getMigrateManager()->getProtectBinlogid(storeId));
   }
@@ -862,8 +858,8 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     }
     DLOG(INFO) << "store:" << storeId << " "
                << _logRecycStatus[storeId]->toString();
-    auto s = kvstore->truncateBinlogV2(
-      start, end, dump, fs, maxWriteLen, tailSlave);
+    auto s =
+      kvstore->truncateBinlogV2(start, end, dump, fs, maxWriteLen, tailSlave);
     if (!s.ok()) {
       LOG(ERROR) << "kvstore->truncateBinlogV2 store:" << storeId
                  << "failed:" << s.status().toString();
@@ -1086,12 +1082,12 @@ Status ReplManager::changeReplSource(Session* sess,
 
 // changeReplSource should be called with LOCK_X held
 Status ReplManager::changeReplSourceInDBLock(uint32_t storeId,
-                                           std::string ip,
-                                           uint32_t port,
-                                           uint32_t sourceStoreId,
-                                           bool checkEmpty,
-                                           bool needLock,
-                                           bool incrSync) {
+                                             std::string ip,
+                                             uint32_t port,
+                                             uint32_t sourceStoreId,
+                                             bool checkEmpty,
+                                             bool needLock,
+                                             bool incrSync) {
   uint64_t oldTimeout = _connectMasterTimeoutMs;
   if (ip != "") {
     _connectMasterTimeoutMs.store(1000, std::memory_order_relaxed);
@@ -1236,24 +1232,22 @@ Status ReplManager::replicationSetMaster(std::string ip,
   // and new master offset(senderOffset) is greater or equal to _myself
   // then, we can optimize fullsync to incrsync. it's safe an correct
   auto myselfOffset = replicationGetOffset();
-  LOG(INFO) << "isReplGroup:" << isReplGroup
-              << ", senderOffer[" << senderOffset
-              << "], myselfOffset[" << myselfOffset
-              << "], incrSync:" << incrSync;
+  LOG(INFO) << "isReplGroup:" << isReplGroup << ", senderOffer[" << senderOffset
+            << "], myselfOffset[" << myselfOffset << "], incrSync:" << incrSync;
   if (isReplGroup && (senderOffset >= myselfOffset)) {
     incrSync = true;
   }
 
   for (uint32_t i = 0; i < _svr->getKVStoreCount(); ++i) {
-    Status s = changeReplSourceInDBLock(
-      i, ip, port, i, checkEmpty, false, incrSync);
+    Status s =
+      changeReplSourceInDBLock(i, ip, port, i, checkEmpty, false, incrSync);
     if (!s.ok()) {
       return s;
     }
   }
   if (incrSync) {
-      // only called when failover incySync, avoid slave send binlog
-      clearPushStatus();
+    // only called when failover incySync, avoid slave send binlog
+    clearPushStatus();
   }
 
   return {ErrorCodes::ERR_OK, ""};
@@ -1395,7 +1389,6 @@ Status ReplManager::replicationUnSetMaster(uint32_t storeId) {
 
   return {ErrorCodes::ERR_OK, ""};
 }
-
 
 std::string ReplManager::getRecycleBinlogStr(Session* sess) const {
   stringstream ss;
@@ -1708,7 +1701,6 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
   }
   ss << "master_repl_offset:" << master_repl_offset << "\r\n";
 }
-
 
 void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
   for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {

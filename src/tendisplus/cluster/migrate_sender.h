@@ -9,10 +9,12 @@
 #include <list>
 #include <memory>
 #include <string>
+
 #include "tendisplus/cluster/cluster_manager.h"
-#include "tendisplus/cluster/migrate_manager.h"
 #include "tendisplus/cluster/migrate_batch.h"
+#include "tendisplus/cluster/migrate_manager.h"
 #include "tendisplus/network/blocking_tcp_client.h"
+#include "tendisplus/server/segment_manager.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/rate_limiter.h"
@@ -36,7 +38,6 @@ enum class MigrateSenderStatus {
   METACHANGE_DONE,
   DEL_DONE,
 };
-
 
 class ChunkMigrateSender {
  public:

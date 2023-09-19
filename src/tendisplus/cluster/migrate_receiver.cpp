@@ -2,8 +2,8 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include "glog/logging.h"
 #include "tendisplus/cluster/migrate_receiver.h"
+
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
@@ -288,7 +288,6 @@ void ChunkMigrateReceiver::start() {
 bool ChunkMigrateReceiver::isRunning() {
   return _isRunning.load(std::memory_order_relaxed);
 }
-
 
 void ChunkMigrateReceiver::setTaskStartTime(uint64_t t) {
   _taskStartTime.store(t, std::memory_order_relaxed);

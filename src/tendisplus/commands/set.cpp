@@ -2,24 +2,26 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <string>
-#include <utility>
-#include <memory>
 #include <algorithm>
 #include <cctype>
 #include <clocale>
+#include <memory>
+#include <string>
+#include <utility>
 #include <vector>
-#include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/string.h"
+
+#include "tendisplus/commands/command.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
-#include "tendisplus/commands/command.h"
 #include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
 
-Expected<bool> delGeneric(Session* sess, const std::string& key,
-        Transaction* txn);
+Expected<bool> delGeneric(Session* sess,
+                          const std::string& key,
+                          Transaction* txn);
 
 Expected<std::string> genericSRem(Session* sess,
                                   PStore kvstore,
@@ -134,14 +136,14 @@ Expected<std::string> genericSAdd(Session* sess,
                     metaRk.getPrimaryKey(),
                     args[i]);
 
-      Expected<RecordValue> subrv = kvstore->getKV(subRk, txn);
-      if (subrv.ok()) {
-        continue;
-      } else if (subrv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-        cnt += 1;
-      } else {
-        return subrv.status();
-      }
+    Expected<RecordValue> subrv = kvstore->getKV(subRk, txn);
+    if (subrv.ok()) {
+      continue;
+    } else if (subrv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+      cnt += 1;
+    } else {
+      return subrv.status();
+    }
 
     RecordValue subRv("", RecordType::RT_SET_ELE, -1);
     Status s = kvstore->setKV(subRk, subRv, txn);
@@ -573,8 +575,11 @@ class SpopCommand : public Command {
     // NOTE(zakzheng) get index of last scan.
     std::string spopFrom;
     if (sm.getSKIndex().size() > 0) {
-      RecordKey indexKey(expdb.value().chunkId, pCtx->getDbId(),
-        RecordType::RT_SET_ELE, key, sm.getSKIndex());
+      RecordKey indexKey(expdb.value().chunkId,
+                         pCtx->getDbId(),
+                         RecordType::RT_SET_ELE,
+                         key,
+                         sm.getSKIndex());
       spopFrom = indexKey.encode();
     } else {
       spopFrom = "0";
@@ -1212,7 +1217,6 @@ class SintergenericCommand : public Command {
     for (auto& v : result) {
       newKeys.push_back(std::move(v));
     }
-
 
     RecordKey storeRk(expdb.value().chunkId,
                       pCtx->getDbId(),

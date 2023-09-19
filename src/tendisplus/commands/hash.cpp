@@ -2,20 +2,20 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <string>
-#include <utility>
-#include <memory>
 #include <algorithm>
 #include <cctype>
 #include <clocale>
-#include <vector>
 #include <list>
-#include "glog/logging.h"
-#include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/string.h"
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "tendisplus/commands/command.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
-#include "tendisplus/commands/command.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
 
@@ -78,8 +78,8 @@ Expected<std::string> hincrfloatGeneric(Session* sess,
   if (!setStatus.ok()) {
     return setStatus;
   }
-  Expected<uint64_t> exptCommit = sess->getCtx()->commitTransaction(
-          ptxn.value());
+  Expected<uint64_t> exptCommit =
+    sess->getCtx()->commitTransaction(ptxn.value());
   if (!exptCommit.ok()) {
     return exptCommit.status();
   } else {
@@ -149,8 +149,8 @@ Expected<std::string> hincrGeneric(Session* sess,
   if (!setStatus.ok()) {
     return setStatus;
   }
-  Expected<uint64_t> exptCommit = sess->getCtx()->commitTransaction(
-          ptxn.value());
+  Expected<uint64_t> exptCommit =
+    sess->getCtx()->commitTransaction(ptxn.value());
   if (!exptCommit.ok()) {
     return exptCommit.status();
   } else {
@@ -258,18 +258,29 @@ class HSizeCommand : public Command {
       return expdb.status();
     }
 
-    RecordKey mk(expdb.value().chunkId, sess->getCtx()->getDbId(),
-                 RecordType::RT_DATA_META, key, "");
-    RecordKey start(mk.getChunkId(), mk.getDbId(),
-                  RecordType::RT_HASH_ELE, mk.getPrimaryKey(),
-                  "", 0);
-    RecordKey end(mk.getChunkId(), mk.getDbId(),
-                  RecordType::RT_HASH_ELE, mk.getPrimaryKey(),
-                  "", UINT64_MAX);
+    RecordKey mk(expdb.value().chunkId,
+                 sess->getCtx()->getDbId(),
+                 RecordType::RT_DATA_META,
+                 key,
+                 "");
+    RecordKey start(mk.getChunkId(),
+                    mk.getDbId(),
+                    RecordType::RT_HASH_ELE,
+                    mk.getPrimaryKey(),
+                    "",
+                    0);
+    RecordKey end(mk.getChunkId(),
+                  mk.getDbId(),
+                  RecordType::RT_HASH_ELE,
+                  mk.getPrimaryKey(),
+                  "",
+                  UINT64_MAX);
     std::string sbegin = start.prefixPk();
     std::string send = end.prefixPk();
     auto size = expdb.value().store->GetApproximateSizes(
-      ColumnFamilyNumber::ColumnFamily_Default, &sbegin, &send,
+      ColumnFamilyNumber::ColumnFamily_Default,
+      &sbegin,
+      &send,
       include_memtabtles);
     if (!size.ok()) {
       return size.status();
@@ -734,7 +745,7 @@ class HIncrByCommand : public Command {
     const std::string& key = args[1];
     const std::string& subkey = args[2];
     const std::string& val = args[3];
-    long long inc{0};                                   // NOLINT
+    long long inc{0};  // NOLINT
     if (!redis_port::string2ll(val.c_str(), val.size(), &inc)) {
       return {ErrorCodes::ERR_INTERGER, ""};
     }
@@ -1265,8 +1276,8 @@ class HMSetGeneric : public Command {
     if (!setStatus.ok()) {
       return setStatus;
     }
-    Expected<uint64_t> exptCommit = sess->getCtx()->commitTransaction(
-            ptxn.value());
+    Expected<uint64_t> exptCommit =
+      sess->getCtx()->commitTransaction(ptxn.value());
     if (!exptCommit.ok()) {
       return exptCommit.status();
     } else {
@@ -1459,8 +1470,8 @@ class HSetGeneric : public Command {
     if (!setStatus.ok()) {
       return setStatus;
     }
-    Expected<uint64_t> exptCommit = sess->getCtx()->commitTransaction(
-            ptxn.value());
+    Expected<uint64_t> exptCommit =
+      sess->getCtx()->commitTransaction(ptxn.value());
     if (!exptCommit.ok()) {
       return exptCommit.status();
     } else {

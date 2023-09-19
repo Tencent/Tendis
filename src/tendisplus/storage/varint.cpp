@@ -2,11 +2,13 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <string>
 #include "tendisplus/storage/varint.h"
+
+#include <string>
+
+#include "tendisplus/include/endian.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
-#include "tendisplus/include/endian.h"
 
 namespace tendisplus {
 
@@ -190,6 +192,5 @@ uint64_t int64Decode(const char* input) {
   return be64toh(*reinterpret_cast<const uint64_t*>(input));
 #endif
 }
-
 
 }  // namespace tendisplus

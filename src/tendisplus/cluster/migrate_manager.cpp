@@ -2,6 +2,8 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include "tendisplus/cluster/migrate_manager.h"
+
 #include <algorithm>
 #include <memory>
 #include <sstream>
@@ -10,11 +12,11 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include "glog/logging.h"
-#include "tendisplus/cluster/migrate_manager.h"
+
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
+
 Expected<uint64_t> addMigrateBinlog(MigrateBinlogType type,
                                     string slots,
                                     uint32_t storeid,
@@ -637,7 +639,7 @@ void MigrateSendTask::sendSlots() {
 }
 
 void MigrateSendTask::deleteSenderChunks() {
-  /* NOTE(wayenchen) check if chunk not belong to me，
+  /* NOTE(wayenchen) check if chunk not belong to me,
   make sure MOVE work well before delete */
   if (!_sender->checkSlotsBlongDst()) {
     LOG(ERROR) << "slots not belongs to dstNodes on task:"
@@ -766,7 +768,6 @@ bool MigrateManager::checkSlotOK(const SlotsBitmap& bitMap,
 
   return true;
 }
-
 
 /* son taskid  */
 std::string MigrateManager::genTaskid() {
@@ -2010,7 +2011,7 @@ Status MigrateManager::restoreMigrateBinlog(MigrateBinlogType type,
 Status MigrateManager::onRestoreEnd(uint32_t storeId) {
   {
     std::lock_guard<myMutex> lk(_mutex);
-    for (auto &it : _restoreMigrateTask[storeId]) {
+    for (auto& it : _restoreMigrateTask[storeId]) {
       LOG(INFO) << "migrate task has receive_start and has no receive_end,"
                 << " so delete keys for slots:" << it.to_string();
       auto s = _svr->getGcMgr()->deleteBitMap(it, storeId);

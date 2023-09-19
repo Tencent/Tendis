@@ -2,14 +2,15 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <utility>
-#include <string>
+#include "tendisplus/network/session_ctx.h"
+
 #include <algorithm>
 #include <list>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "tendisplus/commands/command.h"
-#include "tendisplus/network/session_ctx.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/string.h"
 
@@ -146,13 +147,13 @@ Expected<uint64_t> SessionCtx::commitTransaction(Transaction* txn) {
   if (!eCmt.ok()) {
     return eCmt.status();
   }
-  if (_txnMap.count(txn->getKVStoreId()) > 0
-    && _txnMap[txn->getKVStoreId()].get() == txn) {
+  if (_txnMap.count(txn->getKVStoreId()) > 0 &&
+      _txnMap[txn->getKVStoreId()].get() == txn) {
     _txnMap.erase(txn->getKVStoreId());
   } else {
     LOG(ERROR) << "what happend? has:" << _txnMap.count(txn->getKVStoreId())
-      << " addr1:" << _txnMap[txn->getKVStoreId()].get()
-      << " addr2:" << txn;
+               << " addr1:" << _txnMap[txn->getKVStoreId()].get()
+               << " addr2:" << txn;
   }
   return eCmt;
 }

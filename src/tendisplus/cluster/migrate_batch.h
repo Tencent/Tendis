@@ -11,6 +11,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
 #include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/cluster/migrate_receiver.h"
 #include "tendisplus/cluster/migrate_sender.h"
@@ -21,6 +22,7 @@
 #include "tendisplus/utils/string.h"
 
 namespace tendisplus {
+
 class MigrateBatch {
  public:
   explicit MigrateBatch(uint32_t maxBytes,

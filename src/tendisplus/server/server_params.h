@@ -5,31 +5,34 @@
 #ifndef SRC_TENDISPLUS_SERVER_SERVER_PARAMS_H_
 #define SRC_TENDISPLUS_SERVER_SERVER_PARAMS_H_
 
-#include <assert.h>
-#include <stdlib.h>
-#include <iostream>
-#include <string>
-#include <map>
-#include <unordered_map>
-#include <set>
-#include <functional>
 #include <atomic>
+#include <cassert>
+#include <cstdlib>
+#include <functional>
+#include <iostream>
 #include <list>
+#include <map>
 #include <memory>
+#include <set>
+#include <string>
+#include <unordered_map>
 #include <vector>
+
 #include "glog/logging.h"
 #include "rocksdb/port/lang.h"
+
 #include "tendisplus/server/session.h"
+#include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
-#include "tendisplus/utils/redis_port.h"
 
 namespace tendisplus {
+
 using namespace std;  // NOLINT
 
 using funptr = std::function<void()>;
-using checkfunptr = std::function<bool(
-        const string&, bool startup, string* errinfo)>;
+using checkfunptr =
+  std::function<bool(const string&, bool startup, string* errinfo)>;
 using preProcess = std::function<string(const string&)>;
 
 string removeQuotes(const string& v);
@@ -77,8 +80,9 @@ class BaseVar {
 
  protected:
   virtual Status set(const string& value, bool startup) = 0;
-  virtual bool check(
-          const string& value, bool startup, string* errinfo = NULL) {
+  virtual bool check(const string& value,
+                     bool startup,
+                     string* errinfo = NULL) {
     if (checkFun != NULL) {
       return checkFun(value, startup, errinfo);
     }
@@ -270,10 +274,10 @@ class FloatVar : public BaseVar {
 class DoubleVar : public BaseVar {
  public:
   DoubleVar(const string& name,
-           void* v,
-           checkfunptr ptr,
-           preProcess preFun,
-           bool allowDynamicSet)
+            void* v,
+            checkfunptr ptr,
+            preProcess preFun,
+            bool allowDynamicSet)
     : BaseVar(name, v, ptr, preFun, allowDynamicSet),
       _defaultValue(*reinterpret_cast<double*>(value)) {}
   virtual string show() const {
@@ -340,10 +344,10 @@ class BoolVar : public BaseVar {
 class NoUseVar : public BaseVar {
  public:
   NoUseVar(const string& name,
-          void* v,
-          checkfunptr ptr,
-          preProcess preFun,
-          bool allowDynamicSet)
+           void* v,
+           checkfunptr ptr,
+           preProcess preFun,
+           bool allowDynamicSet)
     : BaseVar(name, v, ptr, preFun, allowDynamicSet), _setFlag(false) {}
   virtual string show() const {
     return " not supported anymore";
@@ -354,6 +358,7 @@ class NoUseVar : public BaseVar {
   virtual bool need_show() const {
     return _setFlag;
   }
+
  private:
   TSAN_SUPPRESSION Status set(const string& val, bool startup) {
     _setFlag = true;
@@ -597,8 +602,8 @@ class ServerParams {
 
   uint64_t tbitmapFragmentSize = 1024;
 
-  int64_t luaTimeLimit = 5000;  // ms
-  int64_t luaStateMaxIdleTime = 60*60*1000;  // ms
+  int64_t luaTimeLimit = 5000;                   // ms
+  int64_t luaStateMaxIdleTime = 60 * 60 * 1000;  // ms
   bool jeprofAutoDump = true;
   bool enableJemallocBgThread = true;
   bool deleteFilesInRangeForMigrateGc = true;
@@ -607,7 +612,7 @@ class ServerParams {
   bool directIo = false;
   bool allowCrossSlot = false;
   uint32_t generateHeartbeatBinlogInterval = 0;  // s
-  int64_t waitTimeIfExistsMigrateTask = 600;  // s
+  int64_t waitTimeIfExistsMigrateTask = 600;     // s
   uint64_t clientOutputBufferLimitNormalHardMB = 0;
   uint64_t clientOutputBufferLimitNormalSoftMB = 0;
   uint64_t clientOutputBufferLimitNormalSoftSecond = 10;

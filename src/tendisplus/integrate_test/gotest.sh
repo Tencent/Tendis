@@ -24,7 +24,7 @@ function lm_traverse_dir(){
         if [ -d $1"/"$file ]
         then
             lm_traverse_dir $1"/"$file
-        else  
+        else
             file_name=$1"/"$file
             echo "===== $file_name ====="
             cat $file_name

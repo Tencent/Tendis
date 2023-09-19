@@ -33,21 +33,20 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdint.h>
-#include <math.h>
-#include <limits.h>
-#include <string.h>
-
+#include <climits>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <sstream>
 #include <utility>
-#include <cstddef>
 
-#include "glog/logging.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/time.h"
 
 namespace tendisplus {
+
 namespace redis_port {
 
 struct PEObject {
@@ -83,7 +82,7 @@ static struct PEObject peo;
  * [1] Heule, Nunkesser, Hall: HyperLogLog in Practice: Algorithmic
  *     Engineering of a State of The Art Cardinality Estimation Algorithm.
  *
- * [2] P. Flajolet, Éric Fusy, O. Gandouet, and F. Meunier. Hyperloglog: The
+ * [2] P. Flajolet, Eric Fusy, O. Gandouet, and F. Meunier. Hyperloglog: The
  *     analysis of a near-optimal cardinality estimation algorithm.
  *
  * Redis uses two representations:
@@ -211,7 +210,6 @@ static struct PEObject peo;
  * when this implementation switches to the dense representation is
  * configured via the define server.hll_sparse_max_bytes.
  */
-
 
 // static char *invalid_hll_err = "-INVALIDOBJ Corrupted HLL object
 // detected\r\n";

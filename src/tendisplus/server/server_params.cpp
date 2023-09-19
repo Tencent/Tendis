@@ -2,29 +2,33 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <stdlib.h>
-#include <sys/types.h>
-#include <sys/stat.h>
+#include "tendisplus/server/server_params.h"
+
 #include <fcntl.h>
-#include <iostream>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+#include <algorithm>
 #include <cstdint>
+#include <cstdlib>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <sstream>
 #include <string>
 #include <typeinfo>
-#include <algorithm>
-#include <vector>
-#include <fstream>
-#include <sstream>
 #include <utility>
-#include <memory>
+#include <vector>
 
 #include "rocksdb/tendis_extension.h"
+
+#include "tendisplus/server/server_entry.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
-#include "tendisplus/server/server_entry.h"
-#include "tendisplus/server/server_params.h"
-#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
+
 std::shared_ptr<tendisplus::ServerParams> gParams;
 string gRenameCmdList = "";   // NOLINT
 string gMappingCmdList = "";  // NOLINT
@@ -62,11 +66,11 @@ string gMappingCmdList = "";  // NOLINT
   else if (typeid(var) == typeid(double))                                     \
     _mapServerParams.insert(                                                  \
       make_pair(toLower(str),                                                 \
-                new DoubleVar(str,                                             \
-                             reinterpret_cast<void*>(&var),                   \
-                             checkfun,                                        \
-                             prefun,                                          \
-                             allowDynamicSet)));                              \
+                new DoubleVar(str,                                            \
+                              reinterpret_cast<void*>(&var),                  \
+                              checkfun,                                       \
+                              prefun,                                         \
+                              allowDynamicSet)));                             \
   else if (typeid(var) == typeid(string))                                     \
     _mapServerParams.insert(                                                  \
       make_pair(toLower(str),                                                 \
@@ -121,8 +125,9 @@ bool compressTypeParamCheck(const string& val, bool startup, string* errinfo) {
   return false;
 }
 
-bool executorThreadNumCheck(
-        const std::string& val, bool startup, string* errinfo) {
+bool executorThreadNumCheck(const std::string& val,
+                            bool startup,
+                            string* errinfo) {
   auto num = std::strtoull(val.c_str(), nullptr, 10);
   if (startup || !gParams || gParams->executorWorkPoolSize == 0) {
     return true;
@@ -352,7 +357,6 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("element-limit-for-single-delete-zset",
                                   elementLimitForSingleDeleteZset);
 
-
   REGISTER_VARS_DIFF_NAME("proto-max-bulk-len", protoMaxBulkLen);
   REGISTER_VARS_DIFF_NAME("databases", dbNum);
 
@@ -424,8 +428,12 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME("rocks.blockcachemb", rocksBlockcacheMB);
 
   REGISTER_VARS_FULL("rocks.blockcache_num_shard_bits",
-                    rocksBlockcacheNumShardBits,
-                    nullptr, nullptr, -1, 19, false);
+                     rocksBlockcacheNumShardBits,
+                     nullptr,
+                     nullptr,
+                     -1,
+                     19,
+                     false);
   REGISTER_VARS_DIFF_NAME("rocks.blockcache_strict_capacity_limit",
                           rocksStrictCapacityLimit);
   REGISTER_VARS_DIFF_NAME("rocks.rowcachemb", rocksRowcacheMB);
@@ -470,7 +478,7 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.compaction_deletes_ratio",
                                   rocksCompactOnDeletionRatio);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks-transaction-mode",
-                          rocksTransactionMode);
+                                  rocksTransactionMode);
   REGISTER_VARS_DIFF_NAME("rocks.delete_bytes_per_second",
                           rocksDeleteBytesPerSecond);
 
@@ -491,8 +499,7 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("slave-migrate-enabled",
                                   slaveMigarateEnabled);
   REGISTER_VARS_NOUSE("migrate-gc-enabled");
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("replicate-fix-enabled",
-                                   replicateFixEnable);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("replicate-fix-enabled", replicateFixEnable);
   REGISTER_VARS_DIFF_NAME("cluster-single-node", clusterSingleNode);
 
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-require-full-coverage",
@@ -695,14 +702,14 @@ Status ServerParams::checkParams() {
 }
 
 Status ServerParams::setRocksOption(const string& argname,
-                            const string& value) {
+                                    const string& value) {
   string errinfo;
   auto argArray = tendisplus::stringSplit(argname, ".");
-  if (argArray.size() !=2 && argArray.size() !=3) {
+  if (argArray.size() != 2 && argArray.size() != 3) {
     errinfo = "not found arg:" + argname;
     return {ErrorCodes::ERR_PARSEOPT, errinfo};
   }
-  if (argArray[0] !="rocks") {
+  if (argArray[0] != "rocks") {
     errinfo = "not found arg:" + argname;
     return {ErrorCodes::ERR_PARSEOPT, errinfo};
   }
@@ -712,7 +719,7 @@ Status ServerParams::setRocksOption(const string& argname,
     return {ErrorCodes::ERR_OK, ""};
   } else {
     // pass configured RocksdbOptions when server starup
-    const string & cfname = toLower(argArray[1]);
+    const string& cfname = toLower(argArray[1]);
     auto cfOption = _rocksdbCFOptions.find(cfname);
     if (cfOption == _rocksdbCFOptions.end()) {
       auto ret = _rocksdbCFOptions.insert(
@@ -850,21 +857,17 @@ bool ServerParams::showVar(const string& key, vector<string>* info) const {
     }
   }
   for (auto iter = _rocksdbOptions.begin(); iter != _rocksdbOptions.end();
-    iter++) {
+       iter++) {
     string hole_param = "rocks." + iter->first;
-    if (redis_port::stringmatchlen(key.c_str(),
-                                   key.size(),
-                                   hole_param.c_str(),
-                                   hole_param.size(),
-                                   1)) {
+    if (redis_port::stringmatchlen(
+          key.c_str(), key.size(), hole_param.c_str(), hole_param.size(), 1)) {
       info->push_back(hole_param);
       info->push_back(iter->second);
     }
   }
   for (auto cf = _rocksdbCFOptions.begin(); cf != _rocksdbCFOptions.end();
-    cf++) {
-    for (auto iter = cf->second.begin(); iter != cf->second.end();
-    iter++) {
+       cf++) {
+    for (auto iter = cf->second.begin(); iter != cf->second.end(); iter++) {
       string hole_param = "rocks." + cf->first + "." + iter->first;
       if (redis_port::stringmatchlen(key.c_str(),
                                      key.size(),

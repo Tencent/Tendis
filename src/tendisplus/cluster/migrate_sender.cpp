@@ -2,15 +2,17 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include "tendisplus/cluster/migrate_sender.h"
+
 #include <utility>
 #include <vector>
-#include "glog/logging.h"
-#include "tendisplus/cluster/migrate_sender.h"
+
 #include "tendisplus/commands/command.h"
 #include "tendisplus/replication/repl_util.h"
-#include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/time.h"
+
 namespace tendisplus {
 
 ChunkMigrateSender::ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
@@ -823,6 +825,5 @@ void ChunkMigrateSender::setSnapShotStartTime(uint64_t t) {
 void ChunkMigrateSender::setSnapShotEndTime(uint64_t t) {
   _snapshotEndTime.store(t, std::memory_order_relaxed);
 }
-
 
 }  // namespace tendisplus

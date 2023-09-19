@@ -32,7 +32,7 @@ func getDataCFLevel6FileNum(m *util.RedisServer, storeid int) int {
 			return i
 		}
 	}
-	return -1;
+	return -1
 }
 
 func testDeleteFilesInRange() {
@@ -106,7 +106,7 @@ func testDeleteFilesInRange() {
 		log.Fatalf("set b{12} c error errmsg:%v ret:%v", err, r)
 	}
 
-	for i := 0 ; i < 4; i++ {
+	for i := 0; i < 4; i++ {
 		<-channel
 	}
 
@@ -130,9 +130,9 @@ func testDeleteFilesInRange() {
 	afterStep1AllL6FileNum := afterStep1Store0L6FileNum + afterStep1Store1L6FileNum
 
 	if beforeStep1Store1L6FileNum != afterStep1Store1L6FileNum {
-		log.Fatalf("L6 file number(store1): before:%v after:%v " +
-		"deletefilesinrangeforce deleted data on store 1 when specified store 0",
-	    beforeStep1Store1L6FileNum, afterStep1Store1L6FileNum)
+		log.Fatalf("L6 file number(store1): before:%v after:%v "+
+			"deletefilesinrangeforce deleted data on store 1 when specified store 0",
+			beforeStep1Store1L6FileNum, afterStep1Store1L6FileNum)
 	}
 
 	r, err = cli1.Cmd("deletefilesinrangeforce", "default", "0", "8372", "1").Str()
@@ -145,9 +145,9 @@ func testDeleteFilesInRange() {
 	afterStep2AllL6FileNum := afterStep2Store0L6FileNum + afterStep2Store1L6FileNum
 
 	if afterStep1Store0L6FileNum != afterStep2Store0L6FileNum {
-		log.Fatalf("L6 file number(store0): before:%v after:%v" +
-		"deletefilesinrangeforce deleted data on store 0 when specified store 1",
-	    afterStep1Store0L6FileNum, afterStep2Store0L6FileNum)
+		log.Fatalf("L6 file number(store0): before:%v after:%v"+
+			"deletefilesinrangeforce deleted data on store 0 when specified store 1",
+			afterStep1Store0L6FileNum, afterStep2Store0L6FileNum)
 	}
 
 	// todo(raffertyyu): try to find out
@@ -164,17 +164,17 @@ func testDeleteFilesInRange() {
 	afterStep3AllL6FileNum := afterStep3Store0L6FileNum + afterStep3Store1L6FileNum
 
 	// after step1,2,3 it should remove at least 16-20 sst files.
-	if beforeStep1AllL6FileNum - afterStep3AllL6FileNum != 122 {
-		log.Fatalf("Wrong result! " +
-		           "every step: (num on store0) (num on store1) (num on two stores) " +
-		           "before step1(delete on store0): %v %v %v " +
-				   "after step1(delete on store0): %v %v %v " +
-				   "after step2(delete on store1): %v %v %v " +
-				   "after step3(delete on store0 and 1): %v %v %v",
-				   beforeStep1Store0L6FileNum, beforeStep1Store1L6FileNum, beforeStep1AllL6FileNum,
-				   afterStep1Store0L6FileNum, afterStep1Store1L6FileNum, afterStep1AllL6FileNum,
-				   afterStep2Store0L6FileNum, afterStep2Store1L6FileNum, afterStep2AllL6FileNum,
-				   afterStep3Store0L6FileNum, afterStep3Store1L6FileNum, afterStep3AllL6FileNum)
+	if beforeStep1AllL6FileNum-afterStep3AllL6FileNum != 122 {
+		log.Fatalf("Wrong result! "+
+			"every step: (num on store0) (num on store1) (num on two stores) "+
+			"before step1(delete on store0): %v %v %v "+
+			"after step1(delete on store0): %v %v %v "+
+			"after step2(delete on store1): %v %v %v "+
+			"after step3(delete on store0 and 1): %v %v %v",
+			beforeStep1Store0L6FileNum, beforeStep1Store1L6FileNum, beforeStep1AllL6FileNum,
+			afterStep1Store0L6FileNum, afterStep1Store1L6FileNum, afterStep1AllL6FileNum,
+			afterStep2Store0L6FileNum, afterStep2Store1L6FileNum, afterStep2AllL6FileNum,
+			afterStep3Store0L6FileNum, afterStep3Store1L6FileNum, afterStep3AllL6FileNum)
 	}
 
 	// shouldn't delete data in slot 8373
@@ -194,7 +194,7 @@ func testDeleteFilesInRange() {
 		log.Fatalf("binlogstart 0 error errmsg:%v ret:%v", err, r)
 	}
 
-	binlogToDelete := ri - 1;
+	binlogToDelete := ri - 1
 	// if set wrong end binlogid = minsavedbinlog should return err.
 	r, err = cli1.Cmd("deletefilesinrange", "binlog", "0", strconv.Itoa(ri), "0").Str()
 	if err == nil {
@@ -204,7 +204,7 @@ func testDeleteFilesInRange() {
 
 	r, err = cli1.Cmd("deletefilesinrange", "binlog", "0", strconv.Itoa(binlogToDelete), "0").Str()
 	if err != nil || r != "OK" {
-		log.Fatalf(fmt.Sprintf("deletefilesinrange binlog 0 %v", binlogToDelete) + "0 error errmsg:%v ret:%v", err, r)
+		log.Fatalf(fmt.Sprintf("deletefilesinrange binlog 0 %v", binlogToDelete)+"0 error errmsg:%v ret:%v", err, r)
 	}
 
 	ri, err = cli1.Cmd("binlogstart", "1").Int()
@@ -212,10 +212,10 @@ func testDeleteFilesInRange() {
 		log.Fatalf("binlogstart 1 error errmsg:%v ret:%v", err, r)
 	}
 
-	binlogToDelete = ri - 1;
+	binlogToDelete = ri - 1
 	r, err = cli1.Cmd("deletefilesinrange", "binlog", "0", strconv.Itoa(binlogToDelete), "1").Str()
 	if err != nil || r != "OK" {
-		log.Fatalf(fmt.Sprintf("deletefilesinrange binlog 0 %v", binlogToDelete) + "1 error errmsg:%v ret:%v", err, r)
+		log.Fatalf(fmt.Sprintf("deletefilesinrange binlog 0 %v", binlogToDelete)+"1 error errmsg:%v ret:%v", err, r)
 	}
 
 	// check if deleted wrong binlog pos

@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+
 #include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/network/blocking_tcp_client.h"
 #include "tendisplus/server/server_entry.h"
@@ -36,7 +37,6 @@ std::shared_ptr<BlockingTcpClient> createClient(
 std::shared_ptr<BlockingTcpClient> createClient(const string& ip,
                                                 uint16_t port,
                                                 ServerEntry* svr);
-
 
 struct BinlogResult {
   uint64_t binlogId = 0;
@@ -73,7 +73,6 @@ Status sendWriter(BinlogWriter* writer,
                   bool needHeartBeat,
                   bool* needRetry,
                   uint32_t secs);
-
 
 Status SendSlotsBinlog(BlockingTcpClient*,
                        uint32_t storeId,

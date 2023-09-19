@@ -5,12 +5,12 @@
 package main
 
 import (
-       "flag"
-       "github.com/ngaut/log"
-       "math"
-       "strconv"
-       "tendisplus/integrate_test/util"
-       "time"
+	"flag"
+	"github.com/ngaut/log"
+	"math"
+	"strconv"
+	"tendisplus/integrate_test/util"
+	"time"
 )
 
 func checkSlotKeyNum(servers *util.RedisServer, slot int, expKeynum int) {
@@ -387,4 +387,3 @@ func main() {
 	// log.Infof("clustertestClusterRestore.go passed.")
 	log.Infof("clustertestClusterRestore.go passed. command : %s", *benchtype)
 }
-

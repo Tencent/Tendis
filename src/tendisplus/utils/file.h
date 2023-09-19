@@ -7,7 +7,9 @@
 
 #include <memory>
 #include <string>
+
 #include "rocksdb/db.h"
+
 #include "tendisplus/utils/status.h"
 
 namespace tendisplus {
@@ -22,10 +24,10 @@ struct AlignedBuff {
 };
 
 std::shared_ptr<AlignedBuff> newAlignedBuff(const std::string& path,
-        int32_t sizeMultiple = 16);
+                                            int32_t sizeMultiple = 16);
 
 std::unique_ptr<rocksdb::WritableFile> openWritableFile(
-        const std::string& fullFileName, bool use_direct_writes, bool reOpen);
+  const std::string& fullFileName, bool use_direct_writes, bool reOpen);
 
 }  // namespace tendisplus
 #endif  // SRC_TENDISPLUS_UTILS_FILE_H_

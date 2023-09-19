@@ -2,17 +2,17 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include <limits>
+#include <memory>
 #include <type_traits>
 #include <utility>
-#include <memory>
 #include <vector>
-#include <limits>
-#include "glog/logging.h"
-#include "tendisplus/storage/varint.h"
+
 #include "tendisplus/storage/record.h"
+#include "tendisplus/storage/varint.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
-#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
 
@@ -51,7 +51,6 @@ Expected<ReplLogKeyV2> ReplLogKeyV2::decode(const RecordKey& rk) {
 
   return ReplLogKeyV2(binlogId);
 }
-
 
 Expected<ReplLogKeyV2> ReplLogKeyV2::decode(const std::string& rawKey) {
   Expected<RecordKey> rk = RecordKey::decode(rawKey);

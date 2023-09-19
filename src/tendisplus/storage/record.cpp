@@ -1,23 +1,27 @@
 // Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
+
+#include "tendisplus/storage/record.h"
+
+#include <iostream>
+#include <limits>
+#include <memory>
 #include <type_traits>
 #include <utility>
-#include <memory>
 #include <vector>
-#include <limits>
-#include <iostream>
-#include "glog/logging.h"
-#include "rapidjson/prettywriter.h"
+
 #include "rapidjson/document.h"
-#include "rapidjson/writer.h"
-#include "rapidjson/stringbuffer.h"
 #include "rapidjson/error/en.h"
+#include "rapidjson/prettywriter.h"
+#include "rapidjson/stringbuffer.h"
+#include "rapidjson/writer.h"
+
 #include "tendisplus/storage/varint.h"
-#include "tendisplus/storage/record.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
-#include "tendisplus/utils/invariant.h"
+
 namespace tendisplus {
 
 const char* ReplOpStr[static_cast<int>(ReplOp::REPL_OP_MAX)] = {
@@ -28,8 +32,7 @@ const char* ReplOpStr[static_cast<int>(ReplOp::REPL_OP_MAX)] = {
   "special",
   "del_range",
   "del_files_include_end",
-  "del_files_exclude_end"
-};
+  "del_files_exclude_end"};
 
 bool isDataMetaType(RecordType t) {
   switch (t) {
@@ -65,8 +68,8 @@ bool isRealEleType(RecordType keyType, RecordType valueType) {
     case RecordType::RT_TBITMAP_ELE:
       return true;
     case RecordType::RT_DATA_META:
-      if (valueType == RecordType::RT_KV
-        || valueType == RecordType::RT_TBITMAP_META) {
+      if (valueType == RecordType::RT_KV ||
+          valueType == RecordType::RT_TBITMAP_META) {
         return true;
       }
     case RecordType::RT_ZSET_S_ELE:
@@ -1394,8 +1397,10 @@ TBitMapMetaValue::TBitMapMetaValue(uint64_t bitAmount,
                                    uint64_t count,
                                    uint64_t eleCount,
                                    uint64_t fragmentLen)
-  : _bitAmount(bitAmount), _count(count),
-    _eleCount(eleCount), _fragmentLen(fragmentLen) {}
+  : _bitAmount(bitAmount),
+    _count(count),
+    _eleCount(eleCount),
+    _fragmentLen(fragmentLen) {}
 
 TBitMapMetaValue::TBitMapMetaValue(TBitMapMetaValue&& v)
   : _bitAmount(v._bitAmount),

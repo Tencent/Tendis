@@ -5,21 +5,21 @@
 #ifndef SRC_TENDISPLUS_STORAGE_ROCKS_ROCKS_KVSTORE_H_
 #define SRC_TENDISPLUS_STORAGE_ROCKS_ROCKS_KVSTORE_H_
 
-#include <memory>
-#include <string>
 #include <iostream>
-#include <set>
-#include <mutex>  // NOLINT
-#include <map>
-#include <unordered_map>
-#include <vector>
-#include <utility>
 #include <list>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <set>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "rocksdb/db.h"
 #include "rocksdb/sst_file_manager.h"
-#include "rocksdb/utilities/transaction.h"
 #include "rocksdb/utilities/optimistic_transaction_db.h"
+#include "rocksdb/utilities/transaction.h"
 #include "rocksdb/utilities/transaction_db.h"
 #include "rocksdb/utilities/write_batch_with_index.h"
 
@@ -71,7 +71,7 @@ class RocksTxn : public Transaction {
                const uint64_t ts = 0) final;
   Status delKV(const std::string& key, const uint64_t ts = 0) final;
   Status setKVWithoutBinlog(const std::string& key,
-               const std::string& val) final;
+                            const std::string& val) final;
   Status addDeleteRangeBinlog(const std::string& begin,
                               const std::string& end) final;
   Status addDeleteFilesInRangeBinlog(const std::string& begin,
@@ -105,27 +105,26 @@ class RocksTxn : public Transaction {
     _txnMode = type;
   }
 
-
   // Transaction API
   // put data to default column family
   virtual rocksdb::Status put(const std::string& key, const std::string& val);
   virtual rocksdb::Status put(rocksdb::ColumnFamilyHandle* columnFamily,
-                      const std::string& key,
-                      const std::string& val);
+                              const std::string& key,
+                              const std::string& val);
   virtual rocksdb::Status get(const rocksdb::ReadOptions& options,
-                      rocksdb::ColumnFamilyHandle* columnFamily,
-                      const std::string& key,
-                      std::string* value);
+                              rocksdb::ColumnFamilyHandle* columnFamily,
+                              const std::string& key,
+                              std::string* value);
   virtual rocksdb::Status del(rocksdb::ColumnFamilyHandle* columnFamily,
-                      const std::string& key);
+                              const std::string& key);
   virtual const rocksdb::Snapshot* getSnapshot();
   virtual rocksdb::Iterator* getIterator(
     rocksdb::ReadOptions readOpts, rocksdb::ColumnFamilyHandle* columnFamily);
 
  protected:
   virtual void ensureTxn() {}
-  std::unique_ptr<Cursor> createCursor(ColumnFamilyNumber cf,
-      const std::string* iterate_upper_bound = NULL) final;
+  std::unique_ptr<Cursor> createCursor(
+    ColumnFamilyNumber cf, const std::string* iterate_upper_bound = NULL) final;
   virtual rocksdb::Status txnCommit();
 
   uint64_t _txnId;
@@ -259,17 +258,17 @@ typedef struct sstMetaData {
 
 class RocksKVStore : public KVStore {
  public:
-  RocksKVStore(const std::string& id,
-               const std::shared_ptr<ServerParams>& cfg,
-               std::shared_ptr<rocksdb::Cache> blockCache,
-               std::shared_ptr<rocksdb::Cache> rowCache = nullptr,
-               std::shared_ptr<rocksdb::RateLimiter> rateLimiter = nullptr,
-               std::shared_ptr<rocksdb::SstFileManager>
-                 sstFileManager = nullptr,
-               bool enableRepllog = true,
-               KVStore::StoreMode mode = KVStore::StoreMode::READ_WRITE,
-               TxnMode txnMode = TxnMode::TXN_WB,
-               uint32_t flag = 0);
+  RocksKVStore(
+    const std::string& id,
+    const std::shared_ptr<ServerParams>& cfg,
+    std::shared_ptr<rocksdb::Cache> blockCache,
+    std::shared_ptr<rocksdb::Cache> rowCache = nullptr,
+    std::shared_ptr<rocksdb::RateLimiter> rateLimiter = nullptr,
+    std::shared_ptr<rocksdb::SstFileManager> sstFileManager = nullptr,
+    bool enableRepllog = true,
+    KVStore::StoreMode mode = KVStore::StoreMode::READ_WRITE,
+    TxnMode txnMode = TxnMode::TXN_WB,
+    uint32_t flag = 0);
   virtual ~RocksKVStore() {
     stop();
   }
@@ -279,7 +278,8 @@ class RocksKVStore : public KVStore {
   Status delKV(const RecordKey&, Transaction*) final;
 
   // [begin, end)
-  Status deleteRange(const std::string& begin, const std::string& end,
+  Status deleteRange(const std::string& begin,
+                     const std::string& end,
                      bool deleteFilesInRangeBeforeDeleteRange = false,
                      bool compactRangeAfterDeleteRange = false) override;
   Status deleteRangeBinlog(uint64_t begin, uint64_t end) override;
@@ -292,7 +292,8 @@ class RocksKVStore : public KVStore {
   Status deleteFilesInRange(const std::string& begin,
                             const std::string& end,
                             bool include_end = false) override;
-  Status deleteFilesInRangeBinlog(uint64_t begin, uint64_t end,
+  Status deleteFilesInRangeBinlog(uint64_t begin,
+                                  uint64_t end,
                                   bool include_end = false) override;
   Status deleteFilesInRangeWithoutBinlog(ColumnFamilyNumber cf,
                                          const std::string& begin,
@@ -394,8 +395,10 @@ class RocksKVStore : public KVStore {
     return _cfg;
   }
 
-  bool getIntProperty(const std::string& property, uint64_t* value,
-      ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_Default) const;
+  bool getIntProperty(
+    const std::string& property,
+    uint64_t* value,
+    ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_Default) const;
   bool getProperty(
     const std::string& property,
     std::string* value,
@@ -418,8 +421,8 @@ class RocksKVStore : public KVStore {
 
   Expected<VersionMeta> getVersionMeta() override;
   Expected<VersionMeta> getVersionMeta(const std::string& name) override;
-  Expected<std::vector<VersionMeta>>
-    getAllVersionMeta(Transaction *txn) override;
+  Expected<std::vector<VersionMeta>> getAllVersionMeta(
+    Transaction* txn) override;
   Status setVersionMeta(const std::string& name,
                         uint64_t ts,
                         uint64_t version) override;
@@ -434,9 +437,9 @@ class RocksKVStore : public KVStore {
     }
   }
   rocksdb::ColumnFamilyHandle* getColumnFamilyHandle(
-      ColumnFamilyNumber cfNum) const {
+    ColumnFamilyNumber cfNum) const {
     if (cfNum == ColumnFamilyNumber::ColumnFamily_Default) {
-        return _cfHandles[0];
+      return _cfHandles[0];
     } else if (cfNum == ColumnFamilyNumber::ColumnFamily_Binlog) {
       if (_cfg->binlogUsingDefaultCF == true) {
         return _cfHandles[0];
@@ -507,7 +510,7 @@ class RocksKVStore : public KVStore {
   std::shared_ptr<rocksdb::SstFileManager> _sstFileManager;
 
   uint64_t _nextTxnSeq;
-// Protected by _mutex
+  // Protected by _mutex
   // NOTE(deyukong): sorted data-structure is required here.
   // we rely on the data order to maintain active txns' watermark.
   // txnid -> committed|uncommited

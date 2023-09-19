@@ -2,15 +2,14 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-
 #include "tendisplus/utils/time.h"
 
-#include <sstream>
 #ifdef _WIN32
 #include <time.h>
 #include <unistd.h>
-#endif  // !
+#endif  // !_WIN32
 
+#include <sstream>
 
 namespace tendisplus {
 
@@ -77,7 +76,7 @@ uint32_t sinceEpoch(const SCLOCK::time_point& tp) {
 
 // timestamp in second
 std::string epochToDatetime(uint64_t epoch) {
-  struct tm* dt, rt;
+  struct tm *dt, rt;
   char buffer[64];
   const time_t t = epoch;
   dt = localtime_r(&t, &rt);
@@ -87,7 +86,7 @@ std::string epochToDatetime(uint64_t epoch) {
 
 // timestamp in second
 std::string epochToDatetimeInOneStr(uint64_t epoch) {
-  struct tm* dt, rt;
+  struct tm *dt, rt;
   char buffer[64];
   const time_t t = epoch;
   dt = localtime_r(&t, &rt);

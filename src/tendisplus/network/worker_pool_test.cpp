@@ -2,7 +2,6 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include "glog/logging.h"
 #include "gtest/gtest.h"
 
 #include "tendisplus/network/worker_pool.h"

@@ -2,19 +2,21 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include "tendisplus/commands/dump.h"
+
 #include <algorithm>
-#include <numeric>
-#include <string>
-#include <utility>
-#include <unordered_set>
 #include <limits>
 #include <list>
-#include "tendisplus/commands/dump.h"
+#include <numeric>
+#include <string>
+#include <unordered_set>
+#include <utility>
+
 #include "tendisplus/commands/command.h"
-#include "tendisplus/storage/skiplist.h"
-#include "tendisplus/utils/string.h"
-#include "tendisplus/utils/redis_port.h"
 #include "tendisplus/storage/record.h"
+#include "tendisplus/storage/skiplist.h"
+#include "tendisplus/utils/redis_port.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -1708,8 +1710,7 @@ Expected<std::string> recordList2Aof(const std::list<Record>& list) {
       }
 
       case tendisplus::RecordType::RT_TBITMAP_META: {
-        auto bMeta =
-          TBitMapMetaValue::decode(rtValue.getValue());
+        auto bMeta = TBitMapMetaValue::decode(rtValue.getValue());
         if (!bMeta.ok()) {
           return bMeta.status();
         }
@@ -1729,12 +1730,10 @@ Expected<std::string> recordList2Aof(const std::list<Record>& list) {
           return eBitmapId.status();
         }
         if (nextIdForBitmap > eBitmapId.value()) {
-          LOG(ERROR) << "nextIdForBitmap:"
-                     << nextIdForBitmap << "is bigger than bitmapid:"
-                     << eBitmapId.value();
-          return
-            {ErrorCodes::ERR_PARSEPKT,
-            "nextIdForBitmap is bigger than bitmapid"};
+          LOG(ERROR) << "nextIdForBitmap:" << nextIdForBitmap
+                     << "is bigger than bitmapid:" << eBitmapId.value();
+          return {ErrorCodes::ERR_PARSEPKT,
+                  "nextIdForBitmap is bigger than bitmapid"};
         }
         INVARIANT_D(nextIdForBitmap <= eBitmapId.value());
         while (nextIdForBitmap != eBitmapId.value()) {

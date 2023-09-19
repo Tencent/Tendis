@@ -2,19 +2,20 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include "tendisplus/network/network.h"
+
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <string>
-#include <algorithm>
-#include "glog/logging.h"
-#include "tendisplus/network/network.h"
-#include "tendisplus/utils/redis_port.h"
+
+#include "tendisplus/server/server_entry.h"
+#include "tendisplus/storage/varint.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/test_util.h"
-#include "tendisplus/storage/varint.h"
-#include "tendisplus/server/server_entry.h"
 
 namespace tendisplus {
 
@@ -51,7 +52,7 @@ constexpr ssize_t REDIS_IOBUF_LEN = (1024 * 16);
 constexpr ssize_t REDIS_MAX_QUERYBUF_LEN = (1024 * 1024 * 1024);
 constexpr ssize_t REDIS_INLINE_MAX_SIZE = (1024 * 64);
 constexpr ssize_t REDIS_MBULK_BIG_ARG = (1024 * 32);
-const int BUFFER_LONG_SIZE = 10*1024*1024;
+const int BUFFER_LONG_SIZE = 10 * 1024 * 1024;
 
 std::string RequestMatrix::toString() const {
   std::stringstream ss;
@@ -185,10 +186,9 @@ Status NetworkAsio::prepare(const std::string& ip,
   _port = port;
   _netIoThreadNum = netIoThreadNum;
   _ip2 = ip2;
-  if (_ip2 != "" &&
-    (_ip == "0.0.0.0" || _ip2 == "0.0.0.0")) {
+  if (_ip2 != "" && (_ip == "0.0.0.0" || _ip2 == "0.0.0.0")) {
     LOG(ERROR) << "be careful, bind two ip,"
-      <<" and one of them is 0.0.0.0 may have some error!";
+               << " and one of them is 0.0.0.0 may have some error!";
   }
   _acceptCtx = std::make_shared<asio::io_context>();
   Status s = prepareAccept(_ip, _port, _acceptCtx, _acceptor);
@@ -206,10 +206,11 @@ Status NetworkAsio::prepare(const std::string& ip,
   if (!s.ok()) {
     return s;
   }
-  return  {ErrorCodes::ERR_OK, ""};
+  return {ErrorCodes::ERR_OK, ""};
 }
 
-Status NetworkAsio::prepareAccept(const std::string& ip,
+Status NetworkAsio::prepareAccept(
+  const std::string& ip,
   const uint16_t port,
   std::shared_ptr<asio::io_context>& acceptCtx,
   std::shared_ptr<asio::ip::tcp::acceptor>& acceptor) {
@@ -275,7 +276,7 @@ Expected<std::shared_ptr<ClusterSession>> NetworkAsio::client2ClusterSession(
   auto sess = std::make_shared<ClusterSession>(
     _server, std::move(c->borrowConn()), connId, true, _netMatrix, _reqMatrix);
   LOG(INFO) << "client2ClusterSession, id:" << sess->id()
-    << ",connId:" << connId << ",remoteAddr:" << sess->getRemoteRepr();
+            << ",connId:" << connId << ",remoteAddr:" << sess->getRemoteRepr();
   sess->getCtx()->setAuthed();
   _server->addSession(sess);
   ++_netMatrix->connCreated;
@@ -285,8 +286,8 @@ Expected<std::shared_ptr<ClusterSession>> NetworkAsio::client2ClusterSession(
 template <typename T>
 void NetworkAsio::doAccept(std::shared_ptr<asio::ip::tcp::acceptor>& acceptor) {
   int index = _connCreated % _rwCtxList.size();
-  auto cb = [this, index, &acceptor](
-    const std::error_code& ec, tcp::socket socket) {
+  auto cb = [this, index, &acceptor](const std::error_code& ec,
+                                     tcp::socket socket) {
     if (!_isRunning.load(std::memory_order_relaxed)) {
       LOG(INFO) << "acceptCb, server is shuting down";
       return;
@@ -298,8 +299,7 @@ void NetworkAsio::doAccept(std::shared_ptr<asio::ip::tcp::acceptor>& acceptor) {
 
     uint64_t newConnId = _connCreated.fetch_add(1, std::memory_order_relaxed);
     auto sess = std::make_shared<T>(
-      _server, std::move(socket), newConnId,
-      true, _netMatrix, _reqMatrix);
+      _server, std::move(socket), newConnId, true, _netMatrix, _reqMatrix);
     DLOG(INFO) << "new net session, id:" << sess->id()
                << ",connId:" << newConnId << ",from:" << sess->getRemoteRepr()
                << " created";
@@ -335,7 +335,8 @@ void NetworkAsio::stop() {
   LOG(INFO) << "network-asio stops complete...";
 }
 
-Status NetworkAsio::startAcceptThread(std::shared_ptr<std::thread>& acceptThd,
+Status NetworkAsio::startAcceptThread(
+  std::shared_ptr<std::thread>& acceptThd,
   std::shared_ptr<asio::io_context>& acceptCtx) {
   acceptThd = std::make_shared<std::thread>([this, &acceptCtx] {
     std::string threadName = _name + "-accept";
@@ -489,7 +490,6 @@ Expected<uint32_t> NetSession::getRemotePort() const {
   }
 }
 
-
 Expected<std::string> NetSession::getLocalIp() const {
   try {
     if (_sock.is_open()) {
@@ -577,13 +577,13 @@ Status NetSession::setResponse(const std::string& s) {
   if (_isEnded) {
     _closeAfterRsp = true;
     LOG(WARNING) << "setResponse _isEnded, id:" << id()
-      << " addr:" << getRemoteRepr();
+                 << " addr:" << getRemoteRepr();
     return {ErrorCodes::ERR_NETWORK, "connection is ended"};
   }
 
   if (s.empty()) {
     LOG(WARNING) << "setResponse response is empty, id:" << id()
-      << " addr:" << getRemoteRepr();
+                 << " addr:" << getRemoteRepr();
     return {ErrorCodes::ERR_OK, ""};
   }
 
@@ -591,7 +591,7 @@ Status NetSession::setResponse(const std::string& s) {
   if (_closeAfterRsp) {
     if (_closeResponse) {
       LOG(WARNING) << "setResponse _closeAfterRsp _closeResponse, id:" << id()
-        << " addr:" << getRemoteRepr();
+                   << " addr:" << getRemoteRepr();
       return {ErrorCodes::ERR_OK, ""};
     } else {
       _closeResponse = true;
@@ -868,7 +868,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
       ++_server->getServerStat().rejectedConn;
 
       LOG(WARNING) << "-ERR max number of clients reached, clients: "
-        << maxClients;
+                   << maxClients;
       setRspAndClose("-ERR max number of clients reached\r\n");
       setState(State::Stop);
       return;
@@ -1035,29 +1035,26 @@ void NetSession::drainRspWithoutLock() {
   auto self(shared_from_this());
   if (_sendBuffer.size() > BUFFER_LONG_SIZE) {
     LOG(WARNING) << "drainRspWithoutLock async_write long size:"
-      << _sendBuffer.size();
+                 << _sendBuffer.size();
   }
   asio::async_write(
     _sock,
     asio::buffer(_sendBuffer.data(), _sendBuffer.size()),
-    [this, self, now] (const std::error_code& ec, size_t actualLen) {
+    [this, self, now](const std::error_code& ec, size_t actualLen) {
       _reqMatrix->sendPacketCost += nsSinceEpoch() - now;
       drainRspCallback(ec, actualLen);
     });
 }
 
-void NetSession::drainRspCallback(const std::error_code& ec,
-                                  size_t actualLen) {
+void NetSession::drainRspCallback(const std::error_code& ec, size_t actualLen) {
   if (ec) {
     LOG(WARNING) << "drainRspCallback:" << ec.message();
     endSession();
     return;
   }
   if (actualLen != _sendBuffer.size()) {
-    LOG(ERROR) << "conn:" << _connId
-               << ",actualLen:" << actualLen
-               << ",bufsize:" << _sendBuffer.size()
-               << ",invalid drainRsp len";
+    LOG(ERROR) << "conn:" << _connId << ",actualLen:" << actualLen
+               << ",bufsize:" << _sendBuffer.size() << ",invalid drainRsp len";
     endSession();
     _sendBuffer.clear();
     return;

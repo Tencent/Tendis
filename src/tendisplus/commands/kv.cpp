@@ -2,23 +2,23 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <string>
-#include <utility>
-#include <memory>
 #include <algorithm>
 #include <cctype>
 #include <clocale>
-#include <vector>
-#include <queue>
 #include <cmath>
-#include "glog/logging.h"
-#include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/string.h"
+#include <memory>
+#include <queue>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "tendisplus/commands/command.h"
+#include "tendisplus/commands/dump.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
-#include "tendisplus/commands/command.h"
 #include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/commands/dump.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
 
@@ -1477,7 +1477,7 @@ class IncrbyCommand : public IncrDecrGeneral {
     const std::string& val = sess->getArgs()[2];
 
     // INCRBY only support integer, or use INCRBYFLOAT
-    long long inc{0};                                   // NOLINT
+    long long inc{0};  // NOLINT
     if (!redis_port::string2ll(val.c_str(), val.size(), &inc)) {
       return {ErrorCodes::ERR_INTERGER, ""};
     }
@@ -1549,7 +1549,6 @@ class IncrexCommand : public IncrDecrGeneral {
   }
 } increxCmd;
 
-
 class IncrCommand : public IncrDecrGeneral {
  public:
   IncrCommand() : IncrDecrGeneral("incr", "wmF") {}
@@ -1616,7 +1615,7 @@ class DecrbyCommand : public IncrDecrGeneral {
     const std::string& val = sess->getArgs()[2];
 
     // DECRBY only support integer, or use DECRBY
-    long long inc{0};                                    // NOLINT
+    long long inc{0};  // NOLINT
     if (!redis_port::string2ll(val.c_str(), val.size(), &inc)) {
       return {ErrorCodes::ERR_INTERGER, ""};
     }
@@ -1861,7 +1860,6 @@ class BitopCommand : public Command {
       }
       result[i] = output;
     }
-
 
     auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, targetKey);
     if (!expdb.ok()) {

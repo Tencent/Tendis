@@ -5,14 +5,15 @@
 #ifndef SRC_TENDISPLUS_UTILS_STRING_H_
 #define SRC_TENDISPLUS_UTILS_STRING_H_
 
-#include <string>
+#include <algorithm>
 #include <bitset>
 #include <iostream>
-#include <vector>
+#include <string>
 #include <utility>
-#include <algorithm>
-#include "tendisplus/utils/status.h"
+#include <vector>
+
 #include "tendisplus/storage/varint.h"
+#include "tendisplus/utils/status.h"
 
 namespace tendisplus {
 

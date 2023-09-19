@@ -2,26 +2,27 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <string>
-#include <utility>
-#include <memory>
 #include <algorithm>
 #include <cctype>
 #include <clocale>
-#include "glog/logging.h"
-#include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/string.h"
-#include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/time.h"
+#include <memory>
+#include <string>
+#include <utility>
+
 #include "tendisplus/commands/command.h"
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/sync_point.h"
+#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
 
 // return false if not exists
 // return true if exists and del ok
 // return error on error
-Expected<bool> delGeneric(Session* sess, const std::string& key,
-  Transaction* txn) {
+Expected<bool> delGeneric(Session* sess,
+                          const std::string& key,
+                          Transaction* txn) {
   SessionCtx* pCtx = sess->getCtx();
   INVARIANT(pCtx != nullptr);
   bool atLeastOne = false;
@@ -67,8 +68,7 @@ class DelCommand : public Command {
     uint64_t total = 0;
     for (size_t i = 1; i < args.size(); ++i) {
       auto server = sess->getServerEntry();
-      auto expdb = server->getSegmentMgr()->getDbHasLocked(
-              sess, args[i]);
+      auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, args[i]);
       if (!expdb.ok()) {
         return expdb.status();
       }
@@ -86,7 +86,7 @@ class DelCommand : public Command {
     }
     auto s = sess->getCtx()->commitAll("del");
     if (!s.ok()) {
-      LOG(ERROR) << "UnlinkCommand commitAll failed:"<< s.toString();
+      LOG(ERROR) << "UnlinkCommand commitAll failed:" << s.toString();
     }
     return Command::fmtLongLong(total);
   }
@@ -145,8 +145,7 @@ class UnlinkCommand : public Command {
          std::list<std::unique_ptr<KeyLock>>&& locklist) {
         for (size_t i = 0; i < keys.size(); ++i) {
           auto server = sess->getServerEntry();
-          auto expdb = server->getSegmentMgr()->getDbHasLocked(
-                  sess, keys[i]);
+          auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, keys[i]);
           if (!expdb.ok()) {
             return;
           }
@@ -155,7 +154,7 @@ class UnlinkCommand : public Command {
           auto ptxn = sess->getCtx()->createTransaction(kvstore);
           if (!ptxn.ok()) {
             LOG(ERROR) << "UnlinkCommand createTransaction failed:"
-              << ptxn.status().toString();
+                       << ptxn.status().toString();
             return;
           }
           delKey(sess, keys[i], RecordType::RT_DATA_META, ptxn.value());

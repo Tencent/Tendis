@@ -5,7 +5,7 @@
 #ifndef SRC_TENDISPLUS_UTILS_TIME_H_
 #define SRC_TENDISPLUS_UTILS_TIME_H_
 
-#include <chrono>  // NOLINT
+#include <chrono>
 #include <string>
 
 namespace tendisplus {

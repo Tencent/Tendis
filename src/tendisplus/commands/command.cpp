@@ -2,21 +2,22 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <string>
-#include <memory>
-#include <map>
-#include <utility>
-#include <list>
-#include <limits>
-#include <vector>
-#include <unordered_set>
-#include "glog/logging.h"
 #include "tendisplus/commands/command.h"
-#include "tendisplus/utils/string.h"
-#include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/scopeguard.h"
+
+#include <limits>
+#include <list>
+#include <map>
+#include <memory>
+#include <string>
+#include <unordered_set>
+#include <utility>
+#include <vector>
+
 #include "tendisplus/lock/lock.h"
 #include "tendisplus/storage/record.h"
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/string.h"
 #include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
@@ -313,7 +314,8 @@ Expected<std::string> Command::runSessionCmd(Session* sess) {
   return v;
 }
 
-bool Command::useDeleteRange(uint64_t eleCount, RecordType valueType,
+bool Command::useDeleteRange(uint64_t eleCount,
+                             RecordType valueType,
                              const std::shared_ptr<ServerParams>& cfg) {
   if (valueType == RecordType::RT_KV) {
     return false;
@@ -435,12 +437,11 @@ Expected<std::pair<std::string, std::list<Record>>> Command::scan(
     std::pair<std::string, std::list<Record>>(nextCursor, std::move(result)));
 }
 
-Expected<std::list<Record>> Command::scanSimple(
-  Session* sess,
-  const std::string& pk,
-  const std::string& from,
-  uint64_t cnt,
-  Transaction* txn) {
+Expected<std::list<Record>> Command::scanSimple(Session* sess,
+                                                const std::string& pk,
+                                                const std::string& from,
+                                                uint64_t cnt,
+                                                Transaction* txn) {
   auto cursor = txn->createDataCursor();
   if (from == "0") {
     cursor->seek(pk);
@@ -835,13 +836,8 @@ Status Command::delKey(Session* sess,
       return Command::delKeyPessimisticInLock(
         sess, storeId, mk, valueType, ictx.getTTL() > 0 ? &ictx : nullptr);
     } else {
-      Status s =
-        Command::delKeyOptimismInLock(sess,
-                                      storeId,
-                                      mk,
-                                      valueType,
-                                      txn,
-                                      ictx.getTTL() > 0 ? &ictx : nullptr);
+      Status s = Command::delKeyOptimismInLock(
+        sess, storeId, mk, valueType, txn, ictx.getTTL() > 0 ? &ictx : nullptr);
       if (s.code() == ErrorCodes::ERR_COMMIT_RETRY && i != RETRY_CNT - 1) {
         continue;
       }
@@ -876,8 +872,8 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
   PStore kvstore = expdb.value().store;
 
   // NOTE(takenliu) we need setReplOnly
-  sg.getSession()->getCtx()->setReplOnly(
-          kvstore->getMode() == KVStore::StoreMode::REPLICATE_ONLY);
+  sg.getSession()->getCtx()->setReplOnly(kvstore->getMode() ==
+                                         KVStore::StoreMode::REPLICATE_ONLY);
 
   for (uint32_t i = 0; i < RETRY_CNT; ++i) {
     // NOTE(takenliu) expireKeyIfNeeded don't use txn from params,
@@ -1003,7 +999,6 @@ Expected<uint64_t> Command::getInt64FromFmtLongLong(const std::string& str) {
   std::string s(str.c_str() + 1, end - 1);
   return tendisplus::stoull(s);
 }
-
 
 std::string Command::fmtBusyKey() {
   return "-BUSYKEY Target key name already exists.\r\n";

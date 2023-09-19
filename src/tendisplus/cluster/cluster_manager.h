@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
 #include "tendisplus/network/network.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/storage/catalog.h"
@@ -33,7 +34,6 @@ enum class ClusterHealth : std::uint8_t {
 // #define CLUSTER_NAMELEN 40       // sha1 hex length
 #define CLUSTER_PORT_INCR 10000  // Cluster port = baseport + PORT_INCR
 
-
 // The following defines are amount of time, sometimes expressed as
 // multiplicators of the node timeout value (when ending with MULT).
 #define CLUSTER_DEFAULT_NODE_TIMEOUT 15000
@@ -48,7 +48,6 @@ enum class ClusterHealth : std::uint8_t {
 #define CLUSTER_MF_TIMEOUT 5000  // Milliseconds to do a manual failover.
 #define CLUSTER_MF_PAUSE_MULT 2  // Master pause manual failover mult.
 #define CLUSTER_SLAVE_MIGRATION_DELAY 5000  // Delay for slave migration.
-
 
 #define CLUSTERMSG_MIN_LEN 100
 
@@ -75,7 +74,6 @@ enum class ClusterHealth : std::uint8_t {
 #define CLUSTER_REDIR_MOVED 4         // -MOVED redirection required.
 #define CLUSTER_REDIR_DOWN_STATE 5    // -CLUSTERDOWN, global state.
 #define CLUSTER_REDIR_DOWN_UNBOUND 6  // -CLUSTERDOWN, unbound slot.
-
 
 // Reasons why a slave is not able to failover.
 #define CLUSTER_CANT_FAILOVER_NONE 0
@@ -123,7 +121,6 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
               uint64_t pingSend = 0,
               uint64_t pongReceived = 0,
               uint64_t epoch = 0);
-
 
   ClusterNode(const ClusterNode&) = delete;
   ClusterNode(ClusterNode&&) = delete;
@@ -271,7 +268,6 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
 using CNodePtr = std::shared_ptr<ClusterNode>;
 using CNodeWeakPtr = std::weak_ptr<ClusterNode>;
 using CReportPtr = std::shared_ptr<ClusterNodeFailReport>;
-
 
 class ClusterNodeFailReport
   : public std::enable_shared_from_this<ClusterNodeFailReport> {
@@ -428,7 +424,6 @@ class ClusterMsgHeader {
   ClusterHealth _state;  // Cluster state from the POV of the sender
 };
 
-
 class ClusterMsgData {
  public:
   enum class Type {
@@ -580,8 +575,10 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
 
   bool clusterSetNodeAsMaster(CNodePtr node);
   bool clusterSetNodeAsMasterNoLock(CNodePtr node);
-  Status clusterSetMaster(CNodePtr node, bool ignoreRepl = false,
-                          bool isReplgroup = false, uint64_t senderOffset = 0);
+  Status clusterSetMaster(CNodePtr node,
+                          bool ignoreRepl = false,
+                          bool isReplgroup = false,
+                          uint64_t senderOffset = 0);
   Status clusterSetMasterNoLock(CNodePtr node);
 
   Status clusterSetForMaster(CNodePtr node, CNodePtr node2);
@@ -862,7 +859,6 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   std::array<uint64_t, CLUSTERMSG_TYPE_COUNT> _statsMessagesSent;
   std::array<uint64_t, CLUSTERMSG_TYPE_COUNT> _statsMessagesReceived;
 };
-
 
 class ClusterGossip;
 class ClusterMsgDataGossip : public ClusterMsgData {

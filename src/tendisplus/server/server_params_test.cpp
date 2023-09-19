@@ -4,11 +4,13 @@
 
 #include <fstream>
 #include <memory>
+
 #include "gtest/gtest.h"
-#include "tendisplus/utils/status.h"
-#include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/server/server_params.h"
+
 #include "tendisplus/server/server_entry.h"
+#include "tendisplus/server/server_params.h"
+#include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/status.h"
 
 namespace tendisplus {
 

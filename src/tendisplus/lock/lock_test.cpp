@@ -2,13 +2,13 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include <algorithm>
 #include <iostream>
 #include <string>
-#include <algorithm>
-#include <thread>  // NOLINT
+#include <thread>
 
 #include "gtest/gtest.h"
-#include "glog/logging.h"
+
 #include "tendisplus/lock/lock.h"
 
 namespace tendisplus {

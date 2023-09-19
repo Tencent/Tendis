@@ -2,29 +2,31 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <utility>
-#include <memory>
+#include "tendisplus/server/server_entry.h"
+
 #include <algorithm>
-#include <chrono>  // NOLINT
-#include <string>  // NOLINT
+#include <chrono>
 #include <list>
-#include <mutex>  // NOLINT
-#include "glog/logging.h"
+#include <memory>
+#include <mutex>
+#include <string>
+#include <utility>
+
 #ifndef _WIN32
 #ifdef TENDIS_JEMALLOC
 #include "jemalloc/jemalloc.h"
 #endif
 #endif
-#include "tendisplus/network/latency_record.h"
-#include "tendisplus/server/server_entry.h"
-#include "tendisplus/server/server_params.h"
-#include "tendisplus/utils/redis_port.h"
-#include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/time.h"
+
 #include "tendisplus/commands/command.h"
-#include "tendisplus/storage/rocks/rocks_kvstore.h"
-#include "tendisplus/utils/string.h"
 #include "tendisplus/lock/lock.h"
+#include "tendisplus/network/latency_record.h"
+#include "tendisplus/server/server_params.h"
+#include "tendisplus/storage/rocks/rocks_kvstore.h"
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/redis_port.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
 
@@ -331,7 +333,6 @@ void ServerEntry::installCatalog(std::unique_ptr<Catalog> o) {
   _catalog = std::move(o);
 }
 
-
 Catalog* ServerEntry::getCatalog() {
   return _catalog.get();
 }
@@ -487,9 +488,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
                        false,
                        KVStore::StoreMode::READ_WRITE,
                        static_cast<TxnMode>(cfg->rocksTransactionMode)))),
-                       kvStoreCount,
-                       chunkSize,
-                       cfg->binlogUsingDefaultCF);
+    kvStoreCount,
+    chunkSize,
+    cfg->binlogUsingDefaultCF);
   installCatalog(std::move(catalog));
   // forward compatibilty : binlogVersion is used to check whether binlog
   // column_family exists
@@ -528,20 +529,18 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   }
 
   if (cfg->rocksDeleteBytesPerSecond > 0) {
-    _sstFileManager = std::shared_ptr<rocksdb::SstFileManager>(
-      rocksdb::NewSstFileManager(
-        rocksdb::Env::Default(), nullptr, "",
-        cfg->rocksDeleteBytesPerSecond));
+    _sstFileManager =
+      std::shared_ptr<rocksdb::SstFileManager>(rocksdb::NewSstFileManager(
+        rocksdb::Env::Default(), nullptr, "", cfg->rocksDeleteBytesPerSecond));
   }
 
   if (cfg->rocksRateLimiterRateBytesPerSec > 0) {
     _rateLimiter = std::shared_ptr<rocksdb::RateLimiter>(
-      rocksdb::NewGenericRateLimiter(
-        cfg->rocksRateLimiterRateBytesPerSec,
-        cfg->rocksRateLimiterRefillPeriodUs,
-        cfg->rocksRateLimiterFairness,
-        rocksdb::RateLimiter::Mode::kWritesOnly,
-        cfg->rocksRateLimiterAutoTuned));
+      rocksdb::NewGenericRateLimiter(cfg->rocksRateLimiterRateBytesPerSec,
+                                     cfg->rocksRateLimiterRefillPeriodUs,
+                                     cfg->rocksRateLimiterFairness,
+                                     rocksdb::RateLimiter::Mode::kWritesOnly,
+                                     cfg->rocksRateLimiterAutoTuned));
   }
 
   std::vector<PStore> tmpStores;
@@ -647,14 +646,11 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   if (!s.ok()) {
     LOG(ERROR) << "ServerEntry::startup failed, _network->prepare:"
                << s.toString() << " ip:" << cfg->bindIp
-               << " ip2:" << cfg->bindIp2
-               << " port:" << cfg->port;
+               << " ip2:" << cfg->bindIp2 << " port:" << cfg->port;
     return s;
   }
   LOG(INFO) << "_network->prepare ok. ip:" << cfg->bindIp
-            << " ip2:" << cfg->bindIp2
-            << " port:" << cfg->port;
-
+            << " ip2:" << cfg->bindIp2 << " port:" << cfg->port;
 
   // replication
   // replication relys on blocking-client
@@ -718,7 +714,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     return s;
   } else {
     LOG(WARNING) << "ready to accept connections at " << cfg->bindIp << ":"
-      << cfg->port << " " << cfg->bindIp2 << ":" << cfg->port;
+                 << cfg->port << " " << cfg->bindIp2 << ":" << cfg->port;
   }
 
   _isRunning.store(true, std::memory_order_relaxed);
@@ -972,7 +968,7 @@ void ServerEntry::resizeExecutorThreadNum(uint64_t newThreadNum) {
  * @note Because of resize() interface is async decrease operation,
  *      can't stop() directly, so move target workerpool to _executorSet first,
  * keep owning the std::unique_ptr. stop the workerpool eventually when call
- * another decrease operation， this design means: ergodic operation pressure is
+ * another decrease operation, this design means: ergodic operation pressure is
  * on DECREASE OP, NOT INCREASE OP.
  */
 void ServerEntry::resizeDecrExecutorThreadNum(uint64_t newThreadNum) {
@@ -1170,9 +1166,11 @@ bool ServerEntry::processRequest(Session* sess) {
       auto store = val.value();
       if (store >= getParams()->kvStoreCount) {
         char err[100];
-        snprintf(err, sizeof(err),
+        snprintf(err,
+                 sizeof(err),
                  "kvstore %ld invalid, [0, %d]",
-                 store, getParams()->kvStoreCount);
+                 store,
+                 getParams()->kvStoreCount);
         ns->setResponse(Command::fmtErr(err));
         return true;
       }
@@ -1353,8 +1351,8 @@ uint64_t ServerEntry::getStatCountByName(Session* sess,
 bool ServerEntry::isDbEmpty() {
   LocalSessionGuard g(this);
   for (uint32_t i = 0; i < getKVStoreCount(); ++i) {
-    auto expdb = getSegmentMgr()->getDb(
-      g.getSession(), i, mgl::LockMode::LOCK_IS);
+    auto expdb =
+      getSegmentMgr()->getDb(g.getSession(), i, mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {
       LOG(ERROR) << "get db lock fail:" << expdb.status().toString();
       return false;

@@ -2,11 +2,13 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <vector>
 #include <algorithm>
 #include <limits>
-#include "tendisplus/storage/varint.h"
+#include <vector>
+
 #include "gtest/gtest.h"
+
+#include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
 
@@ -113,7 +115,6 @@ TEST(Double, Common) {
     testdouble(v);
   }
 }
-
 
 uint64_t genInt() {
   // static int rank = 0;

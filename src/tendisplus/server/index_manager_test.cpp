@@ -6,15 +6,15 @@
 #include <utility>
 
 #include "gtest/gtest.h"
-#include "glog/logging.h"
-#include "tendisplus/server/server_entry.h"
-#include "tendisplus/server/index_manager.h"
-#include "tendisplus/server/segment_manager.h"
+
 #include "tendisplus/commands/command.h"
 #include "tendisplus/network/network.h"
-#include "tendisplus/utils/test_util.h"
+#include "tendisplus/server/index_manager.h"
+#include "tendisplus/server/segment_manager.h"
+#include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/sync_point.h"
+#include "tendisplus/utils/test_util.h"
 
 namespace tendisplus {
 
@@ -194,7 +194,6 @@ TEST(IndexManager, generateIndex) {
   ASSERT_EQ(server.use_count(), 1);
 }
 
-
 TEST(IndexManager, changePauseTime) {
   const auto guard = MakeGuard([] { destroyEnv(); });
 
@@ -345,7 +344,6 @@ TEST(IndexManager, singleJobRunning) {
   cfg->delJobCntIndexMgr = 8;
   cfg->pauseTimeIndexMgr = 1;
   std::atomic<bool> running{true};
-
 
   auto server = std::make_shared<ServerEntry>(cfg);
 

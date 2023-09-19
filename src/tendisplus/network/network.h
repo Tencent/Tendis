@@ -7,23 +7,23 @@
 
 #include <unistd.h>
 
-#include <utility>
 #include <atomic>
-#include <memory>
-#include <string>
-#include <vector>
 #include <list>
 #include <map>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "asio.hpp"
 #include "gtest/gtest.h"
 
-#include "tendisplus/network/session_ctx.h"
 #include "tendisplus/network/blocking_tcp_client.h"
-#include "tendisplus/server/session.h"
+#include "tendisplus/network/session_ctx.h"
 #include "tendisplus/server/server_params.h"
-#include "tendisplus/utils/status.h"
+#include "tendisplus/server/session.h"
 #include "tendisplus/utils/atomic_utility.h"
+#include "tendisplus/utils/status.h"
 
 namespace tendisplus {
 
@@ -85,7 +85,8 @@ class NetworkAsio {
   Expected<std::shared_ptr<ClusterSession>> client2ClusterSession(
     std::shared_ptr<BlockingTcpClient> c);
 
-  Status prepare(const std::string& ip, const std::string& ip2,
+  Status prepare(const std::string& ip,
+                 const std::string& ip2,
                  const uint16_t port,
                  uint32_t netIoThreadNum);
 
@@ -109,9 +110,9 @@ class NetworkAsio {
                            std::shared_ptr<asio::io_context>& acceptCtx);
   // we envolve a single-thread accept, mutex is not needed.
   Status prepareAccept(const std::string& ip,
-                 const uint16_t port,
-                 std::shared_ptr<asio::io_context>& acceptCtx,
-                 std::shared_ptr<asio::ip::tcp::acceptor>& acceptor);
+                       const uint16_t port,
+                       std::shared_ptr<asio::io_context>& acceptCtx,
+                       std::shared_ptr<asio::ip::tcp::acceptor>& acceptor);
   template <typename T>
   void doAccept(std::shared_ptr<asio::ip::tcp::acceptor>& acceptor);
   std::shared_ptr<asio::io_context> getRwCtx();
@@ -209,8 +210,7 @@ class NetSession : public Session {
   virtual void drainReqCallback(const std::error_code& ec, size_t actualLen);
 
   // send data to tcpbuff
-  virtual void drainRspCallback(const std::error_code& ec,
-                                size_t actualLen);
+  virtual void drainRspCallback(const std::error_code& ec, size_t actualLen);
   virtual void drainRspWithoutLock();
 
   // parse req and process req

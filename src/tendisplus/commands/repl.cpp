@@ -2,24 +2,24 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <string>
-#include <utility>
-#include <memory>
 #include <algorithm>
 #include <cctype>
-#include <vector>
 #include <clocale>
-#include <map>
 #include <list>
-#include "glog/logging.h"
+#include <map>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "tendisplus/commands/command.h"
+#include "tendisplus/storage/rocks/rocks_kvstore.h"
+#include "tendisplus/storage/varint.h"
+#include "tendisplus/utils/base64.h"
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/invariant.h"
-#include "tendisplus/commands/command.h"
-#include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/utils/base64.h"
-#include "tendisplus/storage/varint.h"
-#include "tendisplus/storage/rocks/rocks_kvstore.h"
 
 namespace tendisplus {
 
@@ -992,7 +992,6 @@ class restoreEndCommand : public Command {
     return Command::fmtOK();
   }
 } restoreEndCmd;
-
 
 class BinlogHeartbeatCommand : public Command {
  public:

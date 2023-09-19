@@ -1,16 +1,16 @@
 name: Tendis-build-CI
-# Controls when the action will run. 
-on: 
+# Controls when the action will run.
+on:
   pull_request:
     branches: [dev-2.2, master]
   push:
     branches: [dev-2.2, master]
-jobs:   
+jobs:
   cpplint-check:
     name: Lint
     runs-on: ubuntu-18.04
     steps:
-      - uses: actions/checkout@v2 
+      - uses: actions/checkout@v2
         with:
           fetch-depth: 2
       - name: Prepare Env
@@ -58,7 +58,7 @@ jobs:
       - name: Set Up TCL
         run: sudo apt-get install tcl8.5
       - name: Init Submodules
-        run: | 
+        run: |
           git submodule update --init --recursive
       - name: Build
         run: |
@@ -104,7 +104,7 @@ jobs:
         run: |
           cd src/tendisplus/integrate_test
           chmod +x gotest.sh
-          ./gotest.sh  | tee go-test2.log 
+          ./gotest.sh  | tee go-test2.log
           if [ $? -ne 0 ]; then
             exit 10
           fi

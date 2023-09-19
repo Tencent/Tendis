@@ -5,34 +5,33 @@
 #ifndef SRC_TENDISPLUS_SERVER_SERVER_ENTRY_H_
 #define SRC_TENDISPLUS_SERVER_SERVER_ENTRY_H_
 
-#include <vector>
-#include <utility>
-#include <memory>
-#include <map>
-#include <string>
-#include <list>
 #include <deque>
+#include <list>
+#include <map>
+#include <memory>
 #include <set>
 #include <shared_mutex>
+#include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 
-#include "glog/logging.h"
-#include "tendisplus/network/network.h"
-#include "tendisplus/network/worker_pool.h"
-#include "tendisplus/server/server_params.h"
-#include "tendisplus/server/segment_manager.h"
-#include "tendisplus/storage/pessimistic.h"
-#include "tendisplus/replication/repl_manager.h"
-#include "tendisplus/cluster/migrate_manager.h"
-#include "tendisplus/server/index_manager.h"
-#include "tendisplus/storage/kvstore.h"
-#include "tendisplus/storage/rocks/rocks_kvstore.h"
-#include "tendisplus/storage/catalog.h"
-#include "tendisplus/lock/mgl/mgl_mgr.h"
 #include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/cluster/gc_manager.h"
-#include "tendisplus/utils/cursor_map.h"
+#include "tendisplus/cluster/migrate_manager.h"
+#include "tendisplus/lock/mgl/mgl_mgr.h"
+#include "tendisplus/network/network.h"
+#include "tendisplus/network/worker_pool.h"
+#include "tendisplus/replication/repl_manager.h"
 #include "tendisplus/script/script_manager.h"
+#include "tendisplus/server/index_manager.h"
+#include "tendisplus/server/segment_manager.h"
+#include "tendisplus/server/server_params.h"
+#include "tendisplus/storage/catalog.h"
+#include "tendisplus/storage/kvstore.h"
+#include "tendisplus/storage/pessimistic.h"
+#include "tendisplus/storage/rocks/rocks_kvstore.h"
+#include "tendisplus/utils/cursor_map.h"
 
 #define SLOWLOG_ENTRY_MAX_ARGC 32;
 #define SLOWLOG_ENTRY_MAX_STRING 128;
@@ -50,7 +49,6 @@ class IndexManager;
 class ClusterManager;
 class GCManager;
 class ScriptManager;
-
 
 /* Instantaneous metrics tracking. */
 #define STATS_METRIC_SAMPLES 16   /* Number of samples per metric. */
@@ -94,7 +92,6 @@ class ServerStat {
     uint64_t samples[STATS_METRIC_SAMPLES];
     int idx;
   } instMetric[STATS_METRIC_COUNT];
-
 
  private:
   mutable std::mutex _mutex;

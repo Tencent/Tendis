@@ -2,11 +2,13 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <memory>
-#include <limits>
 #include "tendisplus/lock/lock.h"
-#include "tendisplus/utils/invariant.h"
+
+#include <limits>
+#include <memory>
+
 #include "tendisplus/server/server_entry.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/time_record.h"
 
 namespace tendisplus {
@@ -71,7 +73,6 @@ mgl::LockMode ILock::getParentMode(mgl::LockMode mode) {
   }
   return parentMode;
 }
-
 
 StoresLock::StoresLock(mgl::LockMode mode,
                        Session* sess,

@@ -7,10 +7,10 @@ package main
 import (
 	"flag"
 	"github.com/ngaut/log"
+	"math"
 	"strconv"
 	"tendisplus/integrate_test/util"
 	"time"
-	"math"
 )
 
 func testAutoGenerateHeartbeatTimestamp() {
@@ -77,18 +77,18 @@ func testAutoGenerateHeartbeatTimestamp() {
 			log.Fatalf("adminget auto_generated_heartbeat withttl 1 errmsg:%v ret:%v", err, r)
 		}
 		// get store 0 metric
-		lr, _ := r[0].Array();
-		store0ResultDate, err := lr[1].Str();
+		lr, _ := r[0].Array()
+		store0ResultDate, err := lr[1].Str()
 		if err != nil {
 			log.Fatalf("adminget auto_generated_heartbeat withttl 1 errmsg:%v ret:%v", err, r)
 		}
 		log.Infof("heartbeat date: %v", store0ResultDate)
-		store0ResultTS, err := lr[2].Int64();
+		store0ResultTS, err := lr[2].Int64()
 		if err != nil {
 			log.Fatalf("adminget auto_generated_heartbeat withttl 1 errmsg:%v ret:%v", err, r)
 		}
 		currentTS := time.Now().UnixNano() / int64(time.Millisecond) // get millisecond timestamp
-		if math.Abs(float64(currentTS - store0ResultTS)) > float64(2 * interval * 1000) {
+		if math.Abs(float64(currentTS-store0ResultTS)) > float64(2*interval*1000) {
 			log.Fatalf("heartbeat admincmd hasn't updated for two intervals")
 		}
 		log.Infof("%v %v", currentTS, store0ResultTS)
@@ -102,18 +102,18 @@ func testAutoGenerateHeartbeatTimestamp() {
 			log.Fatalf("adminget auto_generated_heartbeat withttl 1 errmsg:%v ret:%v", err, r)
 		}
 		// get store 0 metric
-		lr, _ := r[0].Array();
-		store0ResultDate, err := lr[1].Str();
+		lr, _ := r[0].Array()
+		store0ResultDate, err := lr[1].Str()
 		if err != nil {
 			log.Fatalf("adminget auto_generated_heartbeat withttl 1 errmsg:%v ret:%v", err, r)
 		}
 		log.Infof("heartbeat date: %v", store0ResultDate)
-		store0ResultTS, err := lr[2].Int64();
+		store0ResultTS, err := lr[2].Int64()
 		if err != nil {
 			log.Fatalf("adminget auto_generated_heartbeat withttl 1 errmsg:%v ret:%v", err, r)
 		}
 		currentTS := time.Now().UnixNano() / int64(time.Millisecond) // get millisecond timestamp
-		if math.Abs(float64(currentTS - store0ResultTS)) > float64(2 * interval * 1000) {
+		if math.Abs(float64(currentTS-store0ResultTS)) > float64(2*interval*1000) {
 			log.Fatalf("heartbeat admincmd hasn't updated for two intervals")
 		}
 		log.Infof("%v %v", currentTS, store0ResultTS)
@@ -127,18 +127,18 @@ func testAutoGenerateHeartbeatTimestamp() {
 			log.Fatalf("adminget auto_generated_heartbeat withttl 1 errmsg:%v ret:%v", err, r)
 		}
 		// get store 0 metric
-		lr, _ := r[0].Array();
-		store0ResultDate, err := lr[1].Str();
+		lr, _ := r[0].Array()
+		store0ResultDate, err := lr[1].Str()
 		if err != nil {
 			log.Fatalf("adminget auto_generated_heartbeat withttl 1 errmsg:%v ret:%v", err, r)
 		}
 		log.Infof("heartbeat date: %v", store0ResultDate)
-		store0ResultTS, err := lr[2].Int64();
+		store0ResultTS, err := lr[2].Int64()
 		if err != nil {
 			log.Fatalf("adminget auto_generated_heartbeat withttl 1 errmsg:%v ret:%v", err, r)
 		}
 		currentTS := time.Now().UnixNano() / int64(time.Millisecond) // get millisecond timestamp
-		if math.Abs(float64(currentTS - store0ResultTS)) > float64(2 * interval * 1000) {
+		if math.Abs(float64(currentTS-store0ResultTS)) > float64(2*interval*1000) {
 			log.Fatalf("heartbeat admincmd hasn't updated for two intervals")
 		}
 		log.Infof("%v %v", currentTS, store0ResultTS)

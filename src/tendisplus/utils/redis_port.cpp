@@ -2,22 +2,25 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <limits.h>
-#include <string.h>
-#include <math.h>
-#include <stdarg.h>
-#include <sstream>
-#include <utility>
+#include "tendisplus/utils/redis_port.h"
+
 #ifndef _WIN32
-#include "sys/time.h"
+#include <sys/time.h>
+#include <unistd.h>
 #endif
 
-#include "glog/logging.h"
+#include <climits>
+#include <cmath>
+#include <cstdarg>
+#include <cstring>
+#include <sstream>
+#include <utility>
+
 #include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/time.h"
 
 namespace tendisplus {
+
 namespace redis_port {
 
 int stringmatchlen(const char* pattern,
@@ -304,7 +307,6 @@ int64_t bitPos(const std::string& fragment,
   if (pos != -1) {
     pos = start * 8 + pos;
   }
-
 
   return pos;
 }
@@ -1759,8 +1761,10 @@ void getRandomHexChars(char* p, size_t len) {
  *
  * The function returns the sds string pointer, that is always the same
  * as the input pointer since no resize is needed. */
-void strmapchars(std::string& s, const char *from,      // NOLINT
-                 const char *to, size_t setlen) {
+void strmapchars(std::string& s,
+                 const char* from,  // NOLINT
+                 const char* to,
+                 size_t setlen) {
   size_t j, i, l = s.length();
 
   for (j = 0; j < l; j++) {

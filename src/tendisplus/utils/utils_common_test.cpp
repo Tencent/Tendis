@@ -3,26 +3,28 @@
 // project for additional information.
 
 #include <unistd.h>
-#include <iostream>
-#include <string>
-#include <fstream>
-#include <utility>
-#include <memory>
-#include <vector>
-#include <limits>
+
 #include <algorithm>
 #include <bitset>
+#include <fstream>
+#include <iostream>
+#include <limits>
+#include <memory>
 #include <random>
-#include "tendisplus/utils/file.h"
-#include "tendisplus/utils/string.h"
-#include "tendisplus/utils/time.h"
-#include "tendisplus/utils/param_manager.h"
-#include "tendisplus/utils/test_util.h"
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "gtest/gtest.h"
+
 #include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/utils/base64.h"
 #include "tendisplus/utils/cursor_map.h"
-#include "gtest/gtest.h"
-#include "glog/logging.h"
+#include "tendisplus/utils/file.h"
+#include "tendisplus/utils/param_manager.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/test_util.h"
+#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
 
@@ -149,9 +151,9 @@ TEST(Base64, common) {
   EXPECT_EQ(data, decode);
 
   data =
-    "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM22222222222222222222222" \
-    "222222222 ------------------------------********************************"\
-    "********************** ########################################zzzzzzzzz"\
+    "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM22222222222222222222222"
+    "222222222 ------------------------------********************************"
+    "********************** ########################################zzzzzzzzz"
     "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
   encode = Base64::Encode((unsigned char*)data.c_str(), data.size());
   decode = Base64::Decode(encode.c_str(), encode.size());
@@ -218,7 +220,7 @@ TEST(ParamManager, common) {
 
 TEST(CursorMap, addmapping) {
   CursorMap map(5, 2);
-  auto &map_ = map.getMap();
+  auto& map_ = map.getMap();
 
   // CASE: mapping is not full, but one of alive sessions its mapping is full,
   //  evict session itself LRU mapping
@@ -282,7 +284,7 @@ TEST(CursorMap, getMapping) {
   map.addMapping("1", 1, "1", 0);
   map.addMapping("2", 2, "2", 0);
   map.addMapping("3", 3, "3", 0);
-  map.addMapping("4" , 4, "4", 0);
+  map.addMapping("4", 4, "4", 0);
   map.addMapping("5", 5, "5", 0);
   EXPECT_EQ(map.getMapping("1").value().kvstoreId, 1);
   EXPECT_FALSE(map.getMapping("10").ok());
@@ -304,7 +306,7 @@ TEST(CursorMap, evictMapping) {
   EXPECT_FALSE(map.getMapping("10").ok());
 
   std::this_thread::sleep_for(1s);
-  auto m1 = map.getMapping("1");    // expired
+  auto m1 = map.getMapping("1");  // expired
   EXPECT_FALSE(m1.ok());
   EXPECT_TRUE(m1.status().toString().find("Mapping expired"));
   EXPECT_EQ(map.getMap().size(), 0);  // all mapping should be expired
@@ -318,8 +320,8 @@ TEST(CursorMap, evictMapping) {
   map.addMapping("4", 4, "4", 0);
   map.addMapping("5", 5, "5", 0);
 
-  EXPECT_TRUE(map.getMapping("4").ok());    // not expired
-  EXPECT_EQ(map.getMap().size(), 5);  // no mapping should be expired
+  EXPECT_TRUE(map.getMapping("4").ok());  // not expired
+  EXPECT_EQ(map.getMap().size(), 5);      // no mapping should be expired
 
   auto mm1 = map.getMapping("1");  // expired
   EXPECT_FALSE(mm1.ok());
@@ -335,18 +337,18 @@ TEST(CursorMap, evictMapping) {
  */
 void testSimulateScanCmd(uint64_t totalScanSession,
                          uint64_t totalScanTimes,
-                         CursorMap *map) {
+                         CursorMap* map) {
   using namespace std::chrono_literals;  // NOLINT
 
   auto simulateScanCmd = [&](size_t step, size_t id) {
-    thread_local static uint64_t cursor = 0;    // static data
+    thread_local static uint64_t cursor = 0;  // static data
     if (cursor) {
       auto expMapping = map->getMapping(std::to_string(cursor));
-    //TODO(pecochen): check expMapping.ok()    // NOLINT
-    //  ASSERT_TRUE(expMapping.ok());
-    //  ASSERT_EQ(expMapping.value().lastScanKey, std::to_string(cursor));
+      // TODO(pecochen): check expMapping.ok()    // NOLINT
+      //   ASSERT_TRUE(expMapping.ok());
+      //   ASSERT_EQ(expMapping.value().lastScanKey, std::to_string(cursor));
     }
-    cursor += step;                // simulate cursor by add step
+    cursor += step;  // simulate cursor by add step
     map->addMapping(std::to_string(cursor), 1, std::to_string(cursor), id);
   };
 
@@ -358,8 +360,9 @@ void testSimulateScanCmd(uint64_t totalScanSession,
     threads.emplace_back([=]() {
       std::this_thread::sleep_until(awakeTime);
       for (size_t times = 0; times < totalScanTimes; ++times) {
-        if ((totalScanSession < map->maxCursorCount() / map->maxSessionLimit())
-            && (times == 10)) {
+        if ((totalScanSession <
+             map->maxCursorCount() / map->maxSessionLimit()) &&
+            (times == 10)) {
           std::this_thread::sleep_for(10s);
         }
         auto step = session;
@@ -368,7 +371,7 @@ void testSimulateScanCmd(uint64_t totalScanSession,
     });
   }
 
-  for (auto &t : threads) {
+  for (auto& t : threads) {
     t.join();
   }
 }
@@ -380,13 +383,13 @@ TEST(CursorMap, simulateScanSessions) {
   //                 each set in _sessionTs, set.size() < 100
   {
     CursorMap map(10000, 100);
-    const auto &map_ = map.getMap();
-    const auto &sessionTs_ = map.getSessionTs();
+    const auto& map_ = map.getMap();
+    const auto& sessionTs_ = map.getSessionTs();
 
     testSimulateScanCmd(50, 50, &map);
 
     EXPECT_LE(map_.size(), 5000);
-    for (const auto &v : sessionTs_) {
+    for (const auto& v : sessionTs_) {
       EXPECT_LT(v.second.size(), 100);
     }
   }
@@ -397,13 +400,13 @@ TEST(CursorMap, simulateScanSessions) {
   //                 each set in _sessionTs, set.size() <= 100
   {
     CursorMap map(10000, 100);
-    const auto &map_ = map.getMap();
-    const auto &sessionTs_ = map.getSessionTs();
+    const auto& map_ = map.getMap();
+    const auto& sessionTs_ = map.getSessionTs();
 
     testSimulateScanCmd(50, 10000, &map);
 
     EXPECT_LE(map_.size(), 5000);
-    for (const auto &v : sessionTs_) {
+    for (const auto& v : sessionTs_) {
       EXPECT_LE(v.second.size(), 100);
     }
   }
@@ -415,13 +418,13 @@ TEST(CursorMap, simulateScanSessions) {
   //              it means, _cursorMap contains session > default 100 actually
   {
     CursorMap map(10000, 100);
-    const auto &map_ = map.getMap();
-    const auto &sessionTs_ = map.getSessionTs();
+    const auto& map_ = map.getMap();
+    const auto& sessionTs_ = map.getSessionTs();
 
     testSimulateScanCmd(1000, 50, &map);
 
     EXPECT_LE(map_.size(), 10000);
-    for (const auto &v : sessionTs_) {
+    for (const auto& v : sessionTs_) {
       EXPECT_LT(v.second.size(), 100);
     }
   }
@@ -432,13 +435,13 @@ TEST(CursorMap, simulateScanSessions) {
   //                each set in _sessionTs, set.size() == 100
   {
     CursorMap map(10000, 100);
-    const auto &map_ = map.getMap();
-    const auto &sessionTs_ = map.getSessionTs();
+    const auto& map_ = map.getMap();
+    const auto& sessionTs_ = map.getSessionTs();
 
     testSimulateScanCmd(1000, 10000, &map);
 
     EXPECT_LE(map_.size(), 10000);
-    for (const auto &v : sessionTs_) {
+    for (const auto& v : sessionTs_) {
       // may cause 900 pair {id, set (=> .size() -> 0)},
       // should clean up useless pair
       EXPECT_LE(v.second.size(), 100);
@@ -523,20 +526,17 @@ TEST(file, PosixWritableFile) {
   EXPECT_NE(alignedBuf, nullptr);
 
   memset(alignedBuf->buf, 'a', alignedBuf->bufSize);
-  rocksdb::Slice slice1(alignedBuf->buf,
-          alignedBuf->logicalBlockSize);
+  rocksdb::Slice slice1(alignedBuf->buf, alignedBuf->logicalBlockSize);
   rocksdb::Status rs = diFile->Append(slice1);
   EXPECT_TRUE(rs.ok());
-  rocksdb::Slice slice2(alignedBuf->buf,
-          alignedBuf->logicalBlockSize + 1);
+  rocksdb::Slice slice2(alignedBuf->buf, alignedBuf->logicalBlockSize + 1);
   rs = diFile->Append(slice2);
   EXPECT_TRUE(!rs.ok());
   EXPECT_EQ(diFile->GetFileSize(), alignedBuf->logicalBlockSize);
   diFile->Close();
 
   diFile = openWritableFile(fileName, false, true);
-  rocksdb::Slice slice3(alignedBuf->buf,
-          alignedBuf->logicalBlockSize - 1);
+  rocksdb::Slice slice3(alignedBuf->buf, alignedBuf->logicalBlockSize - 1);
   rs = diFile->Append(slice3);
   EXPECT_TRUE(rs.ok());
   rs = diFile->Close();
@@ -544,7 +544,7 @@ TEST(file, PosixWritableFile) {
 
   uint64_t fileSize = 0;
   rocksdb::Env::Default()->GetFileSize(fileName, &fileSize);
-  EXPECT_EQ(fileSize, (2*alignedBuf->logicalBlockSize - 1));
+  EXPECT_EQ(fileSize, (2 * alignedBuf->logicalBlockSize - 1));
 }
 
 TEST(string, trimString) {
@@ -581,16 +581,15 @@ TEST(string, trimString) {
 
   EXPECT_EQ(trim_left("asdaweqwqewqeqw"), std::string("asdaweqwqewqeqw"));
   EXPECT_EQ(trim_left("   asdaweqwqewqeqw   "),
-    std::string("asdaweqwqewqeqw   "));
+            std::string("asdaweqwqewqeqw   "));
   EXPECT_EQ(trim_left("\r\tasdaweqwqewqeqw\f\n   "),
-    std::string("asdaweqwqewqeqw\f\n   "));
+            std::string("asdaweqwqewqeqw\f\n   "));
 
-  EXPECT_EQ(trim_right("asdaweqwqewqeqw"),
-    std::string("asdaweqwqewqeqw"));
+  EXPECT_EQ(trim_right("asdaweqwqewqeqw"), std::string("asdaweqwqewqeqw"));
   EXPECT_EQ(trim_right("   asdaweqwqewqeqw   "),
-    std::string("   asdaweqwqewqeqw"));
+            std::string("   asdaweqwqewqeqw"));
   EXPECT_EQ(trim_right("\r\tasdaweqwqewqeqw\f\n   "),
-    std::string("\r\tasdaweqwqewqeqw"));
+            std::string("\r\tasdaweqwqewqeqw"));
 }
 
 }  // namespace tendisplus

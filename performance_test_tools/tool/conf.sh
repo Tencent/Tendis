@@ -19,5 +19,3 @@ then
     stat_pw="-password $password"
     bench_pw="-a $password"
 fi
-
-

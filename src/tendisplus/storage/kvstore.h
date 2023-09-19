@@ -5,24 +5,25 @@
 #ifndef SRC_TENDISPLUS_STORAGE_KVSTORE_H_
 #define SRC_TENDISPLUS_STORAGE_KVSTORE_H_
 
-#include <limits>
-#include <string>
-#include <utility>
-#include <memory>
+#include <atomic>
 #include <iostream>
+#include <limits>
 #include <list>
 #include <map>
+#include <memory>
+#include <string>
+#include <utility>
 #include <vector>
-#include <atomic>
 
 #include "rapidjson/document.h"
-#include "rapidjson/writer.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
+#include "rapidjson/writer.h"
 #include "rocksdb/db.h"
-#include "tendisplus/utils/status.h"
-#include "tendisplus/storage/record.h"
+
 #include "tendisplus/server/session.h"
+#include "tendisplus/storage/record.h"
+#include "tendisplus/utils/status.h"
 
 #define CATALOG_NAME "catalog"
 
@@ -51,8 +52,11 @@ enum class BinlogVersion : uint8_t {
 
 using PStore = std::shared_ptr<KVStore>;
 
-enum class ColumnFamilyNumber { ColumnFamily_Default = 0, ColumnFamily_Binlog,
-                                ColumnFamily_All};
+enum class ColumnFamilyNumber {
+  ColumnFamily_Default = 0,
+  ColumnFamily_Binlog,
+  ColumnFamily_All
+};
 
 class Cursor {
  public:
@@ -193,7 +197,7 @@ class RepllogCursorV2 {
   static Expected<uint64_t> getMinBinlogId(Transaction* txn);
   static Expected<uint64_t> getMaxBinlogId(Transaction* txn);
   static Expected<struct MinbinlogInfo> getMinBinlogMeta(Transaction* txn,
-          bool checkTs);
+                                                         bool checkTs);
   static Expected<struct MinbinlogInfo> getMinBinlogByCursor(Transaction* txn);
   static Expected<struct MinbinlogInfo> getMinBinlog(Transaction* txn);
   static Expected<ReplLogRawV2> getMaxBinlog(Transaction* txn);
@@ -252,7 +256,7 @@ class Transaction {
                        const uint64_t ts = 0) = 0;
   virtual Status delKV(const std::string& key, const uint64_t ts = 0) = 0;
   virtual Status setKVWithoutBinlog(const std::string& key,
-                       const std::string& val) = 0;
+                                    const std::string& val) = 0;
   virtual Status addDeleteRangeBinlog(const std::string& begin,
                                       const std::string& end) = 0;
   virtual Status addDeleteFilesInRangeBinlog(const std::string& begin,
@@ -262,8 +266,8 @@ class Transaction {
   virtual uint64_t getTxnId() const = 0;
 
  protected:
-  virtual std::unique_ptr<Cursor> createCursor(ColumnFamilyNumber cf,
-          const std::string* iterate_upper_bound = NULL) = 0;
+  virtual std::unique_ptr<Cursor> createCursor(
+    ColumnFamilyNumber cf, const std::string* iterate_upper_bound = NULL) = 0;
 
  public:
   static constexpr uint64_t MAX_VALID_TXNID =
@@ -273,7 +277,6 @@ class Transaction {
 
   static_assert(TXNID_UNINITED + 1 == MIN_VALID_TXNID,
                 "invalid TXNID_UNINITED");
-
 
   static constexpr uint32_t CHUNKID_UNINITED = 0xFFFFFFFF;
   static constexpr uint32_t CHUNKID_MULTI = 0xFFFFFFFE;
@@ -358,7 +361,6 @@ class KVStore {
 
   enum class BackupMode { BACKUP_COPY, BACKUP_CKPT, BACKUP_CKPT_INTER };
 
-
   explicit KVStore(const std::string& id, const std::string& path);
   virtual ~KVStore() = default;
   const std::string& dbPath() const {
@@ -380,10 +382,10 @@ class KVStore {
   virtual Status delKV(const RecordKey&, Transaction*) = 0;
 
   // [begin, end)
-  virtual Status deleteRange(
-    const std::string& begin, const std::string& end,
-    bool deleteFilesInRangeBeforeDeleteRange = false,
-    bool compactRangeAfterDeleteRange = false) = 0;
+  virtual Status deleteRange(const std::string& begin,
+                             const std::string& end,
+                             bool deleteFilesInRangeBeforeDeleteRange = false,
+                             bool compactRangeAfterDeleteRange = false) = 0;
   virtual Status deleteRangeBinlog(uint64_t begin, uint64_t end) = 0;
   virtual Status deleteRangeWithoutBinlog(
     rocksdb::ColumnFamilyHandle* column_family,
@@ -395,7 +397,8 @@ class KVStore {
   virtual Status deleteFilesInRange(const std::string& begin,
                                     const std::string& end,
                                     bool include_end = false) = 0;
-  virtual Status deleteFilesInRangeBinlog(uint64_t begin, uint64_t end,
+  virtual Status deleteFilesInRangeBinlog(uint64_t begin,
+                                          uint64_t end,
                                           bool include_end = false) = 0;
   virtual Status deleteFilesInRangeWithoutBinlog(ColumnFamilyNumber cf,
                                                  const std::string& begin,
@@ -446,9 +449,13 @@ class KVStore {
   virtual Status pause() = 0;
   virtual Status resume() = 0;
   virtual Status destroy() = 0;
-  virtual bool getIntProperty(const std::string& property, uint64_t* value,
+  virtual bool getIntProperty(
+    const std::string& property,
+    uint64_t* value,
     ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_Default) const = 0;
-  virtual bool getProperty(const std::string& property, std::string* value,
+  virtual bool getProperty(
+    const std::string& property,
+    std::string* value,
     ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_Default) const = 0;
   virtual std::string getAllProperty() const = 0;
   virtual std::string getStatistics() const = 0;
@@ -460,8 +467,8 @@ class KVStore {
 
   virtual Expected<VersionMeta> getVersionMeta() = 0;
   virtual Expected<VersionMeta> getVersionMeta(const std::string& name) = 0;
-  virtual Expected<std::vector<VersionMeta>>
-          getAllVersionMeta(Transaction *txn) = 0;
+  virtual Expected<std::vector<VersionMeta>> getAllVersionMeta(
+    Transaction* txn) = 0;
   virtual Status setVersionMeta(const std::string& name,
                                 uint64_t ts,
                                 uint64_t version) = 0;
@@ -494,7 +501,7 @@ class KVStore {
   void setBinlogTime(uint64_t timestamp);
   uint64_t getCurrentTime();
   virtual Status setOptionDynamic(const std::string& option,
-                           const std::string& value) = 0;
+                                  const std::string& value) = 0;
   virtual Status setCompactOnDeletionCollectorFactory(
     const std::string& option, const std::string& value) = 0;
   virtual int64_t getOption(const std::string& option) = 0;

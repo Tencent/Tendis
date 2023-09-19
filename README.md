@@ -1,4 +1,4 @@
-<img src="pic/tendis.svg" width = "300" alt="tendis"/> 
+<img src="pic/tendis.svg" width = "300" alt="tendis"/>
 
 [![](https://img.shields.io/badge/license-GPLv3-green)](https://github.com/Tencent/Tendis/blob/master/LICENSE.txt) ![](https://img.shields.io/badge/Platform-Linux_x64-orange) [![](https://img.shields.io/badge/PRs-Welcome-orange)](https://github.com/Tencent/Tendis/pulls)
 
@@ -30,7 +30,7 @@ Similar to Redis clusters, Tendis uses a decentralized distributed solution. The
 - Redis compatibility
 
   Redis protocol and commands supported in Tendis are compatible with Redis.
-  
+
 - Persistent storage
 
   Using RocksDB as storage engine. All data is stored in RocksDB in a specific format, supporting PB-level storage capacity.

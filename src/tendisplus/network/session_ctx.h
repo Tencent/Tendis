@@ -5,15 +5,15 @@
 #ifndef SRC_TENDISPLUS_NETWORK_SESSION_CTX_H_
 #define SRC_TENDISPLUS_NETWORK_SESSION_CTX_H_
 
-#include <stdint.h>
-#include <utility>
-#include <string>
 #include <algorithm>
+#include <cstdint>
 #include <list>
-#include <vector>
+#include <memory>
+#include <string>
 #include <tuple>
 #include <unordered_map>
-#include <memory>
+#include <utility>
+#include <vector>
 
 #include "rocksdb/iostats_context.h"
 #include "rocksdb/perf_context.h"
@@ -21,8 +21,8 @@
 #include "tendisplus/lock/lock.h"
 #include "tendisplus/lock/mgl/lock_defines.h"
 #include "tendisplus/network/latency_record.h"
-#include "tendisplus/storage/kvstore.h"
 #include "tendisplus/server/session.h"
+#include "tendisplus/storage/kvstore.h"
 #include "tendisplus/utils/string.h"
 
 namespace tendisplus {

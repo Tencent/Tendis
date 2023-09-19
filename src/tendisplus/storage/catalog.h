@@ -9,8 +9,8 @@
 #include <string>
 #include <vector>
 
-#include "tendisplus/replication/repl_manager.h"
 #include "tendisplus/cluster/migrate_manager.h"
+#include "tendisplus/replication/repl_manager.h"
 
 namespace tendisplus {
 
@@ -105,10 +105,10 @@ class MainMeta {
 };
 
 // cluster meta
-/* Regular config lines have at least eight fields */
+// Regular config lines have at least eight fields
 // master node: 66478bda726ae6ba4e8fb55034d8e5e5804223ff 127.0.0.1 6381 master -
-// 0 1496130037660 2 connected 10923-16383 0-5999 slave node
-// ：6fb7dfdb6188a9fe53c48ea32d541724f36434e9 127.0.0.1 6383 slave
+// 0 1496130037660 2 connected 10923-16383 0-5999
+// slave node: 6fb7dfdb6188a9fe53c48ea32d541724f36434e9 127.0.0.1 6383 slave
 // 8f285670923d4f1c599ecc93367c95a30fb8bf34 0 1496130040668 4 connected
 class ClusterMeta {
  public:
@@ -127,10 +127,9 @@ class ClusterMeta {
 
   ClusterMeta(const ClusterMeta&) = default;
   ClusterMeta(ClusterMeta&&) = delete;
-  // [name]  [ip] [port]   [flag(master、myself、salve)]    [(-or master id)]
-  // [ping send UNIX time]    [pong receive unix time]   [-config epoch]
-  // [connectState]    [slot]
-
+  // [name] [ip] [port] [flag(myself,master/myself,slave)] [(-or master id)]
+  // [ping send UNIX time] [pong receive unix time] [-config epoch]
+  // [connectState] [slot]
 
   std::unique_ptr<ClusterMeta> copy() const;
 

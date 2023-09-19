@@ -4,8 +4,10 @@
 
 #include <iostream>
 #include <string>
-#include "tendisplus/utils/status.h"
+
 #include "gtest/gtest.h"
+
+#include "tendisplus/utils/status.h"
 
 namespace tendisplus {
 
@@ -17,7 +19,6 @@ TEST(Status, Common) {
   EXPECT_EQ(s1.ok(), true);
   EXPECT_EQ(s1.value(), "test");
 }
-
 
 int32_t callCnt;
 int32_t moveCallCnt;
