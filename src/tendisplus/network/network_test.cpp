@@ -2,18 +2,19 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <stdio.h>
+#include <algorithm>
+#include <cstdio>
 #include <iostream>
 #include <string>
-#include <algorithm>
+
 #include "gtest/gtest.h"
-#include "glog/logging.h"
-#include "tendisplus/network/network.h"
+
 #include "tendisplus/network/blocking_tcp_client.h"
-#include "tendisplus/utils/test_util.h"
-#include "tendisplus/utils/time.h"
+#include "tendisplus/network/network.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/sync_point.h"
+#include "tendisplus/utils/test_util.h"
+#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
 
@@ -130,7 +131,6 @@ TEST(NetSession, Completed) {
   EXPECT_EQ(sess->_args[0], "FULLSYNC");
   EXPECT_EQ(sess->_args[1], "1");
 }
-
 
 class session : public std::enable_shared_from_this<session> {
  public:
@@ -323,7 +323,6 @@ class session2 : public std::enable_shared_from_this<session2> {
   char _data[max_length];
 };
 
-
 class server2 {
  public:
   server2(asio::io_context& io_context, uint16_t port) {
@@ -437,8 +436,8 @@ TEST(NetSession, SocketShutdownRead) {
   });
 
   asio::ip::tcp::socket conn(*ioCtx);
-  asio::ip::tcp::endpoint end_point(
-    asio::ip::address::from_string("127.0.0.1"), port);
+  asio::ip::tcp::endpoint end_point(asio::ip::address::from_string("127.0.0.1"),
+                                    port);
   conn.connect(end_point);
   std::this_thread::sleep_for(2s);
 
@@ -455,17 +454,16 @@ TEST(NetSession, SocketShutdownRead) {
   // and release session shared_ptr. so session only
   // have a ref count.
   EXPECT_EQ(sess.use_count(), 1);
-  asio::async_write(
-    *sess->getSock(),
-    asio::buffer("hello world", 11),
-    [sess](const std::error_code& ec, size_t actualLen) {
-      LOG(INFO) << "write success";
-      // shutdown close read channel. but can't close write channel.
-      // so we can successfully send data.
-      EXPECT_TRUE(!ec);
-      EXPECT_EQ(actualLen, 11);
-      EXPECT_EQ(sess.use_count(), 2);
-    });
+  asio::async_write(*sess->getSock(),
+                    asio::buffer("hello world", 11),
+                    [sess](const std::error_code& ec, size_t actualLen) {
+                      LOG(INFO) << "write success";
+                      // shutdown close read channel. but can't close write
+                      // channel. so we can successfully send data.
+                      EXPECT_TRUE(!ec);
+                      EXPECT_EQ(actualLen, 11);
+                      EXPECT_EQ(sess.use_count(), 2);
+                    });
   std::this_thread::sleep_for(2s);
   // after 2 seconds, async_write callback and release session,
   // session only have a ref count.

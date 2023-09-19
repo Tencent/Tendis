@@ -1,17 +1,20 @@
 // Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
+
 #include "tendisplus/server/session.h"
+
 #include <algorithm>
-#include <thread>  // NOLINT
-#include "tendisplus/utils/invariant.h"
+#include <thread>
+
+#include "tendisplus/commands/command.h"
 #include "tendisplus/network/session_ctx.h"
 #include "tendisplus/server/server_entry.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/string.h"
-#include "tendisplus/commands/command.h"
-#include "gtest/gtest.h"
 
 namespace tendisplus {
+
 std::atomic<uint64_t> Session::_idGen(0);
 std::atomic<uint64_t> Session::_aliveCnt(0);
 

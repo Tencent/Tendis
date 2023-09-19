@@ -2,29 +2,29 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <string>
-#include <utility>
-#include <memory>
 #include <algorithm>
 #include <cctype>
 #include <clocale>
-#include <vector>
-#include <queue>
 #include <cmath>
-#include "glog/logging.h"
-#include "tendisplus/utils/redis_port.h"
+#include <memory>
+#include <queue>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "tendisplus/commands/command.h"
-#include "tendisplus/utils/invariant.h"
-#include "tendisplus/storage/varint.h"
 #include "tendisplus/commands/dump.h"
+#include "tendisplus/storage/varint.h"
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/redis_port.h"
 
 namespace tendisplus {
 
 #define MAKE_CONTEXT(key)                                               \
   auto pctx = sess->getCtx();                                           \
   INVARIANT(pctx != nullptr);                                           \
-  auto edb = sess->getServerEntry()->getSegmentMgr()->getDbWithKeyLock( \
-    sess, (key), mgl::LockMode::LOCK_X);                                \
+  auto edb = sess->getServerEntry() -> getSegmentMgr()                  \
+               -> getDbWithKeyLock(sess, (key), mgl::LockMode::LOCK_X); \
   RET_IF_ERR_EXPECTED(edb);                                             \
   auto kvstore = edb.value().store;                                     \
   auto eptxn = pctx->createTransaction(kvstore);                        \
@@ -65,7 +65,6 @@ namespace tendisplus {
     end = end >= len ? len - 1 : end;                     \
   }
 
-
 /**
  * Big-endian encoding, the coding order is consistent with the numerical order
  */
@@ -93,7 +92,7 @@ Expected<int64_t> getBitOrOffset(const std::string& input, bool isBit) {
   std::string error = isBit ? bitError : offsetError;
 
   if (input.find("-") != std::string::npos) {
-      return {ErrorCodes::ERR_PARSEOPT, error};
+    return {ErrorCodes::ERR_PARSEOPT, error};
   }
 
   int64_t val = -1;
@@ -197,8 +196,7 @@ Expected<std::string> getBitmap(Session* sess,
   auto pctx = sess->getCtx();
   INVARIANT(pctx != nullptr);
   // caller has locked all keys
-  auto edb =
-    sess->getServerEntry()->getSegmentMgr()->getDbHasLocked(sess, key);
+  auto edb = sess->getServerEntry()->getSegmentMgr()->getDbHasLocked(sess, key);
   RET_IF_ERR_EXPECTED(edb);
   auto kvstore = edb.value().store;
   auto eptxn = pctx->createTransaction(kvstore);
@@ -646,8 +644,8 @@ class TBitPosCommand : public Command {
     auto ebit = getBitOrOffset(args[2], true);
     // same as redis
     if (!ebit.ok()) {
-        ebit = {ErrorCodes::ERR_PARSEOPT,
-          "-ERR The bit argument must be 1 or 0.\r\n"};
+      ebit = {ErrorCodes::ERR_PARSEOPT,
+              "-ERR The bit argument must be 1 or 0.\r\n"};
     }
     RET_IF_ERR_EXPECTED(ebit);
     auto bit = ebit.value();

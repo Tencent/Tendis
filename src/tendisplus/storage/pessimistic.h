@@ -5,11 +5,11 @@
 #ifndef SRC_TENDISPLUS_STORAGE_PESSIMISTIC_H_
 #define SRC_TENDISPLUS_STORAGE_PESSIMISTIC_H_
 
+#include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_set>
-#include <memory>
 #include <vector>
-#include <mutex>  // NOLINT
 
 namespace tendisplus {
 

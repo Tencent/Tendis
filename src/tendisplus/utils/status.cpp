@@ -2,13 +2,15 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <utility>
-#include <sstream>
-
 #include "tendisplus/utils/status.h"
+
+#include <sstream>
+#include <utility>
+
 #include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
+
 Status::Status() : Status(ErrorCodes::ERR_OK, "") {}
 
 Status::Status(const ErrorCodes& code, const std::string& reason)

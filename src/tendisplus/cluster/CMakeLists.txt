@@ -1,7 +1,6 @@
 add_library(migrate STATIC migrate_manager.cpp migrate_sender.cpp migrate_receiver.cpp migrate_batch.cpp)
 target_link_libraries(migrate status glog network catalog kvstore ${SYS_LIBS})
 
-
 add_library(gc_mgr STATIC gc_manager.cpp)
 target_link_libraries(gc_mgr status glog kvstore ${SYS_LIBS})
 
@@ -27,5 +26,3 @@ else()
 	target_link_libraries(cluster_test commands cluster_mgr status utils_common test_util server network gtest_main ${SYS_LIBS})
 	set_target_properties(cluster_test PROPERTIES LINK_FLAGS "/WHOLEARCHIVE:commands")
 endif()
-
-

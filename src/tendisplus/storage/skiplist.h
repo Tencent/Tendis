@@ -5,16 +5,17 @@
 #ifndef SRC_TENDISPLUS_STORAGE_SKIPLIST_H_
 #define SRC_TENDISPLUS_STORAGE_SKIPLIST_H_
 
-#include <map>
+#include <atomic>
 #include <limits>
+#include <list>
+#include <map>
 #include <memory>
 #include <string>
-#include <list>
-#include <vector>
-#include <atomic>
 #include <utility>
-#include "tendisplus/storage/record.h"
+#include <vector>
+
 #include "tendisplus/storage/kvstore.h"
+#include "tendisplus/storage/record.h"
 #include "tendisplus/utils/redis_port.h"
 
 namespace tendisplus {
@@ -73,7 +74,6 @@ class SkipList {
   // 1-based index
   Expected<std::list<std::pair<double, std::string>>> removeRangeByRank(
     uint32_t start, uint32_t end, Transaction* txn);
-
 
   Status save(Transaction* txn,
               const Expected<RecordValue>& oldValue,

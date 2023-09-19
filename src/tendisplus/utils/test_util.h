@@ -2,23 +2,23 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-// Copyright [2019] <eliotwang@tencent.com>
 #ifndef SRC_TENDISPLUS_UTILS_TEST_UTIL_H_
 #define SRC_TENDISPLUS_UTILS_TEST_UTIL_H_
 
 #include <map>
 #include <memory>
-#include <vector>
 #include <set>
 #include <string>
-#include <thread>  // NOLINT
+#include <thread>
 #include <utility>
+#include <vector>
 
 #include "asio.hpp"
-#include "tendisplus/server/server_entry.h"
-#include "tendisplus/server/server_params.h"
+
 #include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/network/network.h"
+#include "tendisplus/server/server_entry.h"
+#include "tendisplus/server/server_params.h"
 
 // disable one test if needed
 #define TEST_NO(a, b) void Test_no_##a##_##b()

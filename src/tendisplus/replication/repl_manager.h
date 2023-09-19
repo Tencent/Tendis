@@ -17,7 +17,9 @@
 #include "rapidjson/document.h"
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/writer.h"
+
 #include "tendisplus/network/blocking_tcp_client.h"
+#include "tendisplus/network/worker_pool.h"
 #include "tendisplus/replication/repl_util.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/storage/catalog.h"
@@ -60,7 +62,6 @@ struct MPovStatus {
   uint16_t slave_listen_port = 0;
   MPovClientType clientType = MPovClientType::repllogClient;
 };
-
 
 enum class FullPushState {
   PUSHING = 0,
@@ -155,12 +156,12 @@ class ReplManager {
                           uint32_t port,
                           uint32_t sourceStoreId);
   Status changeReplSourceInDBLock(uint32_t storeId,
-                                std::string ip,
-                                uint32_t port,
-                                uint32_t sourceStoreId,
-                                bool checkEmpty = true,
-                                bool needLock = true,
-                                bool incrSync = false);
+                                  std::string ip,
+                                  uint32_t port,
+                                  uint32_t sourceStoreId,
+                                  bool checkEmpty = true,
+                                  bool needLock = true,
+                                  bool incrSync = false);
   bool supplyFullSync(asio::ip::tcp::socket sock,
                       const std::string& storeIdArg,
                       const std::string& slaveIpArg,
@@ -177,10 +178,10 @@ class ReplManager {
                        const std::string& listenIpArg = {},
                        const std::string& listenPortArg = {});
 
-  void AddFakeFullPushStatus(
-          uint64_t offset, const std::string& ip, uint64_t port);
-  void DelFakeFullPushStatus(
-          const std::string& ip, uint64_t port);
+  void AddFakeFullPushStatus(uint64_t offset,
+                             const std::string& ip,
+                             uint64_t port);
+  void DelFakeFullPushStatus(const std::string& ip, uint64_t port);
 
   Status replicationSetMaster(std::string ip,
                               uint32_t port,
@@ -264,9 +265,11 @@ class ReplManager {
                                                   int64_t flags = 0);
   void slaveStartFullsync(const StoreMeta&);
   Status receiveFile(const std::string& fullFileName,
-          std::shared_ptr<BlockingTcpClient> client, size_t remain);
+                     std::shared_ptr<BlockingTcpClient> client,
+                     size_t remain);
   Status receiveFileDirectio(const std::string& fullFileName,
-          std::shared_ptr<BlockingTcpClient> client, size_t remain);
+                             std::shared_ptr<BlockingTcpClient> client,
+                             size_t remain);
   void slaveChkSyncStatus(const StoreMeta&);
   std::ofstream* getCurBinlogFs(uint32_t storeid);
   void recycDumpFile(uint32_t storeid);

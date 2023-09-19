@@ -140,11 +140,11 @@
 /* nothing should be changed below */
 
 #ifdef __cplusplus
-#include <cstring>
 #include <climits>
+#include <cstring>
 #else
-#include <string.h>
 #include <limits.h>
+#include <string.h>
 #endif
 
 #ifndef LZF_USE_OFFSETS

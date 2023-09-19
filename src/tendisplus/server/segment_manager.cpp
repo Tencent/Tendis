@@ -2,18 +2,19 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <memory>
-#include <utility>
-#include <map>
-#include <list>
+#include "tendisplus/server/segment_manager.h"
+
 #include <algorithm>
 #include <limits>
+#include <list>
+#include <map>
+#include <memory>
 #include <unordered_set>
-#include "tendisplus/server/segment_manager.h"
+#include <utility>
+
+#include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
-#include "tendisplus/server/server_entry.h"
-
 
 namespace tendisplus {
 
@@ -261,8 +262,7 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
   // info may be outdated, ensure all chunks belong to me here.
   if (clusterHasMultiNodes && isSessionReplOnly && !chunkSet.empty()) {
     for (const auto& chunk : chunkSet) {
-      auto node =
-        clusterState->clusterHandleRedirect(chunk, sess);
+      auto node = clusterState->clusterHandleRedirect(chunk, sess);
       if (!node.ok()) {
         return node.status();
       }
@@ -317,11 +317,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session* sess,
   std::unique_ptr<StoreLock> lk = nullptr;
   if (mode != mgl::LockMode::LOCK_NONE) {
     auto elk = StoreLock::AquireStoreLock(
-      insId,
-      mode,
-      sess,
-      sess->getServerEntry()->getMGLockMgr(),
-      lockTimeoutMs);
+      insId, mode, sess, sess->getServerEntry()->getMGLockMgr(), lockTimeoutMs);
     if (!elk.ok()) {
       LOG(WARNING) << "store id " << insId
                    << " can't been opened:" << elk.status().toString();

@@ -50,7 +50,7 @@ func FindAvailablePort(start int) int {
 		log.Infof("output1:%s", string(output1))
 		log.Infof("err1:%v", err1)
 
-		cmd2 := fmt.Sprintf("netstat -anpl 2>&1|grep %d", i + 10000)
+		cmd2 := fmt.Sprintf("netstat -anpl 2>&1|grep %d", i+10000)
 		output2, err2 := exec.Command("sh", "-c", cmd2).CombinedOutput()
 		log.Infof("output2:%s", string(output2))
 		log.Infof("err2:%v", err2)
@@ -60,7 +60,7 @@ func FindAvailablePort(start int) int {
 		log.Infof("output3:%s", string(output3))
 		log.Infof("err3:%v", err3)
 
-		cmd4 := fmt.Sprintf("lsof -i:%d", i + 10000)
+		cmd4 := fmt.Sprintf("lsof -i:%d", i+10000)
 		output4, err4 := exec.Command("sh", "-c", cmd4).CombinedOutput()
 		log.Infof("output4:%s", string(output4))
 		log.Infof("err4:%v", err4)
@@ -199,7 +199,6 @@ func eventually(fn func() error, timeout time.Duration) error {
 	go func() {
 		for {
 			err := fn()
-			// ok 会 通知 done
 			if err == nil {
 				close(done)
 				return
@@ -219,7 +218,6 @@ func eventually(fn func() error, timeout time.Duration) error {
 	}()
 
 	select {
-	// 返回
 	case <-done:
 		return nil
 	case <-time.After(timeout):
@@ -365,7 +363,7 @@ func (s *Predixy) Setup(valgrind bool, cfgArgs *map[string]string) error {
 	cfg = cfg + "LogWarnSample 1\n"
 	cfg = cfg + "LogErrorSample 1\n"
 
-    cfg = cfg + "Authority {\n"
+	cfg = cfg + "Authority {\n"
 	cfg = cfg + "	Auth tendis+test {\n"
 	cfg = cfg + "		Mode read\n"
 	cfg = cfg + "	}\n"
@@ -691,13 +689,13 @@ func CompareClusterDataWithAuth(addr1 string, passwd1 string, addr2 string, pass
 	var stderrComp bytes.Buffer
 
 	// compare slave and target node
-	cmdComp := exec.Command("compare_instances", 
-							"-addr1", addr1, 
-							"-addr2", addr2, 
-							"-password1", passwd1, 
-							"-password2", passwd2,
-							"-storeNum", strconv.FormatInt(int64(storeNum), 10),
-							fmt.Sprintf("-readonly=%s", strconv.FormatBool(readonly)))
+	cmdComp := exec.Command("compare_instances",
+		"-addr1", addr1,
+		"-addr2", addr2,
+		"-password1", passwd1,
+		"-password2", passwd2,
+		"-storeNum", strconv.FormatInt(int64(storeNum), 10),
+		fmt.Sprintf("-readonly=%s", strconv.FormatBool(readonly)))
 	cmdComp.Stdout = &stdoutComp
 	cmdComp.Stderr = &stderrComp
 	err := cmdComp.Run()

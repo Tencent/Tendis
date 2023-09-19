@@ -47,7 +47,7 @@ function startServer() {
     echo taskset -c 0-$coreNo $bin $confFile
     taskset -c 0-$coreNo $bin $confFile
     sleep 5
-    
+
     if $clusterEnable
     then
         $redisClient -h $ip -p $port $passwdString cluster addslots {0..16383}
@@ -144,7 +144,7 @@ do
                 startServer $executorNum
             fi
             needClear=true
-            
+
             if [[ $valueLen != $firstValueLen && $cmd != "set" && $cmd != "get" ]]
             then
                 echo ignore task executorNum:$executorNum valueLen:$valueLen cmd:$cmd

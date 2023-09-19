@@ -9,4 +9,3 @@ int dummy() {
 }
 
 #endif
-

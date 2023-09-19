@@ -5,12 +5,14 @@
 #ifndef SRC_TENDISPLUS_SERVER_SESSION_H_
 #define SRC_TENDISPLUS_SERVER_SESSION_H_
 
-#include <utility>
 #include <atomic>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
+
 #include "asio.hpp"
+
 #include "tendisplus/utils/status.h"
 
 namespace tendisplus {
@@ -48,7 +50,6 @@ class Session : public std::enable_shared_from_this<Session> {
   virtual Status cancel() = 0;
   virtual int getFd() = 0;
   virtual std::string getRemote() const = 0;
-
 
   virtual Expected<std::string> getRemoteIp() const {
     return {ErrorCodes::ERR_NETWORK, ""};

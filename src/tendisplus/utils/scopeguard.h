@@ -46,7 +46,6 @@ class RefToValue {
   T& ref_;
 };
 
-
 ////////////////////////////////////////////////////////////////////////////////
 ///  \ingroup ExceptionGroup
 ///  RefToValue creator.
@@ -60,7 +59,6 @@ inline RefToValue<T> ByRef(T& t) {
 }  // namespace tendisplus
 
 namespace tendisplus {
-
 
 class ScopeGuardImplBase {
   ScopeGuardImplBase& operator=(const ScopeGuardImplBase&);
@@ -78,8 +76,7 @@ class ScopeGuardImplBase {
     if (!j.dismissed_)  // NOLINT
       try {
         j.Execute();
-      } catch (...) {
-      }
+      } catch (...) {}
   }
 
   mutable bool dismissed_;
@@ -92,9 +89,7 @@ class ScopeGuardImplBase {
   }
 };
 
-
 typedef const ScopeGuardImplBase& ScopeGuard;
-
 
 template <typename F>
 class ScopeGuardImpl0 : public ScopeGuardImplBase {
@@ -121,7 +116,6 @@ template <typename F>
 inline ScopeGuardImpl0<F> MakeGuard(F fun) {
   return ScopeGuardImpl0<F>::MakeGuard(fun);
 }
-
 
 template <typename F, typename P1>
 class ScopeGuardImpl1 : public ScopeGuardImplBase {
@@ -150,7 +144,6 @@ inline ScopeGuardImpl1<F, P1> MakeGuard(F fun, P1 p1) {
   return ScopeGuardImpl1<F, P1>::MakeGuard(fun, p1);
 }
 
-
 template <typename F, typename P1, typename P2>
 class ScopeGuardImpl2 : public ScopeGuardImplBase {
  public:
@@ -178,7 +171,6 @@ template <typename F, typename P1, typename P2>
 inline ScopeGuardImpl2<F, P1, P2> MakeGuard(F fun, P1 p1, P2 p2) {
   return ScopeGuardImpl2<F, P1, P2>::MakeGuard(fun, p1, p2);
 }
-
 
 template <typename F, typename P1, typename P2, typename P3>
 class ScopeGuardImpl3 : public ScopeGuardImplBase {
@@ -209,7 +201,6 @@ template <typename F, typename P1, typename P2, typename P3>
 inline ScopeGuardImpl3<F, P1, P2, P3> MakeGuard(F fun, P1 p1, P2 p2, P3 p3) {
   return ScopeGuardImpl3<F, P1, P2, P3>::MakeGuard(fun, p1, p2, p3);
 }
-
 
 template <typename F, typename P1, typename P2, typename P3, typename P4>
 class ScopeGuardImpl4 : public ScopeGuardImplBase {
@@ -243,7 +234,6 @@ inline ScopeGuardImpl4<F, P1, P2, P3, P4> MakeGuard(
   F fun, P1 p1, P2 p2, P3 p3, P4 p4) {
   return ScopeGuardImpl4<F, P1, P2, P3, P4>::MakeGuard(fun, p1, p2, p3, p4);
 }
-
 
 template <typename F,
           typename P1,
@@ -290,7 +280,6 @@ inline ScopeGuardImpl5<F, P1, P2, P3, P4, P5> MakeGuard(
     fun, p1, p2, p3, p4, p5);
 }
 
-
 template <class Obj, typename MemFun>
 class ObjScopeGuardImpl0 : public ScopeGuardImplBase {
  public:
@@ -329,7 +318,6 @@ inline ObjScopeGuardImpl0<Obj1, Ret (Obj2::*)()> MakeGuard(
   Ret (Obj2::*memFun)(), Obj1* obj) {
   return ObjScopeGuardImpl0<Obj1, Ret (Obj2::*)()>::MakeObjGuard(*obj, memFun);
 }
-
 
 template <class Obj, typename MemFun, typename P1>
 class ObjScopeGuardImpl1 : public ScopeGuardImplBase {
@@ -377,7 +365,6 @@ inline ObjScopeGuardImpl1<Obj1, Ret (Obj2::*)(P1a), P1b> MakeGuard(
   return ObjScopeGuardImpl1<Obj1, Ret (Obj2::*)(P1a), P1b>::MakeObjGuard(
     *obj, memFun, p1);
 }
-
 
 template <class Obj, typename MemFun, typename P1, typename P2>
 class ObjScopeGuardImpl2 : public ScopeGuardImplBase {
@@ -441,7 +428,6 @@ inline ObjScopeGuardImpl2<Obj1, Ret (Obj2::*)(P1a, P2a), P1b, P2b> MakeGuard(
   return ObjScopeGuardImpl2<Obj1, Ret (Obj2::*)(P1a, P2a), P1b, P2b>::
     MakeObjGuard(*obj, memFun, p1, p2);
 }
-
 
 template <class Obj, typename MemFun, typename P1, typename P2, typename P3>
 class ObjScopeGuardImpl3 : public ScopeGuardImplBase {

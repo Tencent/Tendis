@@ -4,8 +4,8 @@
 
 function usage () {
 	echo "usage:"
-	echo "$0 3689" 
-	echo "$0 3689 + some redis arg like: $0 3689 --slaveof 1.1.1.1 3679" 
+	echo "$0 3689"
+	echo "$0 3689 + some redis arg like: $0 3689 --slaveof 1.1.1.1 3679"
 }
 
 PORT=$1
@@ -34,7 +34,6 @@ then
 else
     DISKROOT="/data"
 fi
-
 
 rootdir="${DISKROOT}/redis/$PORT"
 datadir="${rootdir}/data"
@@ -67,5 +66,5 @@ if [ ! -d "$logDir" ];then
 	mkdir -p $logDir
 fi
 
-export LD_LIBRARY_PATH=LD_LIBRARY_PATH:./deps 
+export LD_LIBRARY_PATH=LD_LIBRARY_PATH:./deps
 $CDIR/tendisplus $confpath

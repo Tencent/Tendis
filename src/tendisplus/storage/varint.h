@@ -5,11 +5,12 @@
 #ifndef SRC_TENDISPLUS_STORAGE_VARINT_H_
 #define SRC_TENDISPLUS_STORAGE_VARINT_H_
 
-#include <stdint.h>
+#include <cstdint>
 #include <cstdlib>
-#include <vector>
-#include <utility>
 #include <string>
+#include <utility>
+#include <vector>
+
 #include "tendisplus/utils/status.h"
 
 namespace tendisplus {

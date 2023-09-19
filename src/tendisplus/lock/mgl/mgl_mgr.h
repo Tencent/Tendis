@@ -5,20 +5,20 @@
 #ifndef SRC_TENDISPLUS_LOCK_MGL_MGL_MGR_H__
 #define SRC_TENDISPLUS_LOCK_MGL_MGL_MGR_H__
 
-#include <vector>
 #include <list>
-#include <unordered_map>
-#include <mutex>  // NOLINT
-#include <string>
+#include <mutex>
 #include <set>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 #include "tendisplus/lock/mgl/lock_defines.h"
 
 namespace tendisplus {
+
 namespace mgl {
 
 class MGLock;
-
 // TODO(deyukong): this class should only be in mgl_mgr.cpp
 // not thread safe, protected by LockShard's mutex
 class LockSchedCtx {
@@ -29,6 +29,7 @@ class LockSchedCtx {
   bool unlock(MGLock* core);
   std::string toString();
   std::vector<std::string> getShardLocks();
+
  private:
   void schedPendingLocks();
   void incrPendingRef(LockMode mode);

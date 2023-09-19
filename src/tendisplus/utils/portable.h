@@ -56,5 +56,4 @@ using optional = std::experimental::optional<T>;
 }  // namespace tendisplus
 #endif
 
-
 #endif  // SRC_TENDISPLUS_UTILS_PORTABLE_H_

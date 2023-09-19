@@ -7,8 +7,8 @@
 
 #include <cstdint>
 #include <iostream>
-#include <vector>
 #include <string>
+#include <vector>
 
 namespace tendisplus {
 
@@ -40,8 +40,9 @@ int string2ll(const char* s, size_t slen, long long* value);  // (NOLINT/int)
 std::string errorReply(const std::string& s);
 
 // port from redis source code, sds.c::sdssplitargs
-std::vector<std::string>* splitargs(std::vector<std::string>& result,  // (NOLINT)
-                                    const std::string& lineStr);
+std::vector<std::string>* splitargs(
+  std::vector<std::string>& result,  // (NOLINT)
+  const std::string& lineStr);
 
 // port from redis source code object.c::createStringObjectFromLongDouble
 int ld2string(char* buf, size_t len, long double value, int humanfriendly);
@@ -57,26 +58,27 @@ int random();
 
 /* Command flags. Please check the command table defined in the redis.c file
  * for more information about the meaning of every flag. */
-#define CMD_WRITE (1 << 0) /* "w" flag */
-#define CMD_READONLY (1 << 1) /* "r" flag */
-#define CMD_DENYOOM (1 << 2) /* "m" flag */
-#define CMD_MODULE (1 << 3) /* Command exported by module. */
-#define CMD_ADMIN (1 << 4) /* "a" flag */
-#define CMD_PUBSUB (1 << 5) /* "p" flag */
-#define CMD_NOSCRIPT (1 << 6) /* "s" flag */
-#define CMD_RANDOM (1 << 7) /* "R" flag */
-#define CMD_SORT_FOR_SCRIPT (1 << 8) /* "S" flag */
-#define CMD_LOADING (1 << 9) /* "l" flag */
-#define CMD_STALE (1 << 10) /* "t" flag */
-#define CMD_SKIP_MONITOR (1 << 11) /* "M" flag */
-#define CMD_ASKING (1 << 12) /* "k" flag */
-#define CMD_FAST (1 << 13) /* "F" flag */
-#define CMD_MODULE_GETKEYS (1 << 14) /* Use the modules getkeys interface. */
+#define CMD_WRITE (1 << 0)              /* "w" flag */
+#define CMD_READONLY (1 << 1)           /* "r" flag */
+#define CMD_DENYOOM (1 << 2)            /* "m" flag */
+#define CMD_MODULE (1 << 3)             /* Command exported by module. */
+#define CMD_ADMIN (1 << 4)              /* "a" flag */
+#define CMD_PUBSUB (1 << 5)             /* "p" flag */
+#define CMD_NOSCRIPT (1 << 6)           /* "s" flag */
+#define CMD_RANDOM (1 << 7)             /* "R" flag */
+#define CMD_SORT_FOR_SCRIPT (1 << 8)    /* "S" flag */
+#define CMD_LOADING (1 << 9)            /* "l" flag */
+#define CMD_STALE (1 << 10)             /* "t" flag */
+#define CMD_SKIP_MONITOR (1 << 11)      /* "M" flag */
+#define CMD_ASKING (1 << 12)            /* "k" flag */
+#define CMD_FAST (1 << 13)              /* "F" flag */
+#define CMD_MODULE_GETKEYS (1 << 14)    /* Use the modules getkeys interface. */
 #define CMD_MODULE_NO_CLUSTER (1 << 15) /* Deny on Redis Cluster. */
-#define CMD_ALLOW_CROSS_SLOT (1 << 16)  /* 'c' flag, allow cmd key cross slot */
+#define CMD_ALLOW_CROSS_SLOT                      \
+  (1 << 16) /* 'c' flag, allow cmd key cross slot \
+             */
 
 #define CMD_MASK 0x7FFFFFFF  // enough for 31 CMD_* marco.
-
 
 #define CONFIG_DEFAULT_DBNUM 16
 #define CONFIG_DEFAULT_PROTO_MAX_BULK_LEN \
@@ -121,13 +123,13 @@ int random();
 /* Input flags. */
 #define ZADD_NONE 0
 #define ZADD_INCR (1 << 0) /* Increment the score instead of setting it. */
-#define ZADD_NX (1 << 1) /* Don't touch elements not already existing. */
-#define ZADD_XX (1 << 2) /* Only touch elements already exisitng. */
+#define ZADD_NX (1 << 1)   /* Don't touch elements not already existing. */
+#define ZADD_XX (1 << 2)   /* Only touch elements already exisitng. */
 
 /* Output flags. */
 #define ZADD_NOP \
   (1 << 3) /* Operation not performed because of conditionals.*/  // NOLINT
-#define ZADD_NAN (1 << 4) /* Only touch elements already exisitng. */
+#define ZADD_NAN (1 << 4)   /* Only touch elements already exisitng. */
 #define ZADD_ADDED (1 << 5) /* The element was new and was added. */
 #define ZADD_UPDATED \
   (1 << 6) /* The element already existed, score updated. */  // NOLINT
@@ -136,7 +138,7 @@ int random();
 #define ZADD_CH (1 << 16) /* Return num of elements added or updated. */
 
 #define ZSKIPLIST_MAXLEVEL 32 /* Should be enough for 2^32 elements */
-#define ZSKIPLIST_P 0.25 /* Skiplist P = 1/4 */
+#define ZSKIPLIST_P 0.25      /* Skiplist P = 1/4 */
 
 struct Zrangespec {
   double min;
@@ -185,15 +187,15 @@ struct hllhdr {
 #define HLL_VALID_CACHE(hdr) (((hdr)->card[7] & (1 << 7)) == 0)
 
 #define HLL_P 14 /* The greater is P, the smaller the error. */
-#define HLL_REGISTERS (1 << HLL_P) /* With P=14, 16384 registers. */
+#define HLL_REGISTERS (1 << HLL_P)     /* With P=14, 16384 registers. */
 #define HLL_P_MASK (HLL_REGISTERS - 1) /* Mask to index register. */
 #define HLL_BITS 6 /* Enough to count up to 63 leading zeroes. */
 #define HLL_REGISTER_MAX ((1 << HLL_BITS) - 1)
 #define HLL_HDR_SIZE sizeof(struct redis_port::hllhdr)
 #define HLL_DENSE_SIZE (HLL_HDR_SIZE + ((HLL_REGISTERS * HLL_BITS + 7) / 8))
-#define HLL_DENSE 0 /* Dense encoding. */
+#define HLL_DENSE 0  /* Dense encoding. */
 #define HLL_SPARSE 1 /* Sparse encoding. */
-#define HLL_RAW 255 /* Only used internally, never exposed. */
+#define HLL_RAW 255  /* Only used internally, never exposed. */
 #define HLL_MAX_ENCODING 1
 
 /* Log levels */
@@ -243,7 +245,6 @@ void serverLogOld(int level, const char* fmt, ...);
 #define serverLog serverLogNoDebug
 #endif
 
-
 /* Store the value of the register at position 'regnum' into variable 'target'.
  * 'p' is an array of unsigned bytes. */
 #define HLL_DENSE_GET_REGISTER(target, p, regnum)             \
@@ -274,8 +275,8 @@ void serverLogOld(int level, const char* fmt, ...);
 
 /* Macros to access the sparse representation.
  * The macros parameter is expected to be an uint8_t pointer. */
-#define HLL_SPARSE_XZERO_BIT 0x40 /* 01xxxxxx */
-#define HLL_SPARSE_VAL_BIT 0x80 /* 1vvvvvxx */
+#define HLL_SPARSE_XZERO_BIT 0x40                    /* 01xxxxxx */
+#define HLL_SPARSE_VAL_BIT 0x80                      /* 1vvvvvxx */
 #define HLL_SPARSE_IS_ZERO(p) (((*(p)) & 0xc0) == 0) /* 00xxxxxx */
 #define HLL_SPARSE_IS_XZERO(p) (((*(p)) & 0xc0) == HLL_SPARSE_XZERO_BIT)
 #define HLL_SPARSE_IS_VAL(p) ((*(p)) & HLL_SPARSE_VAL_BIT)
@@ -361,10 +362,10 @@ typedef uint32_t WORD;  // 32-bit word
 #define SIG1(x) (ROTRIGHT(x, 17) ^ ROTRIGHT(x, 19) ^ ((x) >> 10))
 
 /* Client flags */
-#define CLIENT_SLAVE (1<<0)   /* This client is a slave server */
-#define CLIENT_MASTER (1<<1)  /* This client is a master server */
+#define CLIENT_SLAVE (1 << 0)  /* This client is a slave server */
+#define CLIENT_MASTER (1 << 1) /* This client is a master server */
 #define CLIENT_MONITOR (1 << 2)
-                 /* This client is a slave monitor, see MONITOR */
+/* This client is a slave monitor, see MONITOR */
 #define CLIENT_MULTI (1 << 3) /* This client is in a MULTI context */
 #define CLIENT_READONLY (1 << 4)
 
@@ -388,14 +389,15 @@ typedef struct {
   WORD state[8];
 } SHA256_CTX;
 
-
 void sha256_init(SHA256_CTX* ctx);
 void sha256_update(SHA256_CTX* ctx, const BYTE data[], size_t len);
 void sha256_final(SHA256_CTX* ctx, BYTE hash[]);
 
 void getRandomHexChars(char* p, size_t len);
 void getRandomBytes(unsigned char* p, size_t len);
-void strmapchars(std::string& s, const char *from, const char *to,    // (NOLINT)
+void strmapchars(std::string& s,
+                 const char* from,
+                 const char* to,  // (NOLINT)
                  size_t setlen);
 }  // namespace redis_port
 }  // namespace tendisplus

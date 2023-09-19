@@ -2,17 +2,19 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <sstream>
-#include <utility>
-#include <memory>
-#include <string>
-#include <vector>
-#include "glog/logging.h"
-#include "rapidjson/document.h"
-#include "rapidjson/writer.h"
-#include "rapidjson/stringbuffer.h"
-#include "rapidjson/error/en.h"
 #include "tendisplus/storage/catalog.h"
+
+#include <memory>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "rapidjson/document.h"
+#include "rapidjson/error/en.h"
+#include "rapidjson/stringbuffer.h"
+#include "rapidjson/writer.h"
+
 #include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
@@ -44,7 +46,6 @@ std::unique_ptr<StoreMeta> StoreMeta::copy() const {
   return std::unique_ptr<StoreMeta>(new StoreMeta(*this));
 }
 
-
 ChunkMeta::ChunkMeta()
   : ChunkMeta(0, "", 0, -1, 0, MigrateReceiveState::NONE) {}
 
@@ -64,7 +65,6 @@ ChunkMeta::ChunkMeta(uint32_t id_,
 std::unique_ptr<ChunkMeta> ChunkMeta::copy() const {
   return std::unique_ptr<ChunkMeta>(new ChunkMeta(*this));
 }
-
 
 std::unique_ptr<StoreMainMeta> StoreMainMeta::copy() const {
   return std::unique_ptr<StoreMainMeta>(new StoreMainMeta(*this));
@@ -129,7 +129,6 @@ ClusterMeta::ClusterMeta(const std::string& nodeName_,
     configEpoch(configEpoch_),
     slots(slots_) {}
 
-
 std::unique_ptr<ClusterMeta> ClusterMeta::copy() const {
   return std::unique_ptr<ClusterMeta>(new ClusterMeta(*this));
 }
@@ -147,7 +146,6 @@ std::string& ClusterMeta::getClusterPrefix() {
   }();
   return realPrefix;
 }
-
 
 Catalog::Catalog(std::unique_ptr<KVStore> store,
                  uint32_t kvStoreCount,
@@ -622,15 +620,14 @@ Catalog::getAllClusterMeta() {
     }
 
     LOG(INFO) << "Get ClusterMeta Node name is" << result->nodeName
-      << ",ip address is " << result->ip << ":" << result->port
-      << ",node Flag is " << result->nodeFlag;
+              << ",ip address is " << result->ip << ":" << result->port
+              << ",node Flag is " << result->nodeFlag;
 
     resultList.emplace_back(std::move(result));
   }
 
   return resultList;
 }
-
 
 bool Catalog::clusterMetaExist(Transaction* txn, const std::string& nodeName) {
   auto result = std::make_unique<ClusterMeta>();

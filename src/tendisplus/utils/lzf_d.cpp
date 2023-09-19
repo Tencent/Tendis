@@ -38,16 +38,18 @@
  * either the BSD or the GPL.
  */
 
+#include "tendisplus/utils/lzfP.h"
 #include "tendisplus/utils/redis_port.h"
-#include "lzfP.h"
 
 namespace tendisplus {
+
 namespace redis_port {
+
 #if AVOID_ERRNO
 #define SET_ERRNO(n)
 #else
 
-#include <errno.h>
+#include <cerrno>
 
 #define SET_ERRNO(n) errno = (n)
 #endif

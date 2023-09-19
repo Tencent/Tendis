@@ -2,16 +2,18 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include <algorithm>
 #include <string>
 #include <vector>
-#include <algorithm>
-#include "tendisplus/storage/varint.h"
+
 #include "tendisplus/commands/command.h"
-#include "tendisplus/utils/string.h"
-#include "tendisplus/utils/invariant.h"
 #include "tendisplus/storage/skiplist.h"
+#include "tendisplus/storage/varint.h"
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
+
 constexpr uint64_t MAXSEQ = 9223372036854775807ULL;
 constexpr uint64_t INITSEQ = MAXSEQ / 2ULL;
 
@@ -111,7 +113,6 @@ class SortCommand : public Command {
       return std::move(kvVal.value().getValue());
     }
   }
-
 
  public:
   SortCommand() : Command("sort", "wm") {}
@@ -448,8 +449,8 @@ class SortCommand : public Command {
     for (size_t i = 0; i < ops.size(); i++) {
       ops[i].priKey.resize(records.size());
       ops[i].keySelf = false;
-      if (ops[i].cmd == "get"
-        && ops[i].pattern[0] == '#' && ops[i].pattern.size() == 1) {
+      if (ops[i].cmd == "get" && ops[i].pattern[0] == '#' &&
+          ops[i].pattern.size() == 1) {
         ops[i].keySelf = true;
       }
       for (size_t j = 0; j < records.size(); j++) {

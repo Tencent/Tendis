@@ -3,20 +3,20 @@
 // project for additional information.
 
 #include <unistd.h>
+
 #include <fstream>
 #include <iostream>
-#include <utility>
 #include <memory>
 #include <string>
+#include <utility>
 
-#include "tendisplus/server/server_params.h"
+#include "tendisplus/commands/release.h"
+#include "tendisplus/commands/version.h"
 #include "tendisplus/server/server_entry.h"
+#include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/time.h"
-#include "glog/logging.h"
-#include "tendisplus/commands/version.h"
-#include "tendisplus/commands/release.h"
 
 static void shutdown(int sigNum) {
   LOG(INFO) << "signal:" << sigNum << " caught, begin shutdown server";

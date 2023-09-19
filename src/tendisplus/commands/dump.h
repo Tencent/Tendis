@@ -5,17 +5,19 @@
 #ifndef SRC_TENDISPLUS_COMMANDS_DUMP_H_
 #define SRC_TENDISPLUS_COMMANDS_DUMP_H_
 
-#include <string>
-#include <vector>
-#include <map>
-#include <memory>
 #include <cstddef>
 #include <list>
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
+
 #include "tendisplus/commands/command.h"
-#include "tendisplus/utils/status.h"
-#include "tendisplus/utils/invariant.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/storage/record.h"
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/status.h"
+
 namespace tendisplus {
 
 static const uint16_t RDB_VERSION = 8;
@@ -59,8 +61,9 @@ constexpr uint32_t ZLLEN_LIMIT = 256;
 constexpr uint64_t MAXSEQ = 9223372036854775807ULL;
 constexpr uint64_t INITSEQ = MAXSEQ / 2ULL;
 
-Expected<bool> delGeneric(Session* sess, const std::string& key,
-        Transaction* txn);
+Expected<bool> delGeneric(Session* sess,
+                          const std::string& key,
+                          Transaction* txn);
 Expected<std::string> genericZadd(Session* sess,
                                   PStore kvstore,
                                   const RecordKey& mk,

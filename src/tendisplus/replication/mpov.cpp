@@ -2,24 +2,24 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <list>
-#include <chrono>  // NOLINT
+#include <chrono>
 #include <fstream>
-#include <string>
+#include <list>
 #include <memory>
-#include "tendisplus/commands/command.h"
+#include <string>
 
-#include "glog/logging.h"
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 
+#include "tendisplus/commands/command.h"
+#include "tendisplus/commands/dump.h"
 #include "tendisplus/replication/repl_manager.h"
+#include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/test_util.h"
-#include "tendisplus/utils/redis_port.h"
-#include "tendisplus/commands/dump.h"
 
 namespace tendisplus {
+
 bool ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
                                  const std::string& storeIdArg,
                                  const std::string& slaveIpArg,
@@ -183,10 +183,10 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
                                    const std::string& listenIpArg,
                                    const std::string& listenPortArg) {
   LOG(INFO) << "registerIncrSync storeIdArg:" << storeIdArg
-    << " dstStoreIdArg:" << dstStoreIdArg
-    << " binlogPosArg:" << binlogPosArg
-    << " listenIpArg:" << listenIpArg
-    << " listenPortArg:" << listenPortArg;
+            << " dstStoreIdArg:" << dstStoreIdArg
+            << " binlogPosArg:" << binlogPosArg
+            << " listenIpArg:" << listenIpArg
+            << " listenPortArg:" << listenPortArg;
   std::shared_ptr<BlockingTcpClient> client =
     std::move(_svr->getNetwork()->createBlockingClient(std::move(sock),
                                                        64 * 1024 * 1024));
@@ -235,11 +235,11 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
     //   with truncateBinlogV2()
     std::unique_lock<std::mutex> lk(_mutex);
     if (!_recyclCv.wait_for(
-            lk, std::chrono::milliseconds(5000), [this, storeId] {
-              return !_logRecycStatus[storeId]->isRunning;
-            })) {
+          lk, std::chrono::milliseconds(5000), [this, storeId] {
+            return !_logRecycStatus[storeId]->isRunning;
+          })) {
       LOG(ERROR) << "registerIncrSync store " << storeId
-        << " wait for yeild failed";
+                 << " wait for yeild failed";
       client->writeLine("-ERR wait isRunning be false timeout");
       return false;
     }
@@ -255,7 +255,7 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
 
   LocalSessionGuard sg(_svr.get());
   auto expdb = _svr->getSegmentMgr()->getDb(
-          sg.getSession(), storeId, mgl::LockMode::LOCK_IS);
+    sg.getSession(), storeId, mgl::LockMode::LOCK_IS);
   if (!expdb.ok()) {
     std::stringstream ss;
     ss << "-ERR store " << storeId << " error: " << expdb.status().toString();
@@ -290,20 +290,21 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
     LOG(WARNING) << "slave incrsync handshake not +PONG:" << exptPong.value();
     return false;
   }
-  bool registPosOk = registerIncrSyncStatus(storeId, dstStoreId,
-          binlogPos, listenIpArg, listen_port, client);
+  bool registPosOk = registerIncrSyncStatus(
+    storeId, dstStoreId, binlogPos, listenIpArg, listen_port, client);
   LOG(INFO) << "slave:" << client->getRemoteRepr() << " registerIncrSync "
             << (registPosOk ? "ok" : "failed");
 
   return registPosOk;
 }
 
-bool ReplManager::registerIncrSyncStatus(uint32_t storeId,
-    uint32_t dstStoreId,
-    uint64_t binlogPos,
-    const std::string& listenIpArg,
-    uint16_t listen_port,
-    std::shared_ptr<BlockingTcpClient> client) {
+bool ReplManager::registerIncrSyncStatus(
+  uint32_t storeId,
+  uint32_t dstStoreId,
+  uint64_t binlogPos,
+  const std::string& listenIpArg,
+  uint16_t listen_port,
+  std::shared_ptr<BlockingTcpClient> client) {
   std::lock_guard<std::mutex> lk(_mutex);
   // takenliu: recycleBinlog use firstPos, and incrSync use binlogPos+1
   if (_logRecycStatus[storeId]->minValidBinlogID > (binlogPos + 1) &&
@@ -329,15 +330,15 @@ bool ReplManager::registerIncrSyncStatus(uint32_t storeId,
 
   uint64_t clientId = _clientIdGen.fetch_add(1);
   for (auto iter = _pushStatus[storeId].begin();
-    iter != _pushStatus[storeId].end(); ) {
+       iter != _pushStatus[storeId].end();) {
     // NOTE(takenliu): if isRunning==true we can't erase.
     if (iter->second->slave_listen_ip == listenIpArg &&
-      iter->second->slave_listen_port == listen_port &&
-      !iter->second->isRunning) {
+        iter->second->slave_listen_port == listen_port &&
+        !iter->second->isRunning) {
       LOG(INFO) << "_pushStatus erase exist slave, storeId:" << storeId
-        << " slave_listen_ip:" << listenIpArg
-        << " slave_listen_port:" << listen_port
-        << " clientId:" << iter->first;
+                << " slave_listen_ip:" << listenIpArg
+                << " slave_listen_port:" << listen_port
+                << " clientId:" << iter->first;
       iter->second->client->closeSocket();
       iter = _pushStatus[storeId].erase(iter);
     } else {
@@ -589,17 +590,18 @@ void ReplManager::supplyFullSyncRoutine(
   }
 }
 
-void ReplManager::AddFakeFullPushStatus(
-        uint64_t slaveOffset, const std::string& ip, uint64_t port) {
+void ReplManager::AddFakeFullPushStatus(uint64_t slaveOffset,
+                                        const std::string& ip,
+                                        uint64_t port) {
   std::lock_guard<std::mutex> lk(_mutex);
   string slaveNode = ip + ":" + to_string(port);
 
   LocalSessionGuard g(_svr.get());
   for (uint32_t storeId = 0; storeId < _svr->getKVStoreCount(); storeId++) {
-    if (_fullPushStatus[storeId].find(slaveNode)
-      == _fullPushStatus[storeId].end()) {
+    if (_fullPushStatus[storeId].find(slaveNode) ==
+        _fullPushStatus[storeId].end()) {
       auto expdb = _svr->getSegmentMgr()->getDb(
-              g.getSession(), storeId, mgl::LockMode::LOCK_NONE);
+        g.getSession(), storeId, mgl::LockMode::LOCK_NONE);
       if (!expdb.ok()) {
         LOG(ERROR) << "slave offset get db error:" << expdb.status().toString();
         continue;
@@ -612,15 +614,15 @@ void ReplManager::AddFakeFullPushStatus(
                 << " maxBinlog:" << maxBinlog;
 #if defined(_WIN32) && _MSC_VER > 1900
       _fullPushStatus[storeId][slaveNode] =
-          new MPovFullPushStatus{storeId,
-                                 FullPushState::SUCESS,
-                                 maxBinlog,
-                                 SCLOCK::now(),
-                                 SCLOCK::now(),
-                                 nullptr,
-                                 0,
-                                 ip,
-                                 static_cast<uint16_t>(port)};
+        new MPovFullPushStatus{storeId,
+                               FullPushState::SUCESS,
+                               maxBinlog,
+                               SCLOCK::now(),
+                               SCLOCK::now(),
+                               nullptr,
+                               0,
+                               ip,
+                               static_cast<uint16_t>(port)};
 #else
       _fullPushStatus[storeId][slaveNode] =
         std::move(std::unique_ptr<MPovFullPushStatus>(
@@ -635,26 +637,25 @@ void ReplManager::AddFakeFullPushStatus(
                                  static_cast<uint16_t>(port)}));
 #endif
     } else {
-      LOG(INFO) << "AddFakeFullPushStatus already has task, storeId:"
-                << storeId << " slaveNode:" << slaveNode;
+      LOG(INFO) << "AddFakeFullPushStatus already has task, storeId:" << storeId
+                << " slaveNode:" << slaveNode;
     }
   }
 }
 
-void ReplManager::DelFakeFullPushStatus(
-        const std::string& ip, uint64_t port) {
+void ReplManager::DelFakeFullPushStatus(const std::string& ip, uint64_t port) {
   std::lock_guard<std::mutex> lk(_mutex);
   string slaveNode = ip + ":" + to_string(port);
 
   for (uint32_t storeId = 0; storeId < _svr->getKVStoreCount(); storeId++) {
-    if (_fullPushStatus[storeId].find(slaveNode)
-        != _fullPushStatus[storeId].end()) {
+    if (_fullPushStatus[storeId].find(slaveNode) !=
+        _fullPushStatus[storeId].end()) {
       LOG(INFO) << "DelFakeFullPushStatus del fake task, storeId:" << storeId
                 << " slaveNode:" << slaveNode;
       _fullPushStatus[storeId].erase(slaveNode);
     } else {
-      LOG(INFO) << "DelFakeFullPushStatus dont has task, storeId:"
-                << storeId << " slaveNode:" << slaveNode;
+      LOG(INFO) << "DelFakeFullPushStatus dont has task, storeId:" << storeId
+                << " slaveNode:" << slaveNode;
     }
   }
 }
@@ -663,12 +664,11 @@ bool ReplManager::supplyFullPsync(asio::ip::tcp::socket sock,
                                   const std::string& storeIdArg,
                                   const std::string& listenIpArg,
                                   const std::string& listenPortArg) {
-  std::shared_ptr<BlockingTcpClient> client =
-    std::move(_svr->getNetwork()->
-              createBlockingClient(std::move(sock),
-                                   64 * 1024 * 1024,
-                                   0,
-                                   3600));  // set timeout 1 hour
+  std::shared_ptr<BlockingTcpClient> client = std::move(
+    _svr->getNetwork()->createBlockingClient(std::move(sock),
+                                             64 * 1024 * 1024,
+                                             0,
+                                             3600));  // set timeout 1 hour
 
   client->setFlags(CLIENT_SLAVE);
   // NOTE(deyukong): this judge is not precise
@@ -693,8 +693,11 @@ bool ReplManager::supplyFullPsync(asio::ip::tcp::socket sock,
     return false;
   }
 
-  _fullPusher->schedule([this, storeId, listenIpArg,
-                         listenPortArg, client(std::move(client))]() mutable {
+  _fullPusher->schedule([this,
+                         storeId,
+                         listenIpArg,
+                         listenPortArg,
+                         client(std::move(client))]() mutable {
     supplyFullPsyncRoutine(std::move(client), storeId);
   });
 
@@ -702,12 +705,13 @@ bool ReplManager::supplyFullPsync(asio::ip::tcp::socket sock,
 }
 
 void ReplManager::supplyFullPsyncRoutine(
-  std::shared_ptr<BlockingTcpClient> client, uint32_t storeId,
-  const std::string& slave_listen_ip, const std::string& slave_port) {
+  std::shared_ptr<BlockingTcpClient> client,
+  uint32_t storeId,
+  const std::string& slave_listen_ip,
+  const std::string& slave_port) {
   char runId[CONFIG_RUN_ID_SIZE + 1];
   redis_port::getRandomHexChars(runId, CONFIG_RUN_ID_SIZE);
-  client->writeData("+FULLRESYNC " +
-                    string(runId, CONFIG_RUN_ID_SIZE) +
+  client->writeData("+FULLRESYNC " + string(runId, CONFIG_RUN_ID_SIZE) +
                     " 0\r\n");
 
   // send no keys rdb to client
@@ -777,13 +781,12 @@ void ReplManager::supplyFullPsyncRoutine(
 
   // save full status
   uint64_t clientId = _clientIdGen.fetch_add(1);
-  string remoteIP = slave_listen_ip.empty() ?
-          client->getRemoteAddress() :
-          slave_listen_ip;
-  auto remotePort = slave_port.empty() ?
-          client->getRemotePort() :
-          static_cast<uint16_t>(tendisplus::strtoul(
-                  slave_port.c_str(), nullptr, 10));
+  string remoteIP =
+    slave_listen_ip.empty() ? client->getRemoteAddress() : slave_listen_ip;
+  auto remotePort = slave_port.empty()
+    ? client->getRemotePort()
+    : static_cast<uint16_t>(
+        tendisplus::strtoul(slave_port.c_str(), nullptr, 10));
   {
     std::lock_guard<std::mutex> lk(_mutex);
     string slaveNode = remoteIP + ":" + to_string(remotePort);
@@ -826,7 +829,6 @@ void ReplManager::supplyFullPsyncRoutine(
 #endif
   }
 
-
   auto guard_0 = MakeGuard([this, storeId, remoteIP, remotePort]() {
     std::lock_guard<std::mutex> lk(_mutex);
     string slaveNode = remoteIP + ":" + to_string(remotePort);
@@ -841,7 +843,6 @@ void ReplManager::supplyFullPsyncRoutine(
                  << storeId << " slave node:" << slaveNode;
     }
   });
-
 
   // send data from snapshot
   uint64_t currentTs = msSinceEpoch();
@@ -923,8 +924,8 @@ void ReplManager::supplyFullPsyncRoutine(
         Expected<RecordValue> eValue = store->getKV(mk, txn.get());
         if (eValue.ok()) {
           targetTTL = eValue.value().getTtl();
-          if (eValue.value().getRecordType() == RecordType::RT_TBITMAP_META
-            && targetTTL != 0 && currentTs <= targetTTL) {
+          if (eValue.value().getRecordType() == RecordType::RT_TBITMAP_META &&
+              targetTTL != 0 && currentTs <= targetTTL) {
             result.emplace_back(mk, eValue.value());
           }
         } else {
@@ -1036,7 +1037,6 @@ void ReplManager::supplyFullPsyncRoutine(
   LOG(INFO) << "full psync done."
             << "remote addr:" << client->getRemoteRepr()
             << "sotreId:" << storeId;
-
 
 #if defined(_WIN32) && _MSC_VER > 1900
   _pushStatus[storeId][clientId] =

@@ -2,18 +2,19 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include <algorithm>
 #include <fstream>
 #include <utility>
-#include <algorithm>
-#include "glog/logging.h"
+
 #include "gtest/gtest.h"
-#include "tendisplus/utils/status.h"
-#include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/utils/portable.h"
-#include "tendisplus/storage/skiplist.h"
+
+#include "tendisplus/server/server_params.h"
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
-#include "tendisplus/server/server_params.h"
+#include "tendisplus/storage/skiplist.h"
+#include "tendisplus/utils/portable.h"
+#include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/status.h"
 
 namespace tendisplus {
 

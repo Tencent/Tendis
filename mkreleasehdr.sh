@@ -35,6 +35,4 @@ echo "uint64_t redisBuildId(void);" >> ${h_file}
 echo "" >> ${h_file}
 echo "#endif  // SRC_TENDISPLUS_COMMANDS_RELEASE_H_" >> ${h_file}
 
-
 touch ${c_file} # Force recompile of release.c
-

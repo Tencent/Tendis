@@ -10,14 +10,13 @@
 #ifndef SRC_TENDISPLUS_UTILS_SYNC_POINT_H_
 #define SRC_TENDISPLUS_UTILS_SYNC_POINT_H_
 
-#include <assert.h>
-
-#include <condition_variable>  // NOLINT
-#include <mutex>               // NOLINT
-#include <string>
-#include <unordered_set>
-#include <unordered_map>
+#include <cassert>
+#include <condition_variable>
 #include <functional>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #ifndef WITH_SYNC_POINT

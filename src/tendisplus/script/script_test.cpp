@@ -3,11 +3,11 @@
 // project for additional information.
 
 #include <algorithm>
+
 #include "gtest/gtest.h"
-#include "glog/logging.h"
+
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/test_util.h"
-
 
 namespace tendisplus {
 
@@ -26,15 +26,13 @@ TEST(Lua, Common) {
     auto session = makeSession(server, ctx);
     WorkLoad work(server, session);
     work.init();
-    auto ret = work.getStringResult({"eval",
-                                     "return redis.call('set','a','1')",
-                                     "0"});
+    auto ret =
+      work.getStringResult({"eval", "return redis.call('set','a','1')", "0"});
     ASSERT_EQ(ret, "+OK\r\n");
   }
 
   int32_t testNum = 100000;
-  std::thread th1(
-    [&server, testNum]() {
+  std::thread th1([&server, testNum]() {
     auto ctx = std::make_shared<asio::io_context>();
     auto session = makeSession(server, ctx);
     WorkLoad work(server, session);
@@ -43,89 +41,88 @@ TEST(Lua, Common) {
     int i = 0;
     while (i++ < testNum) {
       auto ret = work.getStringResult({"eval",
-        "redis.call('set',KEYS[1],'value1');return redis.call('get',KEYS[1]);",
-        "1", "key1"});
+                                       "redis.call('set',KEYS[1],'value1');"
+                                       "return redis.call('get',KEYS[1]);",
+                                       "1",
+                                       "key1"});
       ASSERT_EQ(ret, "$6\r\nvalue1\r\n");
     }
   });
-  std::thread th2(
-    [&server, testNum]() {
-      auto ctx = std::make_shared<asio::io_context>();
-      auto session = makeSession(server, ctx);
-      WorkLoad work(server, session);
-      work.init();
+  std::thread th2([&server, testNum]() {
+    auto ctx = std::make_shared<asio::io_context>();
+    auto session = makeSession(server, ctx);
+    WorkLoad work(server, session);
+    work.init();
 
-      int i = 0;
-      while (i++ < testNum) {
-        auto ret = work.getStringResult({"eval",
-          "redis.call('set',KEYS[1],'value2');"
-          "return redis.call('get',KEYS[1]);",
-          "1", "key1"});
-        ASSERT_EQ(ret, "$6\r\nvalue2\r\n");
-      }
-    });
-  std::thread th3(
-    [&server, testNum]() {
-      auto ctx = std::make_shared<asio::io_context>();
-      auto session = makeSession(server, ctx);
-      WorkLoad work(server, session);
-      work.init();
-
-      int i = 0;
-      int num_value1 = 0;
-      int num_value2 = 0;
-      int num_value3 = 0;
-      while (i++ < testNum) {
-        auto ret = work.getStringResult({"set", "key1", "value3"});
-        ret = work.getStringResult({"get", "key1"});
-        ASSERT_TRUE(ret == "$6\r\nvalue1\r\n" ||
-                            ret == "$6\r\nvalue2\r\n" ||
-                            ret == "$6\r\nvalue3\r\n");
-        if (ret == "$6\r\nvalue1\r\n") {
-          num_value1++;
-        } else if (ret == "$6\r\nvalue2\r\n") {
-          num_value2++;
-        } else if (ret == "$6\r\nvalue3\r\n") {
-          num_value3++;
-        }
-      }
-      LOG(INFO) << "==========num_value1:" << num_value1
-            << " num_value2:" << num_value2
-            << " num_value3:" << num_value3 << "===========";
-      ASSERT_NE(num_value1, 0);
-      ASSERT_NE(num_value2, 0);
-      ASSERT_NE(num_value3, 0);
-    });
-  std::thread th4(
-    [&server]() {
-      auto ctx = std::make_shared<asio::io_context>();
-      auto session = makeSession(server, ctx);
-      WorkLoad work(server, session);
-      work.init();
-
-      auto ret = work.getStringResult({"set", "key_incr", "0"});
-      ret = work.getStringResult({"eval",
-                                       "local n=1;"
-                                       "for i=10000,1,-1 do"
-                                       "  redis.call('incr', KEYS[1]);"
-                                       "end;"
+    int i = 0;
+    while (i++ < testNum) {
+      auto ret = work.getStringResult({"eval",
+                                       "redis.call('set',KEYS[1],'value2');"
                                        "return redis.call('get',KEYS[1]);",
-                                       "1", "key_incr"});
-      ASSERT_TRUE(ret == "$5\r\n10000\r\n" || ret == "$5\r\n20000\r\n");
-    });
-  std::thread th5(
-    [&server]() {
-      auto ctx = std::make_shared<asio::io_context>();
-      auto session = makeSession(server, ctx);
-      WorkLoad work(server, session);
-      work.init();
+                                       "1",
+                                       "key1"});
+      ASSERT_EQ(ret, "$6\r\nvalue2\r\n");
+    }
+  });
+  std::thread th3([&server, testNum]() {
+    auto ctx = std::make_shared<asio::io_context>();
+    auto session = makeSession(server, ctx);
+    WorkLoad work(server, session);
+    work.init();
 
-      int i = 0;
-      while (i++ < 10000) {
-        auto ret = work.getStringResult({"set", "key_incr", "10000"});
-        ASSERT_EQ(ret, "+OK\r\n");
+    int i = 0;
+    int num_value1 = 0;
+    int num_value2 = 0;
+    int num_value3 = 0;
+    while (i++ < testNum) {
+      auto ret = work.getStringResult({"set", "key1", "value3"});
+      ret = work.getStringResult({"get", "key1"});
+      ASSERT_TRUE(ret == "$6\r\nvalue1\r\n" || ret == "$6\r\nvalue2\r\n" ||
+                  ret == "$6\r\nvalue3\r\n");
+      if (ret == "$6\r\nvalue1\r\n") {
+        num_value1++;
+      } else if (ret == "$6\r\nvalue2\r\n") {
+        num_value2++;
+      } else if (ret == "$6\r\nvalue3\r\n") {
+        num_value3++;
       }
-    });
+    }
+    LOG(INFO) << "==========num_value1:" << num_value1
+              << " num_value2:" << num_value2 << " num_value3:" << num_value3
+              << "===========";
+    ASSERT_NE(num_value1, 0);
+    ASSERT_NE(num_value2, 0);
+    ASSERT_NE(num_value3, 0);
+  });
+  std::thread th4([&server]() {
+    auto ctx = std::make_shared<asio::io_context>();
+    auto session = makeSession(server, ctx);
+    WorkLoad work(server, session);
+    work.init();
+
+    auto ret = work.getStringResult({"set", "key_incr", "0"});
+    ret = work.getStringResult({"eval",
+                                "local n=1;"
+                                "for i=10000,1,-1 do"
+                                "  redis.call('incr', KEYS[1]);"
+                                "end;"
+                                "return redis.call('get',KEYS[1]);",
+                                "1",
+                                "key_incr"});
+    ASSERT_TRUE(ret == "$5\r\n10000\r\n" || ret == "$5\r\n20000\r\n");
+  });
+  std::thread th5([&server]() {
+    auto ctx = std::make_shared<asio::io_context>();
+    auto session = makeSession(server, ctx);
+    WorkLoad work(server, session);
+    work.init();
+
+    int i = 0;
+    while (i++ < 10000) {
+      auto ret = work.getStringResult({"set", "key_incr", "10000"});
+      ASSERT_EQ(ret, "+OK\r\n");
+    }
+  });
 
   th1.join();
   th2.join();
@@ -156,23 +153,27 @@ TEST(Lua, LuaStateMaxIdleTime) {
   work.init();
   int i = 0;
   while (i++ < 200) {
-    auto ret = work.getStringResult({"eval",
-      "redis.call('set',KEYS[1],'value1');return redis.call('get',KEYS[1]);",
-      "1", "key1"});
+    auto ret = work.getStringResult(
+      {"eval",
+       "redis.call('set',KEYS[1],'value1');return redis.call('get',KEYS[1]);",
+       "1",
+       "key1"});
     ASSERT_EQ(ret, "$6\r\nvalue1\r\n");
   }
   LOG(INFO) << "first add data end.";
 
   // sleep longer than luaStateMaxIdleTime
-  uint32_t sleepSec = cfg->luaStateMaxIdleTime/1000 + 2;
+  uint32_t sleepSec = cfg->luaStateMaxIdleTime / 1000 + 2;
   std::this_thread::sleep_for(std::chrono::seconds(sleepSec));
 
   LOG(INFO) << "second add data begin.";
   i = 0;
   while (i++ < 200) {
-    auto ret = work.getStringResult({"eval",
-      "redis.call('set',KEYS[1],'value1');return redis.call('get',KEYS[1]);",
-      "1", "key1"});
+    auto ret = work.getStringResult(
+      {"eval",
+       "redis.call('set',KEYS[1],'value1');return redis.call('get',KEYS[1]);",
+       "1",
+       "key1"});
     ASSERT_EQ(ret, "$6\r\nvalue1\r\n");
   }
   LOG(INFO) << "second add data end.";

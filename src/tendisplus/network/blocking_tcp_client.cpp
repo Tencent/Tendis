@@ -4,18 +4,18 @@
 
 #include "tendisplus/network/blocking_tcp_client.h"
 
-#include <sstream>
-#include <iostream>
-#include <utility>
-#include <memory>
-#include <string>
-
 #include <algorithm>
+#include <iostream>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <utility>
+
 #include "asio.hpp"
-#include "glog/logging.h"
+
 #include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/time.h"
 #include "tendisplus/utils/status.h"
+#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
 
@@ -237,8 +237,9 @@ Expected<std::string> BlockingTcpClient::read(size_t bufSize,
   return result;
 }
 
-Status BlockingTcpClient::read(char* buff, size_t bufSize,
-        std::chrono::seconds timeout) {
+Status BlockingTcpClient::read(char* buff,
+                               size_t bufSize,
+                               std::chrono::seconds timeout) {
   size_t batchSize = _inputBuf.max_size();
   size_t totalSize = 0;
 

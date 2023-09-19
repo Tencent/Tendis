@@ -2,26 +2,25 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <stdlib.h>
-#include <memory>
-#include <utility>
-#include <thread>  // NOLINT
-#include <string>
-#include <vector>
 #include <algorithm>
+#include <cstdlib>
+#include <memory>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
 
 #include "gtest/gtest.h"
-#include "glog/logging.h"
 
-#include "tendisplus/server/server_entry.h"
-#include "tendisplus/server/index_manager.h"
-#include "tendisplus/server/segment_manager.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/network/network.h"
-#include "tendisplus/utils/test_util.h"
+#include "tendisplus/server/index_manager.h"
+#include "tendisplus/server/segment_manager.h"
+#include "tendisplus/server/server_entry.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/test_util.h"
 
 namespace tendisplus {
 
@@ -31,8 +30,6 @@ uint32_t master1_port = 1131;
 uint32_t master2_port = 1132;
 uint32_t chunkid1 = 3300;
 uint32_t chunkid2 = 15495;
-
-
 
 void migrate(const std::shared_ptr<ServerEntry>& server1,
              const std::shared_ptr<ServerEntry>& server2,
@@ -73,7 +70,7 @@ void waitMigrateEnd(const std::shared_ptr<ServerEntry>& server1,
 }
 
 void checkDataMigrated(const std::shared_ptr<ServerEntry>& master,
-                 const std::shared_ptr<ServerEntry>& slave) {
+                       const std::shared_ptr<ServerEntry>& slave) {
   INVARIANT(master->getKVStoreCount() == slave->getKVStoreCount());
 
   for (size_t i = 0; i < master->getKVStoreCount(); i++) {
@@ -179,13 +176,11 @@ makeMigrateEnv(uint32_t storeCnt) {
   return std::make_pair(master1, master2);
 }
 
-
 #ifdef _WIN32
 size_t recordSize = 10;
 #else
 size_t recordSize = 10000;
 #endif
-
 
 TEST(Migrate, Common) {
 #ifdef _WIN32
@@ -210,7 +205,8 @@ TEST(Migrate, Common) {
     LOG(INFO) << ">>>>>> master1 initData 1st end;";
     migrate(master1, master2, chunkid1);
     migrate(master1, master2, chunkid2);
-    // auto allKeys2 = writeComplexDataToServer(master1, recordSize, 2, "suffix2");
+    // auto allKeys2 = writeComplexDataToServer(master1, recordSize, 2,
+    // "suffix2");
     waitMigrateEnd(master1, master2, chunkid1);
     waitMigrateEnd(master1, master2, chunkid2);
     LOG(INFO) << ">>>>>> waitMigrateEnd success;";
@@ -231,7 +227,6 @@ uint32_t storeCnt = 2;
 #else
 uint32_t storeCnt = 2;
 #endif  //
-
 
 std::shared_ptr<ServerEntry> makeClusterNode(const std::string& dir,
                                              uint32_t port,

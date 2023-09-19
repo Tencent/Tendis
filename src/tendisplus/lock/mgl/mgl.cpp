@@ -2,12 +2,14 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include "tendisplus/utils/invariant.h"
 #include "tendisplus/lock/mgl/mgl.h"
+
 #include "tendisplus/lock/mgl/mgl_mgr.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/string.h"
 
 namespace tendisplus {
+
 namespace mgl {
 
 std::atomic<uint64_t> MGLock::_idGen(0);
@@ -22,8 +24,8 @@ MGLock::MGLock(MGLockMgr* mgr)
     _resIter(_dummyList.end()),
     _lockMgr(mgr),
     _threadId(getCurThreadId()) {
-      INVARIANT_D(_lockMgr != nullptr);
-    }
+  INVARIANT_D(_lockMgr != nullptr);
+}
 
 MGLock::~MGLock() {
   INVARIANT_D(_res == LockRes::LOCKRES_UNINITED);

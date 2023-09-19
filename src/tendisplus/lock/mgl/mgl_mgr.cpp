@@ -2,34 +2,38 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <utility>
-#include "tendisplus/utils/invariant.h"
 #include "tendisplus/lock/mgl/mgl_mgr.h"
-#include "tendisplus/lock/mgl/mgl.h"
-#include "tendisplus/lock/mgl/lock_defines.h"
+
+#include <utility>
+
 #include "tendisplus/commands/command.h"
+#include "tendisplus/lock/mgl/lock_defines.h"
+#include "tendisplus/lock/mgl/mgl.h"
+#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
+
 namespace mgl {
 
 /**
- * Map of conflicts. 'conflictTable[newMode] & existingMode != 0' means that a new request
- * with the given 'newMode' conflicts with an existing request with mode 'existingMode'.
+ * Map of conflicts. 'conflictTable[newMode] & existingMode != 0' means that a
+ * new request with the given 'newMode' conflicts with an existing request with
+ * mode 'existingMode'.
  */
 #define ENUM2INT(m) \
   static_cast<typename std::underlying_type<LockMode>::type>(m)
 static const int conflictTable[] = {
-    // MODE_NONE
-    0,
-    // MODE_IS
-    (1 << ENUM2INT(LockMode::LOCK_X)),
-    // MODE_IX
+  // MODE_NONE
+  0,
+  // MODE_IS
+  (1 << ENUM2INT(LockMode::LOCK_X)),
+  // MODE_IX
+  (1 << ENUM2INT(LockMode::LOCK_S)) | (1 << ENUM2INT(LockMode::LOCK_X)),
+  // MODE_S
+  (1 << ENUM2INT(LockMode::LOCK_IX)) | (1 << ENUM2INT(LockMode::LOCK_X)),
+  // MODE_X
+  (1 << ENUM2INT(LockMode::LOCK_IS)) | (1 << ENUM2INT(LockMode::LOCK_IX)) |
     (1 << ENUM2INT(LockMode::LOCK_S)) | (1 << ENUM2INT(LockMode::LOCK_X)),
-    // MODE_S
-    (1 << ENUM2INT(LockMode::LOCK_IX)) | (1 << ENUM2INT(LockMode::LOCK_X)),
-    // MODE_X
-    (1 << ENUM2INT(LockMode::LOCK_IS)) | (1 << ENUM2INT(LockMode::LOCK_IX)) |
-      (1 << ENUM2INT(LockMode::LOCK_S)) | (1 << ENUM2INT(LockMode::LOCK_X)),
 };
 
 const char* lockModeRepr(LockMode mode) {

@@ -2,23 +2,23 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <string>
-#include <utility>
-#include <memory>
 #include <algorithm>
 #include <cctype>
 #include <clocale>
-#include <vector>
-#include <map>
 #include <cmath>
+#include <map>
+#include <memory>
+#include <string>
 #include <type_traits>
-#include "glog/logging.h"
-#include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/string.h"
-#include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/redis_port.h"
+#include <utility>
+#include <vector>
+
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/varint.h"
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/redis_port.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
 
@@ -328,7 +328,6 @@ int HPLLObject::updateByRawHpll(const HPLLObject* rawHpll) {
 
   return 1;
 }
-
 
 class PfAddCommand : public Command {
  public:

@@ -5,18 +5,19 @@
 #ifndef SRC_TENDISPLUS_STORAGE_RECORD_H_
 #define SRC_TENDISPLUS_STORAGE_RECORD_H_
 
+#include <limits>
+#include <memory>
+#include <sstream>
 #include <string>
 #include <utility>
-#include <memory>
 #include <vector>
-#include <limits>
-#include <sstream>
-#include "tendisplus/utils/status.h"
+
 #include "tendisplus/storage/kvstore.h"
-#include "tendisplus/utils/redis_port.h"
-#include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/portable.h"
+#include "tendisplus/utils/redis_port.h"
+#include "tendisplus/utils/status.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -405,7 +406,7 @@ class ReplLogValueEntryV2 {
 
  private:
   ReplOp _op;
-  uint64_t _timestamp;    // in milliseconds
+  uint64_t _timestamp;  // in milliseconds
   std::string _key;
   std::string _val;
 };
@@ -505,7 +506,6 @@ class ReplLogRawV2 {
   std::string _key;
   std::string _val;
 };
-
 
 class ReplLogV2 {
  public:
@@ -685,13 +685,13 @@ class TBitMapMetaValue {
   uint64_t byteAmount() const;  // whole bitmap's size(byte), fragmentAmount *
                                 // fragmentLen >= byteAmount
   uint64_t fragmentAmount() const;  // whole bitmap's size(fragment)
-  uint64_t eleCount() const;    // element count of bitmap
+  uint64_t eleCount() const;        // element count of bitmap
 
  private:
-  uint64_t _bitAmount;      // whole bitmap's size(bit)
-  uint64_t _count;          // bit '1' amount in bitmap
-  uint64_t _eleCount;       // element count of bitmap
-  uint64_t _fragmentLen;    // each fragment size(byte)
+  uint64_t _bitAmount;    // whole bitmap's size(bit)
+  uint64_t _count;        // bit '1' amount in bitmap
+  uint64_t _eleCount;     // element count of bitmap
+  uint64_t _fragmentLen;  // each fragment size(byte)
   std::string _firstFragment;
 };
 

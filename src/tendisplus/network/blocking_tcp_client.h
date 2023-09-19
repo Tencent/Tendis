@@ -5,15 +5,15 @@
 #ifndef SRC_TENDISPLUS_NETWORK_BLOCKING_TCP_CLIENT_H_
 #define SRC_TENDISPLUS_NETWORK_BLOCKING_TCP_CLIENT_H_
 
-#include <string>
-#include <chrono>  // NOLINT
+#include <chrono>
 #include <memory>
+#include <string>
 
 #include "asio.hpp"
 #include "glog/logging.h"
 
-#include "tendisplus/utils/status.h"
 #include "tendisplus/utils/rate_limiter.h"
+#include "tendisplus/utils/status.h"
 
 namespace tendisplus {
 
@@ -91,7 +91,7 @@ class BlockingTcpClient
         return _socket.local_endpoint().address().to_string();
       }
       return "closed conn";
-    }  catch (const std::exception& e) {
+    } catch (const std::exception& e) {
       return e.what();
     }
   }
@@ -112,7 +112,7 @@ class BlockingTcpClient
       if (_socket.is_open()) {
         std::stringstream ss;
         ss << _socket.local_endpoint().address().to_string() << ":"
-          << _socket.local_endpoint().port();
+           << _socket.local_endpoint().port();
         return ss.str();
       }
       return "closed conn";

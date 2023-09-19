@@ -3,29 +3,27 @@
 // project for additional information.
 
 #include <fstream>
-#include <utility>
 #include <limits>
-#include <thread>  // NOLINT
+#include <thread>
+#include <utility>
 
-#include "glog/logging.h"
 #include "gtest/gtest.h"
-
-#include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
+#include "rocksdb/options.h"
+#include "rocksdb/table.h"
 #include "rocksdb/utilities/backup_engine.h"
 #include "rocksdb/utilities/checkpoint.h"
-#include "rocksdb/options.h"
 
-#include "tendisplus/utils/status.h"
-#include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/utils/portable.h"
-#include "tendisplus/utils/invariant.h"
-#include "tendisplus/storage/rocks/rocks_kvstore.h"
-#include "tendisplus/storage/kvstore.h"
+#include "tendisplus/network/session_ctx.h"
 #include "tendisplus/server/server_params.h"
+#include "tendisplus/storage/kvstore.h"
+#include "tendisplus/storage/rocks/rocks_kvstore.h"
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/portable.h"
+#include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/status.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/time.h"
-#include "tendisplus/network/session_ctx.h"
 
 namespace tendisplus {
 
@@ -638,8 +636,7 @@ TEST(RocksKVStore, CursorUpperBound) {
   RecordKey upper(1, 0, RecordType::RT_INVALID, "", "");
   string upperBound = upper.prefixChunkid();
   // NOTE(takenliu) RocksTxn::createCursor not be public anymore
-  std::unique_ptr<SlotCursor> cursor =
-    txn2->createSlotCursor(0);
+  std::unique_ptr<SlotCursor> cursor = txn2->createSlotCursor(0);
 
   int32_t cnt = 0;
   while (true) {
@@ -852,7 +849,6 @@ TEST(RocksKVStore, BackupCopy) {
   // BackupEngine will delete dir if not null.
   EXPECT_TRUE(expBk2.ok());
   EXPECT_TRUE(filesystem::exists(backup_dir + "/backup_meta"));
-
 
   s = kvstore->stop();
   EXPECT_TRUE(s.ok());
@@ -1072,9 +1068,7 @@ uint64_t getBinlogCount(Transaction* txn) {
 TEST(RocksKVStore, PesTruncateBinlog) {
   auto cfg = genParams();
   EXPECT_TRUE(filesystem::create_directory("db"));
-  const auto guard = MakeGuard([] {
-    filesystem::remove_all("./db");
-  });
+  const auto guard = MakeGuard([] { filesystem::remove_all("./db"); });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
   uint64_t keepBinlog = 1;
@@ -1225,12 +1219,8 @@ TEST(RocksKVStore, PesTruncateBinlog) {
     while (firstBinlog != lastFirstBinlog) {
       lastFirstBinlog = firstBinlog;
       // TODO(takenliu): save binlog
-      auto s = kvstore->truncateBinlogV2(firstBinlog,
-                                         endBinlog - keepBinlog,
-                                         firstBinlog,
-                                         nullptr,
-                                         0,
-                                         false);
+      auto s = kvstore->truncateBinlogV2(
+        firstBinlog, endBinlog - keepBinlog, firstBinlog, nullptr, 0, false);
       EXPECT_TRUE(s.ok());
       if (s.value().newStart == firstBinlog) {
         break;
@@ -1390,7 +1380,6 @@ TEST(RocksKVStore, CompactionWithNoexpire) {
   size_t kvCount = genData(kvstore.get(), 1000, msSinceEpoch(), true);
   size_t kvCount2 =
     genData(kvstore.get(), 1000, msSinceEpoch() + waitSec * 1000, true);
-
 
   std::this_thread::sleep_for(std::chrono::seconds(1));
   // compact data in the default column family

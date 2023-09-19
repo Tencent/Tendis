@@ -2,20 +2,20 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <string>
-#include <utility>
-#include <memory>
 #include <algorithm>
 #include <cctype>
 #include <clocale>
 #include <map>
-#include "glog/logging.h"
-#include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/string.h"
-#include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/time.h"
+#include <memory>
+#include <string>
+#include <utility>
+
 #include "tendisplus/commands/command.h"
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/sync_point.h"
+#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
 

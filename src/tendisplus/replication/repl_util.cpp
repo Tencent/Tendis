@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 #include <utility>
-#include "glog/logging.h"
+
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
@@ -323,8 +323,8 @@ Expected<BinlogResult> applySingleTxnV2(Session* sess,
       return {ErrorCodes::ERR_INTERNAL, "It is not a slave"};
     }
   } else {
-      // migrating chunk.
-      sess->getCtx()->setReplOnly(true);
+    // migrating chunk.
+    sess->getCtx()->setReplOnly(true);
   }
 
   auto store = std::move(expdb.value().store);

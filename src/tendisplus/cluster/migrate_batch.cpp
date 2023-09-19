@@ -2,6 +2,8 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include "tendisplus/cluster/migrate_batch.h"
+
 #include <algorithm>
 #include <memory>
 #include <sstream>
@@ -9,9 +11,8 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include "glog/logging.h"
+
 #include "tendisplus/cluster/migrate_manager.h"
-#include "tendisplus/cluster/migrate_batch.h"
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {

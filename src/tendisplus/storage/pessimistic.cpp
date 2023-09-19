@@ -3,9 +3,11 @@
 // project for additional information.
 
 #include "tendisplus/storage/pessimistic.h"
+
 #include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
+
 bool PessimisticShard::isLocked(const std::string& k) const {
   std::lock_guard<std::mutex> lk(_mutex);
   return _set.find(k) != _set.end();

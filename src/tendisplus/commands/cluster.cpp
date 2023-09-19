@@ -7,29 +7,30 @@
 #include <sys/utsname.h>
 #endif
 
-#include <string>
-#include <utility>
-#include <memory>
 #include <algorithm>
 #include <cctype>
-#include <vector>
-#include <random>
 #include <clocale>
-#include <map>
 #include <list>
-#include "glog/logging.h"
-#include "tendisplus/utils/string.h"
-#include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/invariant.h"
+#include <map>
+#include <memory>
+#include <random>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "rapidjson/error/en.h"
+#include "rapidjson/stringbuffer.h"
+#include "rapidjson/writer.h"
+
 #include "tendisplus/commands/command.h"
-#include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/utils/base64.h"
-#include "tendisplus/storage/varint.h"
 #include "tendisplus/server/segment_manager.h"
 #include "tendisplus/server/server_entry.h"
-#include "rapidjson/writer.h"
-#include "rapidjson/stringbuffer.h"
-#include "rapidjson/error/en.h"
+#include "tendisplus/storage/varint.h"
+#include "tendisplus/utils/base64.h"
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
 
@@ -985,7 +986,6 @@ class PrepareMigrateCommand : public Command {
   }
 } preparemigrateCommand;
 
-
 class ReadymigrateCommand : public Command {
  public:
   ReadymigrateCommand() : Command("readymigrate", "as") {}
@@ -1016,7 +1016,6 @@ class ReadymigrateCommand : public Command {
     return {ErrorCodes::ERR_INTERNAL, "shouldn't be called"};
   }
 } readymigrateCommand;
-
 
 class MigrateendCommand : public Command {
  public:

@@ -6,12 +6,11 @@
 CDIR=`dirname $0`
 cd $CDIR
 
-
 function usage () {
 	echo "usage:"
-	echo "$0 3689" 
-	echo "$0 3689 PASSWORD" 
-	echo "$0 3689 + some redis arg like: $0 3689 --slaveof 1.1.1.1 3679" 
+	echo "$0 3689"
+	echo "$0 3689 PASSWORD"
+	echo "$0 3689 + some redis arg like: $0 3689 --slaveof 1.1.1.1 3679"
 }
 
 PORT=$1
@@ -22,7 +21,6 @@ then
     PASS_OPT=" -a "
     PASS="$2"
 fi
-
 
 if [ ! -n "$PORT"  ];then
 	echo "PORT not set, exit"

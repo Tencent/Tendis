@@ -5,16 +5,18 @@
 #ifndef SRC_TENDISPLUS_UTILS_STATUS_H_
 #define SRC_TENDISPLUS_UTILS_STATUS_H_
 
-#include <stdlib.h>
-#include <utility>
-#include <string>
-#include <memory>
 #ifndef _WIN32
 #include <execinfo.h>
 #else
 #include <optional.h>
 #endif
+
+#include <cstdlib>
+#include <memory>
+#include <string>
 #include <type_traits>
+#include <utility>
+
 #include "tendisplus/utils/portable.h"
 
 namespace tendisplus {
@@ -184,10 +186,10 @@ Expected<T> makeExpected(Args&&... args) {
     }                                                                  \
   } while (0)
 
-#define RET_IF_MEMORY_REQUEST_FAILED(SESS, SIZE)     \
-  auto tempStatus = (SESS)->memLimitRequest((SIZE)); \
-  if (!tempStatus.ok()) {                            \
-    return tempStatus;                               \
+#define RET_IF_MEMORY_REQUEST_FAILED(SESS, SIZE)       \
+  auto tempStatus = (SESS) -> memLimitRequest((SIZE)); \
+  if (!tempStatus.ok()) {                              \
+    return tempStatus;                                 \
   }
 }  // namespace tendisplus
 

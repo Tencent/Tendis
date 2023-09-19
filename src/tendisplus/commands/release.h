@@ -9,7 +9,8 @@
 #define TENDISPLUS_GIT_DIRTY "56"
 #define TENDISPLUS_BUILD_ID "VM_33_225_centos-1609312553"
 
-#include <stdint.h>
+#include <cstdint>
+
 uint64_t redisBuildId(void);
 
 #endif  // SRC_TENDISPLUS_COMMANDS_RELEASE_H_

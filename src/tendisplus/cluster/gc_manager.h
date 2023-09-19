@@ -19,9 +19,7 @@ struct DeleteRangeTask {
   explicit DeleteRangeTask(uint32_t storeid,
                            uint32_t slotIdStart,
                            uint32_t slotIdEnd)
-    : _storeid(storeid),
-      _slotStart(slotIdStart),
-      _slotEnd(slotIdEnd) {}
+    : _storeid(storeid), _slotStart(slotIdStart), _slotEnd(slotIdEnd) {}
 
   uint32_t _storeid;
   uint32_t _slotStart;
@@ -48,8 +46,9 @@ class GCManager {
   bool isDeletingSlot(uint32_t slot) const;
 
   Status deleteBitMap(const SlotsBitmap& slots, bool dumpIfError = true);
-  Status deleteBitMap(
-    const SlotsBitmap& slots, uint32_t storeid, bool dumpIfError = true);
+  Status deleteBitMap(const SlotsBitmap& slots,
+                      uint32_t storeid,
+                      bool dumpIfError = true);
 
   Status delGarbage();
 

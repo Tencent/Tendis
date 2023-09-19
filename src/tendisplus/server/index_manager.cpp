@@ -4,21 +4,18 @@
 
 #include "tendisplus/server/index_manager.h"
 
-#include <chrono>  // NOLINT
+#include <chrono>
 #include <memory>
-#include <vector>
-#include <utility>
 #include <string>
-
-#include "glog/logging.h"
+#include <utility>
+#include <vector>
 
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/portable.h"
-#include "tendisplus/utils/string.h"
 #include "tendisplus/utils/scopeguard.h"
-
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
 
@@ -112,23 +109,22 @@ std::string IndexManager::getInfoString() {
   ss << "deleter_matrix:" << _deleterMatrix->getInfoString() << "\r\n";
   uint64_t minttl = -1;
 
-  auto ttlStr = [](uint64_t ttl){
-    if (ttl == (uint64_t)- 1) {
+  auto ttlStr = [](uint64_t ttl) {
+    if (ttl == (uint64_t)-1) {
       return std::to_string(-1);
     } else {
       return msEpochToDatetime(ttl);
     }
   };
 
-
   for (uint32_t i = 0; i < _svr->getKVStoreCount(); i++) {
-    ss << "scanpoint_" << i << ":" << ttlStr(_scanPonitsTtl[i])
-       << "\r\n";
+    ss << "scanpoint_" << i << ":" << ttlStr(_scanPonitsTtl[i]) << "\r\n";
     if (_scanPonitsTtl[i] < minttl) {
       minttl = _scanPonitsTtl[i];
     }
   }
-  ss << "scanpoint" << ":" << ttlStr(minttl) << "\r\n";
+  ss << "scanpoint"
+     << ":" << ttlStr(minttl) << "\r\n";
 
   return ss.str();
 }
@@ -155,7 +151,7 @@ Status IndexManager::scanExpiredKeysJob(uint32_t storeId) {
   auto scanBatch = _cfg->scanCntIndexMgr;
   bool clusterEnabled = _svr->getParams()->clusterEnabled;
   if (clusterEnabled && _svr->getMigrateManager() &&
-            _svr->getMigrateManager()->existMigrateTask()) {
+      _svr->getMigrateManager()->existMigrateTask()) {
     return {ErrorCodes::ERR_OK, ""};
   }
 

@@ -2,16 +2,18 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <fstream>
-#include "glog/logging.h"
 #include "tendisplus/storage/kvstore.h"
-#include "tendisplus/utils/portable.h"
-#include "tendisplus/utils/time.h"
-#include "tendisplus/utils/invariant.h"
+
+#include <fstream>
+
 #include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/include/endian.h"
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/portable.h"
+#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
+
 RepllogCursorV2::RepllogCursorV2(Transaction* txn, uint64_t begin, uint64_t end)
   : _txn(txn), _baseCursor(nullptr), _start(begin), _cur(begin), _end(end) {}
 
@@ -51,11 +53,14 @@ Status RepllogCursorV2::seekToLast() {
 }
 
 Expected<MinbinlogInfo> RepllogCursorV2::getMinBinlogMeta(Transaction* txn,
-        bool checkTs = true) {
+                                                          bool checkTs = true) {
   MinbinlogInfo binlogInfo;
 
-  RecordKey key(REPLLOGKEYV2_META_CHUNKID, REPLLOGKEYV2_META_DBID,
-                RecordType::RT_META, "", "");
+  RecordKey key(REPLLOGKEYV2_META_CHUNKID,
+                REPLLOGKEYV2_META_DBID,
+                RecordType::RT_META,
+                "",
+                "");
   auto eval = txn->getKV(key.encode());
   if (eval.ok()) {
     auto v = RecordValue::decode(eval.value());
@@ -74,7 +79,7 @@ Expected<MinbinlogInfo> RepllogCursorV2::getMinBinlogMeta(Transaction* txn,
     if (v.value().getValue().size() == sizeof(uint64_t)) {
       if (checkTs) {
         LOG(ERROR) << "get binlog META error, size:"
-          << v.value().getValue().size();
+                   << v.value().getValue().size();
         return {ErrorCodes::ERR_INTERGER, "get binlog META error"};
       } else {
         binlogInfo.id = int64Decode(v.value().getValue().c_str());
@@ -83,12 +88,12 @@ Expected<MinbinlogInfo> RepllogCursorV2::getMinBinlogMeta(Transaction* txn,
       }
     } else if (v.value().getValue().size() == 2 * sizeof(uint64_t)) {
       binlogInfo.id = int64Decode(v.value().getValue().c_str());
-      binlogInfo.ts = int64Decode(v.value().getValue().c_str()
-                                  + sizeof(uint64_t));
+      binlogInfo.ts =
+        int64Decode(v.value().getValue().c_str() + sizeof(uint64_t));
       return binlogInfo;
     } else {
       LOG(ERROR) << "get binlog META error, size:"
-        << v.value().getValue().size();
+                 << v.value().getValue().size();
       return {ErrorCodes::ERR_INTERGER, "get binlog META error"};
     }
   } else if (!eval.ok() && eval.status().code() != ErrorCodes::ERR_NOTFOUND) {
@@ -100,7 +105,7 @@ Expected<MinbinlogInfo> RepllogCursorV2::getMinBinlogMeta(Transaction* txn,
 }
 
 Expected<MinbinlogInfo> RepllogCursorV2::getMinBinlogByCursor(
-        Transaction *txn) {
+  Transaction* txn) {
   MinbinlogInfo binlogInfo;
   auto cursor = txn->createBinlogCursor();
   if (!cursor) {
@@ -141,10 +146,10 @@ Expected<MinbinlogInfo> RepllogCursorV2::getMinBinlog(Transaction* txn) {
   DLOG(WARNING) << "binlog META is not exists, will use seek.";
 
   auto binlogInfo = getMinBinlogByCursor(txn);
-  if (!binlogInfo.ok()
-    && binlogInfo.status().code() != ErrorCodes::ERR_EXHAUST) {
+  if (!binlogInfo.ok() &&
+      binlogInfo.status().code() != ErrorCodes::ERR_EXHAUST) {
     LOG(WARNING) << "getMinBinlogByCursor failed:"
-      << binlogInfo.status().toString();
+                 << binlogInfo.status().toString();
   }
   return binlogInfo;
 }
@@ -170,7 +175,6 @@ Expected<ReplLogRawV2> RepllogCursorV2::getMaxBinlog(Transaction* txn) {
   if (!expRcd.ok()) {
     return expRcd.status();
   }
-
 
   /*if (expRcd.value().getRecordKey().getRecordType()
       != RecordType::RT_BINLOG) {
@@ -573,7 +577,6 @@ Expected<Record> SlotsCursor::next() {
     return expRcd.status();
   }
 }
-
 
 KVStore::KVStore(const std::string& id, const std::string& path)
   : _id(id), _dbPath(path), _backupDir(path + "/" + id + "_bak") {

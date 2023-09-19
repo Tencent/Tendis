@@ -3,6 +3,7 @@
 // project for additional information.
 
 #include <string>
+
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
@@ -125,7 +126,7 @@ class ScriptCommand : public Command {
     } else {
       return {ErrorCodes::ERR_LUA,
               "ERR Unknown subcommand or wrong number of arguments for '" + op +
-              "'. Try SCRIPT HELP."};
+                "'. Try SCRIPT HELP."};
     }
     return Command::fmtOK();
   }

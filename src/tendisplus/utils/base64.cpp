@@ -2,10 +2,11 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include "tendisplus/utils/base64.h"
+
+#include <cstring>
 #include <iostream>
 #include <string>
-#include <cstring>
-#include "tendisplus/utils/base64.h"
 
 std::string Base64::Encode(const unsigned char* str, int bytes) {
   static const char _base64_table[] =

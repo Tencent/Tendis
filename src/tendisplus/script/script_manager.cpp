@@ -2,20 +2,18 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include "tendisplus/script/script_manager.h"
 
 #include <memory>
-#include <string>
 #include <shared_mutex>
+#include <string>
 #include <utility>
 #include <vector>
-#include "tendisplus/script/script_manager.h"
 
 namespace tendisplus {
 
 ScriptManager::ScriptManager(std::shared_ptr<ServerEntry> svr)
-  : _svr(std::move(svr)),
-    _luaKill(false),
-    _stopped(false) {}
+  : _svr(std::move(svr)), _luaKill(false), _stopped(false) {}
 
 std::shared_ptr<LuaState> ScriptManager::getLuaStateBelongToThisThread() {
   std::shared_ptr<LuaState> luaState;
@@ -56,9 +54,8 @@ Expected<std::string> ScriptManager::run(Session* sess, int evalsha) {
     _luaKill = false;
   }
   auto luaState = getLuaStateBelongToThisThread();
-  auto ret = evalsha == 0 ?
-             luaState->evalCommand(sess) :
-             luaState->evalShaCommand(sess);
+  auto ret =
+    evalsha == 0 ? luaState->evalCommand(sess) : luaState->evalShaCommand(sess);
   {
     std::shared_lock<std::shared_timed_mutex> lock(_mutex);
     luaState->setLastEndTime(msSinceEpoch());
@@ -209,7 +206,7 @@ void ScriptManager::cron() {
   static uint64_t maxIdelTime = _svr->getParams()->luaStateMaxIdleTime;
   for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end();) {
     if (!iter->second->isRunning() &&
-      cur - iter->second->lastEndTime() > maxIdelTime) {
+        cur - iter->second->lastEndTime() > maxIdelTime) {
       LOG(INFO) << "delete LuaState, threadid:" << iter->first
                 << " idletime:" << cur - iter->second->lastEndTime()
                 << " running size:" << _mapLuaState.size();

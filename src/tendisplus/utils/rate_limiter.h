@@ -5,13 +5,15 @@
 #ifndef SRC_TENDISPLUS_UTILS_RATE_LIMITER_H_
 #define SRC_TENDISPLUS_UTILS_RATE_LIMITER_H_
 
-#include <utility>
-#include <memory>
 #include <algorithm>
+#include <memory>
+#include <utility>
+
 #include "rocksdb/env.h"
 #include "rocksdb/rate_limiter.h"
 
 namespace tendisplus {
+
 class RateLimiter {
  public:
   explicit RateLimiter(uint64_t bytesPerSecond)

@@ -2,15 +2,15 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <stdlib.h>
+#include "tendisplus/network/worker_pool.h"
+
+#include <cstdlib>
 #include <functional>
 #include <string>
 #include <thread>
-#include "glog/logging.h"
-#include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/network/worker_pool.h"
-#include "tendisplus/utils/invariant.h"
 
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/scopeguard.h"
 
 namespace tendisplus {
 
@@ -24,8 +24,8 @@ std::string PoolMatrix::toString() const {
 
 std::string PoolMatrix::getInfoString() const {
   std::stringstream ss;
-  ss << "inQueue " << inQueue << ",executing " << executing
-     << ",executed " << executed << ",queueTime " << queueTime << "ns"
+  ss << "inQueue " << inQueue << ",executing " << executing << ",executed "
+     << executed << ",queueTime " << queueTime << "ns"
      << ",executeTime " << executeTime << "ns";
   return ss.str();
 }

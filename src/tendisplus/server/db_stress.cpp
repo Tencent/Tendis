@@ -3,21 +3,19 @@
 // project for additional information.
 
 #include <memory>
+#include <thread>
 #include <utility>
-#include <thread>  // NOLINT
 
-#include "glog/logging.h"
-
-#include "tendisplus/server/server_entry.h"
+#include "tendisplus/commands/command.h"
+#include "tendisplus/commands/release.h"
+#include "tendisplus/commands/version.h"
+#include "tendisplus/network/network.h"
 #include "tendisplus/server/index_manager.h"
 #include "tendisplus/server/segment_manager.h"
-#include "tendisplus/commands/command.h"
-#include "tendisplus/network/network.h"
+#include "tendisplus/server/server_entry.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/invariant.h"
-#include "tendisplus/commands/version.h"
-#include "tendisplus/commands/release.h"
 
 // Number of key/values to place in database
 static int FLAGS_num = 100000;
@@ -30,7 +28,6 @@ static int FLAGS_threads = 10;
 
 static bool FLAGS_directWriteRocksdb = false;
 static bool FLAGS_ignoreKeyLock = false;
-
 
 // Size of each value
 // static int FLAGS_value_size = 100;
@@ -489,11 +486,8 @@ void DoWriteKVToRocksdb(ThreadState* thread) {
 
     SessionCtx* pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
-    RecordKey rk(expdb.value().chunkId,
-                 pCtx->getDbId(),
-                 RecordType::RT_KV,
-                 keyStr,
-                 "");
+    RecordKey rk(
+      expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, keyStr, "");
 
     uint64_t ts = 0;
     RecordValue rv(value, RecordType::RT_KV, pCtx->getVersionEP(), ts);
@@ -613,11 +607,13 @@ void printHelpInfo() {
   db_stress -- Benchmark Tool for Tendisplus
   usage: db_stress [options]
     Options:
-      --binlogEnabled=n             enable binlog for benchmark. 0 = off / 1 = on
+      --binlogEnabled=n             enable binlog for benchmark. 0 = off / 1 =
+  on
       --binlogSaveLogs=n            save binlog for benchmark. 0 = off / 1 = on
       --db=path                     set path used in benchmark.
       --kvStoreCount=n              set kvstorecount used in benchmark.
-      --generallog=n                enable log general for benchmark. 0 = off / 1 = on
+      --generallog=n                enable log general for benchmark. 0 = off /
+  1 = on
       --sleepAfterBenchmark=seconds sleepping time after test.
       --num=n                       kvwrite options number
       --thread=n                    work thread number
@@ -669,13 +665,13 @@ int main(int argc, char** argv) {
     int n;
     char junk;
     if (sscanf(argv[i], "--directWriteRocksdb=%d%c", &n, &junk) &&
-      (n == 0 || n == 1)) {
+        (n == 0 || n == 1)) {
       FLAGS_directWriteRocksdb = n;
     } else if (sscanf(argv[i], "--ignoreKeyLock=%d%c", &n, &junk) &&
-    (n == 0 || n == 1)) {
+               (n == 0 || n == 1)) {
       FLAGS_ignoreKeyLock = n;
     } else if (sscanf(argv[i], "--binlogEnabled=%d%c", &n, &junk) &&
-        (n == 0 || n == 1)) {
+               (n == 0 || n == 1)) {
       FLAGS_binlogEnabled = n;
     } else if (sscanf(argv[i], "--binlogSaveLogs=%d%c", &n, &junk) &&
                (n == 0 || n == 1)) {
@@ -705,7 +701,7 @@ int main(int argc, char** argv) {
     } else if (strncmp(argv[i], "--help", strlen("--help")) == 0) {
       printHelpInfo();
       std::exit(0);
-    } else if (sscanf(argv[i], "--rocksTransactionMode=%d%c", &n, &junk) ==1) {
+    } else if (sscanf(argv[i], "--rocksTransactionMode=%d%c", &n, &junk) == 1) {
       FLAGS_rocksTransactionMode = n;
     } else {
       std::fprintf(stderr, "Invalid flag '%s'\n", argv[i]);
@@ -729,7 +725,6 @@ int main(int argc, char** argv) {
   //});
 
   tendisplus::Run();
-
 
   return 0;
 }

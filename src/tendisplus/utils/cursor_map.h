@@ -5,14 +5,14 @@
 #ifndef SRC_TENDISPLUS_UTILS_CURSOR_MAP_H_
 #define SRC_TENDISPLUS_UTILS_CURSOR_MAP_H_
 
-#include <set>
-#include <map>
-#include <unordered_map>
 #include <atomic>
-#include <string>
+#include <map>
 #include <memory>
+#include <mutex>
+#include <set>
+#include <string>
+#include <unordered_map>
 #include <vector>
-#include <mutex>  // NOLINT
 
 #include "tendisplus/utils/status.h"
 
@@ -67,7 +67,6 @@ class CursorMap {
   std::map<uint64_t, std::string> _cursorTs;                    // {ts, cursor}
   std::unordered_map<uint64_t, std::set<uint64_t>> _sessionTs;  // {id, Ts(es)}
 };
-
 
 class KeyCursorMap {
  public:

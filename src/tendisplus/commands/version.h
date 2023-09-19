@@ -11,4 +11,3 @@
 std::string getTendisPlusVersion();
 
 #endif  // SRC_TENDISPLUS_COMMANDS_VERSION_H_
-

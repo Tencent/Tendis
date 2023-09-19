@@ -2,47 +2,46 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <memory>
-#include <utility>
-#include <string>
-#include <sstream>
-#include <map>
-#include <vector>
-#include <list>
-#include <limits>
+#include "tendisplus/storage/rocks/rocks_kvstore.h"
+
 #include <algorithm>
+#include <limits>
+#include <list>
+#include <map>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
 
-#include "glog/logging.h"
-#include "rapidjson/prettywriter.h"
 #include "rapidjson/document.h"
-#include "rapidjson/writer.h"
-#include "rapidjson/stringbuffer.h"
 #include "rapidjson/error/en.h"
-
+#include "rapidjson/prettywriter.h"
+#include "rapidjson/stringbuffer.h"
+#include "rapidjson/writer.h"
+#include "rocksdb/convenience.h"
 #include "rocksdb/db.h"
-#include "rocksdb/slice.h"
-#include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
+#include "rocksdb/iostats_context.h"
+#include "rocksdb/options.h"
+#include "rocksdb/perf_context.h"
+#include "rocksdb/slice.h"
+#include "rocksdb/statistics.h"
+#include "rocksdb/table.h"
+#include "rocksdb/table_properties.h"
 #include "rocksdb/utilities/backup_engine.h"
 #include "rocksdb/utilities/checkpoint.h"
-#include "rocksdb/options.h"
-#include "rocksdb/iostats_context.h"
-#include "rocksdb/perf_context.h"
-#include "rocksdb/statistics.h"
-#include "rocksdb/convenience.h"
-#include "rocksdb/table_properties.h"
 #include "rocksdb/utilities/table_properties_collectors.h"
 
-#include "tendisplus/storage/rocks/rocks_kvstore.h"
-#include "tendisplus/storage/rocks/rocks_kvttlcompactfilter.h"
-#include "tendisplus/utils/sync_point.h"
-#include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/time.h"
-#include "tendisplus/utils/string.h"
-#include "tendisplus/server/session.h"
 #include "tendisplus/server/server_entry.h"
+#include "tendisplus/server/session.h"
+#include "tendisplus/storage/rocks/rocks_kvttlcompactfilter.h"
 #include "tendisplus/storage/varint.h"
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/sync_point.h"
+#include "tendisplus/utils/time.h"
 #include "tendisplus/utils/time_record.h"
 
 namespace tendisplus {
@@ -277,15 +276,15 @@ Expected<uint64_t> RocksTxn::commit() {
 #ifdef TENDIS_DEBUG
     // NOTE(takenliu) for test case psyncEnabled,
     //   we need update the slave binlogtime
-    if (_store->getCfg()->psyncEnabled
-        && _session && _session->getCtx()->isMaster()) {
-        auto storeId = tendisplus::stoul(_store->dbId());
-        if (!storeId.ok()) {
-            LOG(ERROR) << "error dbid:" << _store->dbId();
-            return;
-        }
-        _session->getServerEntry()->getReplManager()->updateSyncTime(
-                storeId.value());
+    if (_store->getCfg()->psyncEnabled && _session &&
+        _session->getCtx()->isMaster()) {
+      auto storeId = tendisplus::stoul(_store->dbId());
+      if (!storeId.ok()) {
+        LOG(ERROR) << "error dbid:" << _store->dbId();
+        return;
+      }
+      _session->getServerEntry()->getReplManager()->updateSyncTime(
+        storeId.value());
     }
 #endif
   });
@@ -527,8 +526,8 @@ Status RocksTxn::addDeleteRangeBinlog(const std::string& begin,
     INVARIANT_D(_store->dbId() != CATALOG_NAME);
     setChunkId(Transaction::CHUNKID_DEL_RANGE);
     if (_replLogValues.size() >= 1) {
-      LOG(WARNING) << "deleteRange too big binlog size, begin:"
-                   << begin << " end:" << end;
+      LOG(WARNING) << "deleteRange too big binlog size, begin:" << begin
+                   << " end:" << end;
     }
     ReplLogValueEntryV2 logVal(
       ReplOp::REPL_OP_DEL_RANGE, msSinceEpoch(), begin, end);
@@ -547,10 +546,12 @@ Status RocksTxn::addDeleteFilesInRangeBinlog(const std::string& begin,
   if (_store->enableRepllog()) {
     INVARIANT_D(_store->dbId() != CATALOG_NAME);
     setChunkId(Transaction::CHUNKID_DEL_RANGE);
-    ReplLogValueEntryV2 logVal(
-      include_end ? ReplOp::REPL_OP_DEL_FILES_INCLUDE_END :
-                    ReplOp::REPL_OP_DEL_FILES_EXCLUDE_END,
-      msSinceEpoch(), begin, end);
+    ReplLogValueEntryV2 logVal(include_end
+                                 ? ReplOp::REPL_OP_DEL_FILES_INCLUDE_END
+                                 : ReplOp::REPL_OP_DEL_FILES_EXCLUDE_END,
+                               msSinceEpoch(),
+                               begin,
+                               end);
     _replLogValues.emplace_back(std::move(logVal));
   }
   return {ErrorCodes::ERR_OK, ""};
@@ -635,18 +636,20 @@ Status RocksTxn::applyBinlog(const ReplLogValueEntryV2& logEntry) {
       break;
     }
     case ReplOp::REPL_OP_DEL_FILES_INCLUDE_END: {
-      auto s =
-        _store->deleteFilesInRangeWithoutBinlog(
-          _store->getDataColumnFamilyHandle(),
-          logEntry.getOpKey(), logEntry.getOpValue(), true);
+      auto s = _store->deleteFilesInRangeWithoutBinlog(
+        _store->getDataColumnFamilyHandle(),
+        logEntry.getOpKey(),
+        logEntry.getOpValue(),
+        true);
       RET_IF_ERR(s);
       break;
     }
     case ReplOp::REPL_OP_DEL_FILES_EXCLUDE_END: {
-      auto s =
-        _store->deleteFilesInRangeWithoutBinlog(
-          _store->getDataColumnFamilyHandle(),
-          logEntry.getOpKey(), logEntry.getOpValue(), false);
+      auto s = _store->deleteFilesInRangeWithoutBinlog(
+        _store->getDataColumnFamilyHandle(),
+        logEntry.getOpKey(),
+        logEntry.getOpValue(),
+        false);
       RET_IF_ERR(s);
       break;
     }
@@ -811,7 +814,6 @@ void RocksOptTxn::SetSnapshot() {
   _txn->SetSnapshot();
 }
 
-
 RocksPesTxn::RocksPesTxn(RocksKVStore* store,
                          uint64_t txnId,
                          bool replOnly,
@@ -903,9 +905,8 @@ Status RocksWBTxn::rollback() {
   INVARIANT_D(!_done);
   _done = true;
 
-  const auto guard = MakeGuard([this] {
-    _store->markCommitted(_txnId, Transaction::TXNID_UNINITED);
-  });
+  const auto guard = MakeGuard(
+    [this] { _store->markCommitted(_txnId, Transaction::TXNID_UNINITED); });
   INVARIANT_D(_txn == nullptr);
   getWriteBatch()->Clear();
   return {ErrorCodes::ERR_OK, ""};
@@ -985,7 +986,7 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
   static std::set<std::string> notIntParams = {
     "blob_compression_type",
     "blob_garbage_collection_age_cutoff",
-    };
+  };
 
   int64_t value = 0;
   if (!notIntParams.count(key)) {
@@ -993,8 +994,8 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
     if (ed.ok()) {
       value = ed.value();
     } else {
-      LOG(FATAL) << "param need to be int64_t, rocks." << key
-                 << ":" << rawValue;
+      LOG(FATAL) << "param need to be int64_t, rocks." << key << ":"
+                 << rawValue;
       return {ErrorCodes::ERR_PARSEOPT, "invalid rocksdb option :" + key};
     }
   }
@@ -1205,8 +1206,7 @@ Status rocksdbTableOptionsSet(rocksdb::BlockBasedTableOptions& options,
                               const std::string& key,
                               const std::string& rawValue) {
   // TODO(takenliu): not int params need change two place, resolve it
-  static std::set<std::string> notIntParams = {
-    };
+  static std::set<std::string> notIntParams = {};
 
   int64_t value = 0;
   if (notIntParams.find(key) == notIntParams.end()) {
@@ -1266,19 +1266,17 @@ Status rocksdbTableOptionsSet(rocksdb::BlockBasedTableOptions& options,
   return {ErrorCodes::ERR_OK, ""};
 }
 
-
-
-RocksKVStore::RocksKVStore(const std::string& id,
-                           const std::shared_ptr<ServerParams>& cfg,
-                           std::shared_ptr<rocksdb::Cache> blockCache,
-                           std::shared_ptr<rocksdb::Cache> rowCache,
-                           std::shared_ptr<rocksdb::RateLimiter> rateLimiter,
-                           std::shared_ptr<rocksdb::SstFileManager>
-                             sstFileManager,
-                           bool enableRepllog,
-                           KVStore::StoreMode mode,
-                           TxnMode txnMode,
-                           uint32_t flag)
+RocksKVStore::RocksKVStore(
+  const std::string& id,
+  const std::shared_ptr<ServerParams>& cfg,
+  std::shared_ptr<rocksdb::Cache> blockCache,
+  std::shared_ptr<rocksdb::Cache> rowCache,
+  std::shared_ptr<rocksdb::RateLimiter> rateLimiter,
+  std::shared_ptr<rocksdb::SstFileManager> sstFileManager,
+  bool enableRepllog,
+  KVStore::StoreMode mode,
+  TxnMode txnMode,
+  uint32_t flag)
   : KVStore(id, cfg->dbPath),
     _cfg(cfg),
     _isRunning(false),
@@ -1850,8 +1848,8 @@ Expected<uint64_t> RocksKVStore::GetApproximateSizes(ColumnFamilyNumber cf,
   ranges[0].start = rocksdb::Slice(*begin);
   ranges[0].limit = rocksdb::Slice(*end);
 
-  rocksdb::Status s = db->GetApproximateSizes(options,
-    getColumnFamilyHandle(cf), ranges.data(), 1, sizes.data());
+  rocksdb::Status s = db->GetApproximateSizes(
+    options, getColumnFamilyHandle(cf), ranges.data(), 1, sizes.data());
   if (!s.ok()) {
     return {ErrorCodes::ERR_INTERNAL, s.ToString()};
   }
@@ -2470,7 +2468,7 @@ Expected<std::string> RocksKVStore::copyCkpt(const std::string& dir) {
       return {ErrorCodes::ERR_INTERNAL, ss.str()};
     }
     LOG(INFO) << (getCfg()->moveDirWhenRestoreCkpt ? "move" : "copy")
-      << " ckpt, src:" << dir << ", dst:" << path;
+              << " ckpt, src:" << dir << ", dst:" << path;
     if (getCfg()->moveDirWhenRestoreCkpt) {
       filesystem::rename(dir, path);
     } else {
@@ -2732,7 +2730,7 @@ Status RocksKVStore::deleteFilesInRange(const std::string& begin,
     getDataColumnFamilyHandle(), begin, end, include_end);
   RET_IF_ERR(s);
   auto ptxn = createTransaction(nullptr);
-    if (!ptxn.ok()) {
+  if (!ptxn.ok()) {
     LOG(ERROR) << "deleteFilesInRange not atomic,createTransaction failed!!!";
     return ptxn.status();
   }
@@ -2750,12 +2748,13 @@ Status RocksKVStore::deleteFilesInRange(const std::string& begin,
   return {ErrorCodes::ERR_OK, ""};
 }
 
-Status RocksKVStore::deleteFilesInRangeBinlog(uint64_t begin, uint64_t end,
+Status RocksKVStore::deleteFilesInRangeBinlog(uint64_t begin,
+                                              uint64_t end,
                                               bool include_end) {
-    auto beginKeyStr = ReplLogKeyV2(0).encode();  // begin always use 0
-    auto endKeyStr = ReplLogKeyV2(end).encode();
-    return deleteFilesInRangeWithoutBinlog(
-      getBinlogColumnFamilyHandle(), beginKeyStr, endKeyStr, include_end);
+  auto beginKeyStr = ReplLogKeyV2(0).encode();  // begin always use 0
+  auto endKeyStr = ReplLogKeyV2(end).encode();
+  return deleteFilesInRangeWithoutBinlog(
+    getBinlogColumnFamilyHandle(), beginKeyStr, endKeyStr, include_end);
 }
 
 Status RocksKVStore::deleteFilesInRangeWithoutBinlog(ColumnFamilyNumber cf,
@@ -2891,25 +2890,23 @@ bool RocksKVStore::getIntProperty(const std::string& property,
                                   ColumnFamilyNumber cf) const {
   bool ok = false;
   if (_isRunning) {
-    if (cf == ColumnFamilyNumber::ColumnFamily_All
-        && _cfg->binlogUsingDefaultCF) {
+    if (cf == ColumnFamilyNumber::ColumnFamily_All &&
+        _cfg->binlogUsingDefaultCF) {
       cf = ColumnFamilyNumber::ColumnFamily_Default;
     }
     if (cf == ColumnFamilyNumber::ColumnFamily_All) {
       *value = 0;
       uint64_t tmp = 0;
-      ok =
-        getBaseDB()->GetIntProperty(_cfHandles[0], property, &tmp);
+      ok = getBaseDB()->GetIntProperty(_cfHandles[0], property, &tmp);
       if (!ok) {
         LOG(WARNING) << "db:" << dbId() << " getProperty:" << property
                      << " failed";
       }
       *value += tmp;
-      ok =
-        getBaseDB()->GetIntProperty(_cfHandles[1], property, &tmp);
+      ok = getBaseDB()->GetIntProperty(_cfHandles[1], property, &tmp);
       if (!ok) {
         LOG(WARNING) << "db:" << dbId() << " getProperty:" << property
-        << " failed";
+                     << " failed";
       }
       *value += tmp;
     } else {
@@ -2917,7 +2914,7 @@ bool RocksKVStore::getIntProperty(const std::string& property,
         getBaseDB()->GetIntProperty(getColumnFamilyHandle(cf), property, value);
       if (!ok) {
         LOG(WARNING) << "db:" << dbId() << " getProperty:" << property
-        << " failed";
+                     << " failed";
       }
     }
   }
@@ -3038,11 +3035,10 @@ Status RocksKVStore::recoveryFromBgError() {
 }
 
 Status RocksKVStore::setOptionDynamic(const std::string& option,
-                               const std::string& value) {
+                                      const std::string& value) {
   std::unordered_map<std::string, std::string> map;
   if (option.substr(0, 6) != "rocks.") {
-    return {ErrorCodes::ERR_INTERNAL,
-            option + " is not rocksdb option"};
+    return {ErrorCodes::ERR_INTERNAL, option + " is not rocksdb option"};
   }
 
   static std::set<std::string> rocksdb_dynamic_options = {
@@ -3055,8 +3051,7 @@ Status RocksKVStore::setOptionDynamic(const std::string& option,
     "rocks.blob_file_size",
     "rocks.blob_garbage_collection_age_cutoff",
     "rocks.enable_blob_garbage_collection",
-    "rocks.blob_compression_type"
-  };
+    "rocks.blob_compression_type"};
   // option, example: "rocks.binlogcf.enable_blob_files"
   // new_option, example: "rocks.enable_blob_files"
   // short_option, example: "enable_blob_files"
@@ -3101,7 +3096,7 @@ Status RocksKVStore::setOptionDynamic(const std::string& option,
     }
   } else {
     if (cf == ColumnFamilyNumber::ColumnFamily_All ||
-      cf == ColumnFamilyNumber::ColumnFamily_Default) {
+        cf == ColumnFamilyNumber::ColumnFamily_Default) {
       auto s = getBaseDB()->SetOptions(
         getColumnFamilyHandle(ColumnFamilyNumber::ColumnFamily_Default), map);
       if (!s.ok()) {
@@ -3109,7 +3104,7 @@ Status RocksKVStore::setOptionDynamic(const std::string& option,
       }
     }
     if (cf == ColumnFamilyNumber::ColumnFamily_All ||
-      cf == ColumnFamilyNumber::ColumnFamily_Binlog) {
+        cf == ColumnFamilyNumber::ColumnFamily_Binlog) {
       auto s = getBaseDB()->SetOptions(
         getColumnFamilyHandle(ColumnFamilyNumber::ColumnFamily_Binlog), map);
       if (!s.ok()) {
@@ -3409,9 +3404,7 @@ void RocksKVStore::appendJSONStat(
 }
 
 RocksdbEnv::RocksdbEnv()
-  : _errCnt(0),
-    _reason(rocksdb::BackgroundErrorReason::kFlush),
-    _bgError("") {}
+  : _errCnt(0), _reason(rocksdb::BackgroundErrorReason::kFlush), _bgError("") {}
 
 void RocksdbEnv::setError(rocksdb::BackgroundErrorReason reason,
                           rocksdb::Status* error) {

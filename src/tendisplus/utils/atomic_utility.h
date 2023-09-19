@@ -6,8 +6,9 @@
 #define SRC_TENDISPLUS_UTILS_ATOMIC_UTILITY_H_
 
 #include <atomic>
-#include <memory>
 #include <iostream>
+#include <memory>
+
 #include "gtest/gtest.h"
 
 namespace tendisplus {

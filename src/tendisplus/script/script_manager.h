@@ -6,12 +6,13 @@
 #define SRC_TENDISPLUS_SCRIPT_SCRIPT_MANAGER_H_
 
 #include <list>
-#include <unordered_map>
 #include <memory>
-#include <string>
 #include <shared_mutex>
-#include "tendisplus/server/server_entry.h"
+#include <string>
+#include <unordered_map>
+
 #include "tendisplus/script/lua_state.h"
+#include "tendisplus/server/server_entry.h"
 
 namespace tendisplus {
 
@@ -27,8 +28,7 @@ class ScriptManager {
   Expected<std::string> run(Session* sess, int evalsha);
   Expected<std::string> setLuaKill();
   Expected<std::string> flush(Session* sess);
-  Expected<std::string> getScriptContent(Session* sess,
-                                         const std::string& sha);
+  Expected<std::string> getScriptContent(Session* sess, const std::string& sha);
   Expected<std::string> saveLuaScript(Session* sess,
                                       const std::string& sha,
                                       const std::string& script);

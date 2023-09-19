@@ -5,19 +5,20 @@
 #ifndef SRC_TENDISPLUS_COMMANDS_COMMAND_H_
 #define SRC_TENDISPLUS_COMMANDS_COMMAND_H_
 
-#include <string>
+#include <list>
 #include <map>
 #include <memory>
-#include <vector>
-#include <list>
-#include <utility>
+#include <string>
 #include <unordered_map>
-#include "tendisplus/utils/status.h"
-#include "tendisplus/server/session.h"
-#include "tendisplus/network/session_ctx.h"
+#include <utility>
+#include <vector>
+
 #include "tendisplus/lock/lock.h"
-#include "tendisplus/storage/kvstore.h"
+#include "tendisplus/network/session_ctx.h"
 #include "tendisplus/server/server_entry.h"
+#include "tendisplus/server/session.h"
+#include "tendisplus/storage/kvstore.h"
+#include "tendisplus/utils/status.h"
 
 namespace tendisplus {
 
@@ -83,20 +84,21 @@ class Command {
 
   // NOTE[zakzheng] scanSimple will seek to from,
   // and will return cnt number of element if enough
-  static Expected<std::list<Record>> scanSimple(
-    Session* sess,
-    const std::string& pk,
-    const std::string& from,
-    uint64_t cnt,
-    Transaction* txn);
+  static Expected<std::list<Record>> scanSimple(Session* sess,
+                                                const std::string& pk,
+                                                const std::string& from,
+                                                uint64_t cnt,
+                                                Transaction* txn);
 
   static Status delKeyAndTTL(Session* sess,
                              const RecordKey& mk,
                              const RecordValue& val,
                              PStore kvstore,
                              Transaction* txn);
-  static Status delKey(Session* sess, const std::string& key, RecordType tp,
-          Transaction* txn);
+  static Status delKey(Session* sess,
+                       const std::string& key,
+                       RecordType tp,
+                       Transaction* txn);
 
   // return true if exists and delete succ
   // return false if not exists
@@ -148,7 +150,8 @@ class Command {
                                      RecordType valueType,
                                      Transaction* txn,
                                      const TTLIndex* ictx = nullptr);
-  static bool useDeleteRange(uint64_t eleCount, RecordType type,
+  static bool useDeleteRange(uint64_t eleCount,
+                             RecordType type,
                              const std::shared_ptr<ServerParams>& cfg);
 
   static Expected<string> delSubkeysRange(Session* sess,

@@ -5,13 +5,14 @@
 #ifndef SRC_TENDISPLUS_SERVER_SEGMENT_MANAGER_H_
 #define SRC_TENDISPLUS_SERVER_SEGMENT_MANAGER_H_
 
+#include <list>
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
-#include <list>
-#include "tendisplus/storage/kvstore.h"
-#include "tendisplus/server/session.h"
+
 #include "tendisplus/lock/lock.h"
+#include "tendisplus/server/session.h"
+#include "tendisplus/storage/kvstore.h"
 
 namespace tendisplus {
 
