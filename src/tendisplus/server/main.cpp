@@ -104,6 +104,7 @@ int main(int argc, char* argv[]) {
     FLAGS_v = 0;
   }
 
+  FLAGS_max_log_size = params->logSize;
   if (params->logDir != "") {
     FLAGS_log_dir = params->logDir;
     std::cout << "glog dir:" << FLAGS_log_dir << std::endl;

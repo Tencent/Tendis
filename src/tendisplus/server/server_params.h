@@ -443,6 +443,7 @@ class ServerParams {
   uint32_t port = 8903;
   std::string logLevel = "";
   std::string logDir = "./";
+  uint32_t logSize = 128 * 1024 * 1024;
   bool daemon = true;
 
   std::string storageEngine = "rocks";
