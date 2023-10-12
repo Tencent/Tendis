@@ -66,7 +66,7 @@ void migrate(const std::shared_ptr<ServerEntry>& server1,
 void waitMigrateEnd(const std::shared_ptr<ServerEntry>& server1,
                     const std::shared_ptr<ServerEntry>& server2,
                     uint32_t chunkid) {
-  std::this_thread::sleep_for(3s);
+  std::this_thread::sleep_for(std::chrono::seconds(3));
 }
 
 void checkDataMigrated(const std::shared_ptr<ServerEntry>& master,

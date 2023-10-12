@@ -94,14 +94,15 @@ mgl::LockMode Command::RdLock() {
   return _expRdLk;
 }
 
-void Command::changeCommand(const string& changeCmdList, string mode) {
+void Command::changeCommand(const std::string& changeCmdList,
+                            std::string mode) {
   LOG(INFO) << "changeCommand begin,mode:" << mode << " list:" << changeCmdList;
   std::stringstream ssAll(changeCmdList);
-  string one;
+  std::string one;
   while (std::getline(ssAll, one, ',')) {
     std::vector<std::string> kv;
     std::stringstream ssOne(one);
-    string temp;
+    std::string temp;
     while (std::getline(ssOne, temp, ' ')) {
       kv.push_back(temp);
     }
@@ -112,8 +113,8 @@ void Command::changeCommand(const string& changeCmdList, string mode) {
       LOG(FATAL) << "changeCommand error rename:" << one;
       continue;
     }
-    string& oldname = kv[0];
-    string& newname = kv[1];
+    std::string& oldname = kv[0];
+    std::string& newname = kv[1];
     if (mode == "rename") {
       if (commandMap().find(oldname) == commandMap().end()) {
         LOG(FATAL) << "changeCommand error mode:" << mode
@@ -363,7 +364,7 @@ Status Command::delKeyPessimisticInLock(Session* sess,
   }
   std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
-  Expected<string> ret =
+  Expected<std::string> ret =
     delSubkeysRange(sess, storeId, mk, valueType, txn.get());
   if (!ret.ok()) {
     return ret.status();
@@ -494,11 +495,11 @@ Status Command::delKeyOptimismInLock(Session* sess,
   return s.status();
 }
 
-Expected<string> Command::delSubkeysRange(Session* sess,
-                                          uint32_t storeId,
-                                          const RecordKey& mk,
-                                          RecordType valueType,
-                                          Transaction* txn) {
+Expected<std::string> Command::delSubkeysRange(Session* sess,
+                                               uint32_t storeId,
+                                               const RecordKey& mk,
+                                               RecordType valueType,
+                                               Transaction* txn) {
   Status s(ErrorCodes::ERR_OK, "");
   auto guard = MakeGuard([&s] {
     if (!s.ok()) {
@@ -614,8 +615,8 @@ Expected<string> Command::delSubkeysRange(Session* sess,
 
   // NOTE(takenliu): deleteRange and delete meta is not in the same txn.
   for (uint32_t i = 0; i < prefixes.size(); i += 2) {
-    string start = prefixes[i].prefixPk();
-    string end = prefixes[i + 1].prefixPk();
+    std::string start = prefixes[i].prefixPk();
+    std::string end = prefixes[i + 1].prefixPk();
     auto s = kvstore->deleteRange(start, end);
     if (!s.ok()) {
       LOG(ERROR) << "delSubkeysRange::deleteRange commit failed, start:"

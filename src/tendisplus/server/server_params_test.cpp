@@ -141,7 +141,7 @@ TEST(ServerParams, DynamicSet) {
   auto s = cfg->parseFile("gtest_serverparams_dynamicset.cfg");
   EXPECT_EQ(s.ok(), true) << s.toString();
 
-  string errinfo;
+  std::string errinfo;
   EXPECT_FALSE(cfg->setVar("port", "8904", false).ok());
   EXPECT_EQ(cfg->port, 8903);
   EXPECT_TRUE(cfg->setVar("maxBinlogKeepNum", "100", false).ok());

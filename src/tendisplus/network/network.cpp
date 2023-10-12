@@ -23,7 +23,7 @@ using asio::ip::tcp;
 
 #if defined(TENDIS_DEBUG) && !defined(_WIN32)
 void printShellResult(std::string cmd) {
-  string cmdFull = cmd + " 2>&1";
+  std::string cmdFull = cmd + " 2>&1";
   char buffer[1024];
   FILE* fp = popen(cmdFull.c_str(), "r");
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -35,13 +35,14 @@ void printShellResult(std::string cmd) {
 }
 
 void printPortRunningInfo(uint32_t port) {
-  string err = "running process info for port " + to_string(port) + ":";
+  std::string err =
+    "running process info for port " + std::to_string(port) + ":";
   std::cerr << err.c_str();
   LOG(ERROR) << err;
-  string cmdPid =
-    "pid=`lsof -i:" + to_string(port) + "|tail -1|awk '{print $2}'`;";
-  printShellResult("netstat |grep " + to_string(port));
-  printShellResult("lsof -i:" + to_string(port));
+  std::string cmdPid =
+    "pid=`lsof -i:" + std::to_string(port) + "|tail -1|awk '{print $2}'`;";
+  printShellResult("netstat |grep " + std::to_string(port));
+  printShellResult("lsof -i:" + std::to_string(port));
   printShellResult(cmdPid + "ls -l /proc/$pid/exe");
   printShellResult(cmdPid + "ls -l /proc/$pid/cwd");
   printShellResult(cmdPid + "ps aux|grep $pid|grep -v grep");

@@ -235,12 +235,14 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
     SyncWriteData("0");
 
     uint32_t keylen = key.size();
-    SyncWriteData(string(reinterpret_cast<char*>(&keylen), sizeof(uint32_t)));
+    SyncWriteData(
+      std::string(reinterpret_cast<char*>(&keylen), sizeof(uint32_t)));
 
     SyncWriteData(key);
 
     uint32_t valuelen = value.size();
-    SyncWriteData(string(reinterpret_cast<char*>(&valuelen), sizeof(uint32_t)));
+    SyncWriteData(
+      std::string(reinterpret_cast<char*>(&valuelen), sizeof(uint32_t)));
     SyncWriteData(value);
 
     curWriteNum++;

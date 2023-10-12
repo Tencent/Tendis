@@ -167,10 +167,10 @@ class WorkLoad {
   void setMaxKeyLen(uint32_t max_key_len);
   Expected<uint64_t> getIntResult(const std::vector<std::string>& args);
   std::string getStringResult(const std::vector<std::string>& args);
-  void addClusterSession(const string& addr, TestSession sess);
+  void addClusterSession(const std::string& addr, TestSession sess);
 
  private:
-  Expected<string> runCommand(const std::vector<std::string>& args);
+  Expected<std::string> runCommand(const std::vector<std::string>& args);
 
  private:
   TestSession _session;

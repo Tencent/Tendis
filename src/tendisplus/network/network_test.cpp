@@ -175,7 +175,7 @@ class server {
     try {
       _acceptor = new asio::ip::tcp::acceptor(
         io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port));
-    } catch (const exception& e) {
+    } catch (const std::exception& e) {
 #if defined(TENDIS_DEBUG) && !defined(_WIN32)
       printPortRunningInfo(port);
 #endif
@@ -329,7 +329,7 @@ class server2 {
     try {
       _acceptor = new asio::ip::tcp::acceptor(
         io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port));
-    } catch (const exception& e) {
+    } catch (const std::exception& e) {
 #if defined(TENDIS_DEBUG) && !defined(_WIN32)
       printPortRunningInfo(port);
 #endif
@@ -439,7 +439,7 @@ TEST(NetSession, SocketShutdownRead) {
   asio::ip::tcp::endpoint end_point(asio::ip::address::from_string("127.0.0.1"),
                                     port);
   conn.connect(end_point);
-  std::this_thread::sleep_for(2s);
+  std::this_thread::sleep_for(std::chrono::seconds(2));
 
   std::shared_ptr<session2> sess(svr.getSession());
   // session have two ref count.one is held by sess,
@@ -449,7 +449,7 @@ TEST(NetSession, SocketShutdownRead) {
     sess->getSock()->shutdown(asio::ip::tcp::socket::shutdown_receive);
   });
   thd2.join();
-  std::this_thread::sleep_for(2s);
+  std::this_thread::sleep_for(std::chrono::seconds(2));
   // we call shutdown. async_read_some will callback
   // and release session shared_ptr. so session only
   // have a ref count.
@@ -464,7 +464,7 @@ TEST(NetSession, SocketShutdownRead) {
                       EXPECT_EQ(actualLen, 11);
                       EXPECT_EQ(sess.use_count(), 2);
                     });
-  std::this_thread::sleep_for(2s);
+  std::this_thread::sleep_for(std::chrono::seconds(2));
   // after 2 seconds, async_write callback and release session,
   // session only have a ref count.
   EXPECT_EQ(sess.use_count(), 1);

@@ -395,7 +395,7 @@ std::shared_ptr<ServerParams> GenServerParams() {
 
   auto cfg = std::make_shared<ServerParams>();
   auto s = cfg->parseFile(tmp_conf_file);
-  LOG(INFO) << "params:" << endl << cfg->showAll();
+  LOG(INFO) << "params:" << std::endl << cfg->showAll();
   if (!s.ok()) {
     LOG(FATAL) << "conf parseFile ret:" << s.toString();
   }

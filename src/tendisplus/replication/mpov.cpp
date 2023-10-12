@@ -320,7 +320,7 @@ bool ReplManager::registerIncrSyncStatus(
     return false;
   }
 
-  string slaveNode = listenIpArg + ":" + to_string(listen_port);
+  std::string slaveNode = listenIpArg + ":" + std::to_string(listen_port);
   auto iter = _fullPushStatus[storeId].find(slaveNode);
   if (iter != _fullPushStatus[storeId].end()) {
     LOG(INFO) << "registerIncrSync erase _fullPushStatus, "
@@ -384,7 +384,7 @@ bool ReplManager::registerIncrSyncStatus(
 void ReplManager::supplyFullSyncRoutine(
   std::shared_ptr<BlockingTcpClient> client,
   uint32_t storeId,
-  const string& slave_listen_ip,
+  const std::string& slave_listen_ip,
   uint16_t slave_listen_port) {
   LocalSessionGuard sg(_svr.get());
   sg.getSession()->setArgs(
@@ -412,7 +412,8 @@ void ReplManager::supplyFullSyncRoutine(
   {
     std::lock_guard<std::mutex> lk(_mutex);
     uint64_t highestBinlogid = store->getHighestBinlogId();
-    string slaveNode = slave_listen_ip + ":" + to_string(slave_listen_port);
+    std::string slaveNode =
+      slave_listen_ip + ":" + std::to_string(slave_listen_port);
     auto iter = _fullPushStatus[storeId].find(slaveNode);
     if (iter != _fullPushStatus[storeId].end()) {
       LOG(INFO) << "supplyFullSyncRoutine already have _fullPushStatus, "
@@ -456,7 +457,8 @@ void ReplManager::supplyFullSyncRoutine(
   auto guard_0 = MakeGuard(
     [this, store, storeId, &hasError, slave_listen_ip, slave_listen_port]() {
       std::lock_guard<std::mutex> lk(_mutex);
-      string slaveNode = slave_listen_ip + ":" + to_string(slave_listen_port);
+      std::string slaveNode =
+        slave_listen_ip + ":" + std::to_string(slave_listen_port);
       auto iter = _fullPushStatus[storeId].find(slaveNode);
       if (iter != _fullPushStatus[storeId].end()) {
         if (hasError) {
@@ -594,7 +596,7 @@ void ReplManager::AddFakeFullPushStatus(uint64_t slaveOffset,
                                         const std::string& ip,
                                         uint64_t port) {
   std::lock_guard<std::mutex> lk(_mutex);
-  string slaveNode = ip + ":" + to_string(port);
+  std::string slaveNode = ip + ":" + std::to_string(port);
 
   LocalSessionGuard g(_svr.get());
   for (uint32_t storeId = 0; storeId < _svr->getKVStoreCount(); storeId++) {
@@ -645,7 +647,7 @@ void ReplManager::AddFakeFullPushStatus(uint64_t slaveOffset,
 
 void ReplManager::DelFakeFullPushStatus(const std::string& ip, uint64_t port) {
   std::lock_guard<std::mutex> lk(_mutex);
-  string slaveNode = ip + ":" + to_string(port);
+  std::string slaveNode = ip + ":" + std::to_string(port);
 
   for (uint32_t storeId = 0; storeId < _svr->getKVStoreCount(); storeId++) {
     if (_fullPushStatus[storeId].find(slaveNode) !=
@@ -711,7 +713,7 @@ void ReplManager::supplyFullPsyncRoutine(
   const std::string& slave_port) {
   char runId[CONFIG_RUN_ID_SIZE + 1];
   redis_port::getRandomHexChars(runId, CONFIG_RUN_ID_SIZE);
-  client->writeData("+FULLRESYNC " + string(runId, CONFIG_RUN_ID_SIZE) +
+  client->writeData("+FULLRESYNC " + std::string(runId, CONFIG_RUN_ID_SIZE) +
                     " 0\r\n");
 
   // send no keys rdb to client
@@ -726,7 +728,7 @@ void ReplManager::supplyFullPsyncRoutine(
     0x3a, 0xd1, 0x2d, 0xca, 0x85, 0x7c, 0xdd, 0x26};
 
   auto length = sizeof(rdbData) / sizeof(rdbData[0]);
-  client->writeData("$" + to_string(length) + "\r\n");
+  client->writeData("$" + std::to_string(length) + "\r\n");
 
   auto s = client->writeData(
     std::string(reinterpret_cast<const char*>(rdbData), length));
@@ -781,15 +783,14 @@ void ReplManager::supplyFullPsyncRoutine(
 
   // save full status
   uint64_t clientId = _clientIdGen.fetch_add(1);
-  string remoteIP =
+  std::string remoteIP =
     slave_listen_ip.empty() ? client->getRemoteAddress() : slave_listen_ip;
   auto remotePort = slave_port.empty()
     ? client->getRemotePort()
-    : static_cast<uint16_t>(
-        tendisplus::strtoul(slave_port.c_str(), nullptr, 10));
+    : static_cast<uint16_t>(std::strtoul(slave_port.c_str(), nullptr, 10));
   {
     std::lock_guard<std::mutex> lk(_mutex);
-    string slaveNode = remoteIP + ":" + to_string(remotePort);
+    std::string slaveNode = remoteIP + ":" + std::to_string(remotePort);
     auto iter = _fullPushStatus[storeId].find(slaveNode);
     if (iter != _fullPushStatus[storeId].end()) {
       LOG(INFO) << "supplyFullPsyncRoutine already have _fullPushStatus, "
@@ -831,7 +832,7 @@ void ReplManager::supplyFullPsyncRoutine(
 
   auto guard_0 = MakeGuard([this, storeId, remoteIP, remotePort]() {
     std::lock_guard<std::mutex> lk(_mutex);
-    string slaveNode = remoteIP + ":" + to_string(remotePort);
+    std::string slaveNode = remoteIP + ":" + std::to_string(remotePort);
     auto iter = _fullPushStatus[storeId].find(slaveNode);
     if (iter != _fullPushStatus[storeId].end()) {
       LOG(INFO) << "supplyFullPsyncRoutine, _fullPushStatus erase, "

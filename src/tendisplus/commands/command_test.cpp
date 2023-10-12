@@ -958,7 +958,7 @@ void testConfigRewrite(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(find);
   file.close();
 
-  ofstream out;
+  std::ofstream out;
   out.open(confile);
   out.flush();
   out << text;
@@ -3122,8 +3122,8 @@ TEST(Command, XsizeCommand) {
 // NOTE(takenliu): renameCommand may change command's name or behavior, so put
 // it in the end
 // INSTANTIATE_TEST_CASE_P may run later TEST(Command, renameCommand)
-extern string gRenameCmdList;
-extern string gMappingCmdList;
+extern std::string gRenameCmdList;
+extern std::string gMappingCmdList;
 TEST(Command, renameCommand) {
   const auto guard = MakeGuard([] { destroyEnv(); });
 
