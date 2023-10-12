@@ -368,7 +368,7 @@ TEST(Repl, SlaveOfNeedEmpty) {
   }
 }
 
-void checkBinlogFile(string dir, bool hasBinlog, uint32_t storeCount) {
+void checkBinlogFile(std::string dir, bool hasBinlog, uint32_t storeCount) {
   for (uint32_t i = 0; i < storeCount; ++i) {
     std::string fullFileName = dir + "/dump/" + std::to_string(i) + "/";
 
@@ -937,20 +937,20 @@ void checkBinlogKeepNum(std::shared_ptr<ServerEntry> svr, uint32_t num) {
   auto ctx = std::make_shared<asio::io_context>();
   auto session = makeSession(svr, ctx);
   for (size_t i = 0; i < svr->getKVStoreCount(); i++) {
-    session->setArgs({"binlogpos", to_string(i)});
+    session->setArgs({"binlogpos", std::to_string(i)});
     auto expect = Command::runSessionCmd(session.get());
     uint64_t binlogpos =
       Command::getInt64FromFmtLongLong(expect.value()).value();
 
-    session->setArgs({"binlogstart", to_string(i)});
+    session->setArgs({"binlogstart", std::to_string(i)});
     expect = Command::runSessionCmd(session.get());
     uint64_t binlogstart =
       Command::getInt64FromFmtLongLong(expect.value()).value();
 
-    session->setArgs({"binlogmeta", to_string(i)});
+    session->setArgs({"binlogmeta", std::to_string(i)});
     expect = Command::runSessionCmd(session.get());
-    string binlogmeta = expect.value();
-    string reg = "minbinlogid:" + std::to_string(binlogstart) + " ";
+    std::string binlogmeta = expect.value();
+    std::string reg = "minbinlogid:" + std::to_string(binlogstart) + " ";
     EXPECT_TRUE(binlogmeta.find(reg) != binlogmeta.npos);
 
     LOG(INFO) << "checkBinlogKeepNum, port:" << svr->getParams()->port
@@ -1091,7 +1091,7 @@ Status scan(const std::string& logfile) {
 
   int ret = fread(buff, BINLOG_HEADER_V2_LEN, 1, pf);
   if (ret != 1 || strstr(buff, BINLOG_HEADER_V2) != buff) {
-    cerr << "read head failed." << endl;
+    std::cerr << "read head failed." << std::endl;
     fclose(pf);
     return {ErrorCodes::ERR_INTERNAL, "read head failed."};
   }
@@ -1116,7 +1116,7 @@ Status scan(const std::string& logfile) {
     keylen = int32Decode(buff);
 
     // key
-    string key;
+    std::string key;
     key.resize(keylen);
     ret = fread(const_cast<char*>(key.c_str()), keylen, 1, pf);
     if (ret != 1) {
@@ -1135,7 +1135,7 @@ Status scan(const std::string& logfile) {
     valuelen = int32Decode(buff);
 
     // value
-    string value;
+    std::string value;
     value.resize(valuelen);
     ret = fread(const_cast<char*>(value.c_str()), valuelen, 1, pf);
     if (ret != 1) {
@@ -1213,7 +1213,7 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
 
       sleep(2);
       LOG(INFO) << ">>>>>> scanDumpFile begin.";
-      std::string subpath = "./" + string(single_dir2) + "/dump/0/";
+      std::string subpath = "./" + std::string(single_dir2) + "/dump/0/";
       try {
         for (auto& p : filesystem::recursive_directory_iterator(subpath)) {
           const filesystem::path& path = p.path();
@@ -1260,7 +1260,7 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
 
     sleep(2);
     LOG(INFO) << ">>>>>> scanDumpFile begin.";
-    std::string subpath = "./" + string(single_dir2) + "/dump/0/";
+    std::string subpath = "./" + std::string(single_dir2) + "/dump/0/";
     try {
       for (auto& p : filesystem::recursive_directory_iterator(subpath)) {
         const filesystem::path& path = p.path();

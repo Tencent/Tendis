@@ -547,7 +547,7 @@ class RevisionCommand : public Command {
                    << " versionep:" << rv.getVersionEP()
                    << " new ttl:" << expire << " versionep:" << expvs.value();
         return {ErrorCodes::ERR_INTERGER,
-                "expire not empty " + to_string(rv.getTtl())};
+                "expire not empty " + std::to_string(rv.getTtl())};
       }
       rv.setTtl(expire);
     }

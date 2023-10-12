@@ -41,8 +41,8 @@ Status MigrateBatch::send() {
   if (_addBytes > 0) {
     SyncWriteData("5");
     SyncWriteData(
-      string(reinterpret_cast<char*>(&_addBytes), sizeof(uint32_t)));
-    SyncWriteData(string(_buffer.begin(), _buffer.end()));
+      std::string(reinterpret_cast<char*>(&_addBytes), sizeof(uint32_t)));
+    SyncWriteData(std::string(_buffer.begin(), _buffer.end()));
     uint32_t sendBytes = _buffer.size() + 1 + sizeof(uint32_t);
 
     // Rate limit for migration

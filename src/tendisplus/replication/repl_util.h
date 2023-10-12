@@ -32,9 +32,9 @@ namespace tendisplus {
   }
 
 std::shared_ptr<BlockingTcpClient> createClient(
-  const string& ip, uint16_t port, std::shared_ptr<ServerEntry> svr);
+  const std::string& ip, uint16_t port, std::shared_ptr<ServerEntry> svr);
 
-std::shared_ptr<BlockingTcpClient> createClient(const string& ip,
+std::shared_ptr<BlockingTcpClient> createClient(const std::string& ip,
                                                 uint16_t port,
                                                 ServerEntry* svr);
 

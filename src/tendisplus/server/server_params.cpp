@@ -30,8 +30,8 @@
 namespace tendisplus {
 
 std::shared_ptr<tendisplus::ServerParams> gParams;
-string gRenameCmdList = "";   // NOLINT
-string gMappingCmdList = "";  // NOLINT
+std::string gRenameCmdList = "";   // NOLINT
+std::string gMappingCmdList = "";  // NOLINT
 
 #define REGISTER_VARS_FULL(                                                   \
   str, var, checkfun, prefun, minval, maxval, allowDynamicSet)                \
@@ -71,7 +71,7 @@ string gMappingCmdList = "";  // NOLINT
                               checkfun,                                       \
                               prefun,                                         \
                               allowDynamicSet)));                             \
-  else if (typeid(var) == typeid(string))                                     \
+  else if (typeid(var) == typeid(std::string))                                \
     _mapServerParams.insert(                                                  \
       make_pair(toLower(str),                                                 \
                 new StringVar(str,                                            \
@@ -109,7 +109,9 @@ static const char* NO_USE_VALUE = "NO_USE";
   REGISTER_VARS_FULL(                                     \
     #var, var, checkfun, prefun, minval, maxval, allowDynamicSet)
 
-bool logLevelParamCheck(const string& val, bool startup, string* errinfo) {
+bool logLevelParamCheck(const std::string& val,
+                        bool startup,
+                        std::string* errinfo) {
   auto v = toLower(val);
   if (v == "debug" || v == "verbose" || v == "notice" || v == "warning") {
     return true;
@@ -117,7 +119,9 @@ bool logLevelParamCheck(const string& val, bool startup, string* errinfo) {
   return false;
 }
 
-bool compressTypeParamCheck(const string& val, bool startup, string* errinfo) {
+bool compressTypeParamCheck(const std::string& val,
+                            bool startup,
+                            std::string* errinfo) {
   auto v = toLower(val);
   if (v == "snappy" || v == "lz4" || v == "none") {
     return true;
@@ -127,7 +131,7 @@ bool compressTypeParamCheck(const string& val, bool startup, string* errinfo) {
 
 bool executorThreadNumCheck(const std::string& val,
                             bool startup,
-                            string* errinfo) {
+                            std::string* errinfo) {
   auto num = std::strtoull(val.c_str(), nullptr, 10);
   if (startup || !gParams || gParams->executorWorkPoolSize == 0) {
     return true;
@@ -143,7 +147,9 @@ bool executorThreadNumCheck(const std::string& val,
   return true;
 }
 
-bool aofEnabledCheck(const std::string& val, bool startup, string* errinfo) {
+bool aofEnabledCheck(const std::string& val,
+                     bool startup,
+                     std::string* errinfo) {
   bool v = isOptionOn(val);
   if (startup || !gParams) {
     return true;
@@ -158,7 +164,7 @@ bool aofEnabledCheck(const std::string& val, bool startup, string* errinfo) {
   return true;
 }
 
-string removeQuotes(const string& v) {
+std::string removeQuotes(const std::string& v) {
   if (v.size() < 2) {
     return v;
   }
@@ -170,7 +176,7 @@ string removeQuotes(const string& v) {
   return tmp;
 }
 
-string removeQuotesAndToLower(const string& v) {
+std::string removeQuotesAndToLower(const std::string& v) {
   auto tmp = toLower(v);
   if (tmp.size() < 2) {
     return tmp;
@@ -182,8 +188,8 @@ string removeQuotesAndToLower(const string& v) {
   return tmp;
 }
 
-void NoUseWarning(const string& name) {
-  LOG(INFO) << name << "is not supported anymore" << endl;
+void NoUseWarning(const std::string& name) {
+  LOG(INFO) << name << "is not supported anymore" << std::endl;
 }
 
 Status rewriteConfigState::rewriteConfigReadOldFile(
@@ -701,9 +707,9 @@ Status ServerParams::checkParams() {
   return {ErrorCodes::ERR_OK, ""};
 }
 
-Status ServerParams::setRocksOption(const string& argname,
-                                    const string& value) {
-  string errinfo;
+Status ServerParams::setRocksOption(const std::string& argname,
+                                    const std::string& value) {
+  std::string errinfo;
   auto argArray = tendisplus::stringSplit(argname, ".");
   if (argArray.size() != 2 && argArray.size() != 3) {
     errinfo = "not found arg:" + argname;
@@ -719,11 +725,11 @@ Status ServerParams::setRocksOption(const string& argname,
     return {ErrorCodes::ERR_OK, ""};
   } else {
     // pass configured RocksdbOptions when server starup
-    const string& cfname = toLower(argArray[1]);
+    const std::string& cfname = toLower(argArray[1]);
     auto cfOption = _rocksdbCFOptions.find(cfname);
     if (cfOption == _rocksdbCFOptions.end()) {
       auto ret = _rocksdbCFOptions.insert(
-        std::pair<string, ParamsMap>(cfname, ParamsMap()));
+        std::pair<std::string, ParamsMap>(cfname, ParamsMap()));
       INVARIANT_D(ret.second);
       if (!ret.second) {
         LOG(ERROR) << "insert failed:" << cfname;
@@ -736,10 +742,10 @@ Status ServerParams::setRocksOption(const string& argname,
     return {ErrorCodes::ERR_OK, ""};
   }
 }
-Status ServerParams::setVar(const string& name,
-                            const string& value,
+Status ServerParams::setVar(const std::string& name,
+                            const std::string& value,
                             bool startup) {
-  string errinfo;
+  std::string errinfo;
   auto argname = toLower(name);
   auto iter = _mapServerParams.find(toLower(name));
 
@@ -805,7 +811,7 @@ Status ServerParams::setVar(const string& name,
   return {ErrorCodes::ERR_PARSEOPT, errinfo};
 }
 
-bool ServerParams::registerOnupdate(const string& name, funptr ptr) {
+bool ServerParams::registerOnupdate(const std::string& name, funptr ptr) {
   auto iter = _mapServerParams.find(toLower(name));
   if (iter == _mapServerParams.end()) {
     return false;
@@ -814,8 +820,8 @@ bool ServerParams::registerOnupdate(const string& name, funptr ptr) {
   return true;
 }
 
-string ServerParams::showAll() const {
-  string ret;
+std::string ServerParams::showAll() const {
+  std::string ret;
   for (auto iter : _mapServerParams) {
     if (iter.second->getName() == "requirepass" ||
         iter.second->getName() == "masterauth") {
@@ -835,7 +841,7 @@ string ServerParams::showAll() const {
   return ret;
 }
 
-bool ServerParams::showVar(const string& key, string* info) const {
+bool ServerParams::showVar(const std::string& key, std::string* info) const {
   auto iter = _mapServerParams.find(key);
   if (iter == _mapServerParams.end()) {
     return false;
@@ -844,7 +850,8 @@ bool ServerParams::showVar(const string& key, string* info) const {
   return true;
 }
 
-bool ServerParams::showVar(const string& key, vector<string>* info) const {
+bool ServerParams::showVar(const std::string& key,
+                           std::vector<std::string>* info) const {
   for (auto iter = _mapServerParams.begin(); iter != _mapServerParams.end();
        iter++) {
     if (redis_port::stringmatchlen(key.c_str(),
@@ -858,7 +865,7 @@ bool ServerParams::showVar(const string& key, vector<string>* info) const {
   }
   for (auto iter = _rocksdbOptions.begin(); iter != _rocksdbOptions.end();
        iter++) {
-    string hole_param = "rocks." + iter->first;
+    std::string hole_param = "rocks." + iter->first;
     if (redis_port::stringmatchlen(
           key.c_str(), key.size(), hole_param.c_str(), hole_param.size(), 1)) {
       info->push_back(hole_param);
@@ -868,7 +875,7 @@ bool ServerParams::showVar(const string& key, vector<string>* info) const {
   for (auto cf = _rocksdbCFOptions.begin(); cf != _rocksdbCFOptions.end();
        cf++) {
     for (auto iter = cf->second.begin(); iter != cf->second.end(); iter++) {
-      string hole_param = "rocks." + cf->first + "." + iter->first;
+      std::string hole_param = "rocks." + cf->first + "." + iter->first;
       if (redis_port::stringmatchlen(key.c_str(),
                                      key.size(),
                                      hole_param.c_str(),

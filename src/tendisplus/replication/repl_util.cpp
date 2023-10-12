@@ -13,13 +13,13 @@
 namespace tendisplus {
 
 std::shared_ptr<BlockingTcpClient> createClient(
-  const string& ip, uint16_t port, std::shared_ptr<ServerEntry> svr) {
+  const std::string& ip, uint16_t port, std::shared_ptr<ServerEntry> svr) {
   ServerEntry* svrPtr = svr.get();
   auto client = createClient(ip, port, svrPtr);
   return client;
 }
 
-std::shared_ptr<BlockingTcpClient> createClient(const string& ip,
+std::shared_ptr<BlockingTcpClient> createClient(const std::string& ip,
                                                 uint16_t port,
                                                 ServerEntry* svr) {
   std::shared_ptr<BlockingTcpClient> client =
@@ -376,9 +376,9 @@ Expected<BinlogResult> applySingleTxnV2(Session* sess,
   if (mode == BinlogApplyMode::KEEP_BINLOG_ID) {
     binlogId = key.value().getBinlogId();
     if (binlogId <= store->getHighestBinlogId()) {
-      string err = "binlogId:" + to_string(binlogId) +
+      std::string err = "binlogId:" + std::to_string(binlogId) +
         " can't be smaller than highestBinlogId:" +
-        to_string(store->getHighestBinlogId());
+        std::to_string(store->getHighestBinlogId());
       LOG(ERROR) << err << " storeid:" << storeId;
       return {ErrorCodes::ERR_MANUAL, err};
     }

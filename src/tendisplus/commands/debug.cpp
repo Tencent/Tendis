@@ -1788,7 +1788,7 @@ class tendisstatCommand : public Command {
       writer.StartObject();
 
       rocksdb::PerfContext* perf_context = rocksdb::get_perf_context();
-      string allKeyValue = perf_context->ToString();
+      std::string allKeyValue = perf_context->ToString();
       auto v = stringSplit(allKeyValue, ",");
       for (auto one : v) {
         auto key_value = stringSplit(one, "=");
@@ -2147,18 +2147,18 @@ class InfoCommand : public Command {
       std::stringstream ss;
       ss << "# Memory\r\n";
 
-      string used_memory_vir_human;
-      string used_memory_vir_peak_human;
-      string used_memory_rss_human;
-      string used_memory_rss_peak_human;
+      std::string used_memory_vir_human;
+      std::string used_memory_vir_peak_human;
+      std::string used_memory_rss_human;
+      std::string used_memory_rss_peak_human;
       size_t rss_human_size = -1;
       size_t vir_human_size = -1;
 
 #ifndef _WIN32
-      ifstream file;
+      std::ifstream file;
       file.open("/proc/self/status");
       if (file.is_open()) {
-        string strline;
+        std::string strline;
         while (getline(file, strline)) {
           auto v = stringSplit(strline, ":");
           if (v.size() != 2) {
@@ -2605,7 +2605,7 @@ class InfoCommand : public Command {
           }
           sdstrim(key_value[0], " ");
           sdstrim(key_value[1], " ");
-          if (key_value[0].find("COUNT") == string::npos) {
+          if (key_value[0].find("COUNT") == std::string::npos) {
             continue;
           }
 
@@ -2875,7 +2875,7 @@ class ConfigCommand : public Command {
   Expected<std::string> configGetCommand(Session* sess) {
     auto& args = sess->getArgs();
     auto configName = toLower(args[2]);
-    vector<string> info;
+    std::vector<std::string> info;
     if (configName == "requirepass") {
       info.push_back("requirepass");
       info.push_back(sess->getServerEntry()->requirepass());
@@ -4285,8 +4285,8 @@ class compactSlotsCommand : public Command {
       PStore kvstore = expdb.value().store;
       RecordKey rkStart(myBegin, 0, RecordType::RT_INVALID, "", "");
       RecordKey rkEnd(myEnd + 1, 0, RecordType::RT_INVALID, "", "");
-      string start = rkStart.prefixChunkid();
-      string end = rkEnd.prefixChunkid();
+      std::string start = rkStart.prefixChunkid();
+      std::string end = rkEnd.prefixChunkid();
 
       // NOTE(takenliu) after deleteRange, cursor seek will scan all the
       // keys in delete range,
@@ -4351,10 +4351,10 @@ class slotsEmptyCommand : public Command {
     // NOTO(takenliu): call needResetPerLevel for "info rocksdbperfstats"
     sess->getCtx()->needResetPerLevel();
 
-    string notEmptySlots;
+    std::string notEmptySlots;
     for (uint32_t chunkid = beginChunkid; chunkid <= endChunkid; chunkid++) {
       if (!server->getClusterMgr()->emptySlot(chunkid)) {
-        notEmptySlots += to_string(chunkid) + " ";
+        notEmptySlots += std::to_string(chunkid) + " ";
       }
     }
     if (!notEmptySlots.empty()) {

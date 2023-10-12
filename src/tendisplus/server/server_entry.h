@@ -110,7 +110,7 @@ class CompactionStat {
 };
 
 struct SlowlogEntry {
-  std::vector<string> argv;
+  std::vector<std::string> argv;
   int argc;
   uint64_t id;        /* Unique entry identifier. */
   uint64_t duration;  // Time spent by the query, in microseconds.(including
@@ -280,7 +280,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
     _backupRunning.fetch_sub(1, std::memory_order_relaxed);
     _backupTimes.fetch_add(1, std::memory_order_relaxed);
   }
-  void onBackupEndFailed(uint32_t storeid, const string& errinfo) {
+  void onBackupEndFailed(uint32_t storeid, const std::string& errinfo) {
     _lastBackupFailedTime.store(sinceEpoch(), std::memory_order_relaxed);
     _backupFailedTimes.fetch_add(1, std::memory_order_relaxed);
     _backupRunning.fetch_sub(1, std::memory_order_relaxed);
@@ -300,7 +300,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   uint64_t getBackupFailedTimes() const {
     return _backupFailedTimes.load(std::memory_order_relaxed);
   }
-  string getLastBackupFailedErr() const {
+  std::string getLastBackupFailedErr() const {
     std::lock_guard<std::mutex> lk(_mutex);
     return _lastBackupFailedErr;
   }
@@ -443,7 +443,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   std::atomic<uint64_t> _backupFailedTimes;
   std::atomic<uint64_t> _backupRunning;
   std::atomic<uint64_t> _internalErrorCnt;
-  string _lastBackupFailedErr;
+  std::string _lastBackupFailedErr;
   ServerStat _serverStat;
   CompactionStat _compactionStat;
   SlowlogStat _slowlogStat;

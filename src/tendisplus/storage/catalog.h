@@ -45,7 +45,7 @@ class StoreMeta {
   // catalog. KVStore->getHighestBinlogId() should been more reliable.
   uint64_t binlogId;
   ReplState replState;
-  string replErr;
+  std::string replErr;
 };
 
 class ChunkMeta {
@@ -182,7 +182,8 @@ class Catalog {
   // cluster meta
   bool clusterMetaExist(Transaction* txn, const std::string& nodeName);
   Status delClusterMeta(const std::string& nodeName);
-  Expected<std::unique_ptr<ClusterMeta>> getClusterMeta(const string& nodeName);
+  Expected<std::unique_ptr<ClusterMeta>> getClusterMeta(
+    const std::string& nodeName);
 
   Expected<std::vector<std::unique_ptr<ClusterMeta>>> getAllClusterMeta();
   Status setClusterMeta(const ClusterMeta& meta);

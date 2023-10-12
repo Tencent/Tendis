@@ -121,8 +121,8 @@ class ClusterCommand : public Command {
         std::bitset<CLUSTER_SLOTS> slotsMap;
 
         for (auto& vs : vec) {
-          if ((vs.find('{') != string::npos) &&
-              (vs.find('}') != string::npos)) {
+          if ((vs.find('{') != std::string::npos) &&
+              (vs.find('}') != std::string::npos)) {
             auto eRange = getSlotRange(vs);
             RET_IF_ERR_EXPECTED(eRange);
 
@@ -343,8 +343,8 @@ class ClusterCommand : public Command {
         return {ErrorCodes::ERR_CLUSTER, "Can not add/del slots on arbiter."};
       }
       for (size_t i = 2; i < argSize; ++i) {
-        if ((args[i].find('{') != string::npos) &&
-            (args[i].find('}') != string::npos)) {
+        if ((args[i].find('{') != std::string::npos) &&
+            (args[i].find('}') != std::string::npos)) {
           auto eRange = getSlotRange(args[i]);
 
           RET_IF_ERR_EXPECTED(eRange);
@@ -438,7 +438,7 @@ class ClusterCommand : public Command {
         return {ErrorCodes::ERR_CLUSTER, "Invalid slot"};
       }
       uint64_t keyNum = svr->getClusterMgr()->countKeysInSlot(slot);
-      return Command::fmtBulk(to_string(keyNum));
+      return Command::fmtBulk(std::to_string(keyNum));
     } else if (arg1 == "keyslot" && argSize == 3) {
       std::string key = args[2];
       if (key.size() < 1) {
@@ -446,7 +446,7 @@ class ClusterCommand : public Command {
       }
       uint32_t hash =
         uint32_t(redis_port::keyHashSlot(key.c_str(), key.size()));
-      return Command::fmtBulk(to_string(hash));
+      return Command::fmtBulk(std::to_string(hash));
     } else if (arg1 == "info" && argSize == 2) {
       std::string clusterInfo = clusterState->clusterGenStateDescription();
       if (clusterInfo.size() > 0) {
@@ -807,7 +807,7 @@ class ClusterCommand : public Command {
       std::string _taskid;
     };
 
-    vector<taskinfo> taskInfoArray;
+    std::vector<taskinfo> taskInfoArray;
 
     doc.Parse(json);
     if (doc.HasParseError()) {

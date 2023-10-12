@@ -136,8 +136,8 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
   return {ErrorCodes::ERR_OK, ""};
 }
 
-Status ChunkMigrateReceiver::supplySetKV(const string& key,
-                                         const string& value) {
+Status ChunkMigrateReceiver::supplySetKV(const std::string& key,
+                                         const std::string& value) {
   Expected<RecordKey> expRk = RecordKey::decode(key);
   if (!expRk.ok()) {
     return expRk.status();
@@ -196,7 +196,7 @@ Status ChunkMigrateReceiver::supplySetKV(const string& key,
   return {ErrorCodes::ERR_OK, ""};
 }
 
-Status ChunkMigrateReceiver::PutSingleBatch(const string& migrateBatch,
+Status ChunkMigrateReceiver::PutSingleBatch(const std::string& migrateBatch,
                                             uint32_t* totalNum) {
   PStore kvstore = _dbWithLock->store;
   auto eTxn = kvstore->createTransaction(nullptr);

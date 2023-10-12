@@ -18,10 +18,10 @@
 namespace tendisplus {
 
 Expected<uint64_t> addMigrateBinlog(MigrateBinlogType type,
-                                    string slots,
+                                    std::string slots,
                                     uint32_t storeid,
                                     ServerEntry* svr,
-                                    const string& nodeName = "none") {
+                                    const std::string& nodeName = "none") {
   // Temporarily disabled
   INVARIANT_D(0);
   LocalSessionGuard g(svr);
@@ -31,8 +31,8 @@ Expected<uint64_t> addMigrateBinlog(MigrateBinlogType type,
     return expdb.status();
   }
   // NOTE(takenliu) save all info to cmd
-  string saveInfo =
-    to_string(type) + "_" + to_string(storeid) + "_" + slots + "_" + nodeName;
+  std::string saveInfo = std::to_string(type) + "_" + std::to_string(storeid) +
+    "_" + slots + "_" + nodeName;
 
   LocalSessionGuard sg(svr);
   sg.getSession()->setArgs({saveInfo});
@@ -341,7 +341,7 @@ void MigrateManager::controlRoutine() {
     if (doSth) {
       std::this_thread::yield();
     } else {
-      std::this_thread::sleep_for(10ms);
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   }
   LOG(INFO) << "migration manager controller exits";
@@ -668,7 +668,7 @@ void MigrateSendTask::setState(MigrateSendState newState) {
 }
 
 Status MigrateManager::migrating(const SlotsBitmap& slots,
-                                 const string& ip,
+                                 const std::string& ip,
                                  uint16_t port,
                                  uint32_t storeid,
                                  const std::string& taskid,
@@ -800,7 +800,7 @@ uint64_t MigrateManager::getTaskNum(const std::string& pTaskid,
   for (auto it = _migrateReceiveTaskMap.begin();
        it != _migrateReceiveTaskMap.end();
        it++) {
-    if (it->first.find(pTaskid) != string::npos) {
+    if (it->first.find(pTaskid) != std::string::npos) {
       // get receiver waiting task num
       if (it->second->_receiver->getTaskStartTime() == 0) {
         if (!noWait) {
@@ -816,7 +816,7 @@ uint64_t MigrateManager::getTaskNum(const std::string& pTaskid,
 
   for (auto it = _migrateSendTaskMap.begin(); it != _migrateSendTaskMap.end();
        it++) {
-    if (it->first.find(pTaskid) != string::npos) {
+    if (it->first.find(pTaskid) != std::string::npos) {
       // get sender waiting task num
       if (it->second->_state == MigrateSendState::WAIT) {
         if (!noWait) {
@@ -1310,7 +1310,7 @@ void MigrateReceiveTask::fullReceive() {
       _pTask->_nodeid);
     if (!srcNodeFail && getRetryCount() <= retryCnt && _receiver->isRunning()) {
       _nextSchedTime = SCLOCK::now() + std::chrono::milliseconds(1000);
-      _retryTime.fetch_add(1, memory_order_relaxed);
+      _retryTime.fetch_add(1, std::memory_order_relaxed);
       LOG(ERROR) << "receiver connect fail, need retry, slots:"
                  << bitsetStrEncode(_slots) << " taskid:" << _taskid;
     } else {
@@ -1362,7 +1362,7 @@ void MigrateReceiveTask::fullReceive() {
       auto delayTime = 1000 + redis_port::random() % 5000;
       _nextSchedTime = SCLOCK::now() + std::chrono::milliseconds(delayTime);
       setState(MigrateReceiveState::RECEIVE_SNAPSHOT);
-      _retryTime.fetch_add(1, memory_order_relaxed);
+      _retryTime.fetch_add(1, std::memory_order_relaxed);
       LOG(ERROR) << "receiveSnapshot need retry" << bitsetStrEncode(_slots)
                  << "taskid:" << _taskid << "error str:" << s.toString();
     } else {
@@ -1882,11 +1882,12 @@ Expected<std::string> MigrateManager::getSuccFailInfo(
   return ss.str();
 }
 
-Expected<uint64_t> MigrateManager::applyMigrateBinlog(ServerEntry* svr,
-                                                      PStore store,
-                                                      MigrateBinlogType type,
-                                                      string slots,
-                                                      const string& nodeName) {
+Expected<uint64_t> MigrateManager::applyMigrateBinlog(
+  ServerEntry* svr,
+  PStore store,
+  MigrateBinlogType type,
+  std::string slots,
+  const std::string& nodeName) {
   SlotsBitmap slotsMap;
   try {
     slotsMap = std::bitset<CLUSTER_SLOTS>(slots);
@@ -1911,7 +1912,7 @@ Expected<uint64_t> MigrateManager::applyMigrateBinlog(ServerEntry* svr,
 
 Status MigrateManager::restoreMigrateBinlog(MigrateBinlogType type,
                                             uint32_t storeid,
-                                            string slots) {
+                                            std::string slots) {
   LOG(INFO) << "restoreMigrateBinlog type:" << type << " storeid:" << storeid
             << " slots:" << slots;
   SlotsBitmap slotsMap;

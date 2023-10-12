@@ -2429,7 +2429,7 @@ bool ClusterState::markAsFailingIfNeeded(CNodePtr node) {
 
 void ClusterState::manualFailoverCheckTimeout() {
   bool delFakeTask = false;
-  string masterIp = "";
+  std::string masterIp = "";
   uint64_t masterPort = 0;
   {
     std::lock_guard<myMutex> lk(_mutex);
@@ -2481,7 +2481,7 @@ void ClusterState::resetFailoverState() {
 void ClusterState::clusterHandleManualFailover() {
   bool addFakeTask = false;
   uint64_t slaveOffset = 0;
-  string masterIp = "";
+  std::string masterIp = "";
   uint64_t masterPort = 0;
   {
     std::lock_guard<myMutex> lk(_mutex);
@@ -4103,7 +4103,7 @@ Status ClusterManager::clusterReset(uint16_t hard) {
   std::shared_ptr<Catalog> catalog;
   bool isSlave = false;
   {
-    std::lock_guard<mutex> lk(_mutex);
+    std::lock_guard<std::mutex> lk(_mutex);
     myself = _clusterState->getMyselfNode();
     if (myself->nodeIsSlave()) {
       _clusterState->clusterSetNodeAsMaster(myself);
@@ -4118,7 +4118,7 @@ Status ClusterManager::clusterReset(uint16_t hard) {
       return s;
     }
   }
-  std::lock_guard<mutex> lk(_mutex);
+  std::lock_guard<std::mutex> lk(_mutex);
   /* Close slots, reset manual failover state. */
   _clusterState->clusterCloseAllSlots();
   _clusterState->resetManualFailover();
@@ -4172,7 +4172,7 @@ void ClusterManager::stop() {
 }
 
 Status ClusterManager::initNetWork() {
-  shared_ptr<ServerParams> cfg = _svr->getParams();
+  std::shared_ptr<ServerParams> cfg = _svr->getParams();
   _clusterNetwork =
     std::make_unique<NetworkAsio>(_svr, _netMatrix, _reqMatrix, cfg, "cluster");
 
@@ -5015,7 +5015,7 @@ void ClusterManager::controlRoutine() {
     //     for example: cluster create session for one node,
     //     we call addSessionInSvr, and the session will be ignored.
     if (!_svr->isRunning()) {
-      std::this_thread::sleep_for(100ms);
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;
     }
     /* Update myself flags. */
@@ -5034,7 +5034,7 @@ void ClusterManager::controlRoutine() {
     }
 
     _clusterState->cronCheckFailState();
-    std::this_thread::sleep_for(100ms);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 }
 
@@ -5421,7 +5421,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
   if (getBlockState()) {
     // sleep or return OK?
     DLOG(INFO) << "packet begin block at:" << msSinceEpoch();
-    std::this_thread::sleep_for(chrono::milliseconds(getBlockTime()));
+    std::this_thread::sleep_for(std::chrono::milliseconds(getBlockTime()));
     DLOG(INFO) << "packet begin receive at:" << msSinceEpoch();
   }
 

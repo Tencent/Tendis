@@ -86,7 +86,7 @@ class BackupCommand : public Command {
 
       std::string myNodeInfo = eptNodeInfo.value();
       LOG(INFO) << "myself Node info is:" << myNodeInfo;
-      ofstream outfile(dir + "/" + "clustermeta.txt", fstream::out);
+      std::ofstream outfile(dir + "/" + "clustermeta.txt", std::fstream::out);
       if (outfile.is_open()) {
         outfile << myNodeInfo << std::endl;
         if (!outfile.good()) {
@@ -583,8 +583,8 @@ class ApplyBinlogsGeneric : public Command {
     if (reader.nextV2().status().code() != ErrorCodes::ERR_EXHAUST) {
       return {ErrorCodes::ERR_PARSEOPT, "too big migrate binlog"};
     }
-    const string& logKey = eLog.value().getReplLogKey();
-    const string& logValue = eLog.value().getReplLogValue();
+    const std::string& logKey = eLog.value().getReplLogKey();
+    const std::string& logValue = eLog.value().getReplLogValue();
     auto key = ReplLogKeyV2::decode(logKey);
     if (!key.ok()) {
       LOG(ERROR) << "ReplLogKeyV2::decode failed:" << key.status().toString();
