@@ -54,7 +54,7 @@ class Command {
   bool isWriteable() const;
   bool isAdmin() const;
   static mgl::LockMode RdLock();
-  static void changeCommand(const string& renameCmdList, string mode);
+  static void changeCommand(const std::string& renameCmdList, std::string mode);
   int getFlags() const;
   size_t getFlagsCount() const;
   static std::vector<std::string> listCommands();
@@ -154,11 +154,11 @@ class Command {
                              RecordType type,
                              const std::shared_ptr<ServerParams>& cfg);
 
-  static Expected<string> delSubkeysRange(Session* sess,
-                                          uint32_t storeId,
-                                          const RecordKey& mk,
-                                          RecordType valueType,
-                                          Transaction* txn);
+  static Expected<std::string> delSubkeysRange(Session* sess,
+                                               uint32_t storeId,
+                                               const RecordKey& mk,
+                                               RecordType valueType,
+                                               Transaction* txn);
 
   static Expected<uint32_t> partialDelSubKeys(Session* sess,
                                               uint32_t storeId,

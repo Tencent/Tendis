@@ -58,7 +58,7 @@ struct MPovStatus {
   SCLOCK::time_point lastSendBinlogTime;
   std::shared_ptr<BlockingTcpClient> client;
   uint64_t clientId = 0;
-  string slave_listen_ip;
+  std::string slave_listen_ip;
   uint16_t slave_listen_port = 0;
   MPovClientType clientType = MPovClientType::repllogClient;
 };
@@ -82,7 +82,7 @@ struct MPovFullPushStatus {
   SCLOCK::time_point endTime;
   std::shared_ptr<BlockingTcpClient> client;
   uint64_t clientId;
-  string slave_listen_ip;
+  std::string slave_listen_ip;
   uint16_t slave_listen_port;
 };
 
@@ -174,7 +174,7 @@ class ReplManager {
                         const std::string& listenPortArg);
 
   bool supplyFullPsync(asio::ip::tcp::socket sock,
-                       const string& storeIdArg,
+                       const std::string& storeIdArg,
                        const std::string& listenIpArg = {},
                        const std::string& listenPortArg = {});
 
@@ -243,7 +243,7 @@ class ReplManager {
   void controlRoutine();
   void supplyFullSyncRoutine(std::shared_ptr<BlockingTcpClient> client,
                              uint32_t storeId,
-                             const string& slave_listen_ip,
+                             const std::string& slave_listen_ip,
                              uint16_t slave_listen_port);
 
   void supplyFullPsyncRoutine(std::shared_ptr<BlockingTcpClient> client,
@@ -325,7 +325,7 @@ class ReplManager {
 #else
   // GUARDED_BY(_mutex)
   std::vector<std::map<uint64_t, std::unique_ptr<MPovStatus>>> _pushStatus;
-  std::vector<std::map<string, std::unique_ptr<MPovFullPushStatus>>>
+  std::vector<std::map<std::string, std::unique_ptr<MPovFullPushStatus>>>
     _fullPushStatus;
 #endif
 

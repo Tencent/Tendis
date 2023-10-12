@@ -34,7 +34,7 @@ namespace tendisplus {
 
 Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
                                    const StoreMeta& metaSnapshot,
-                                   const string& ip,
+                                   const std::string& ip,
                                    uint16_t port) {
   std::stringstream ss;
   ss << "FULLSYNC " << metaSnapshot.syncFromId << " " << ip << " " << port;
@@ -815,7 +815,7 @@ bool ReplManager::newBinlogFs(uint32_t storeId) {
         return true;
       }
     }
-    std::this_thread::sleep_for(100ms);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
   LOG(WARNING) << "newBinlogFs failed, storeId:" << storeId;
   return false;

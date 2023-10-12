@@ -87,8 +87,8 @@ class ChunkMigrateReceiver {
   bool isRunning();
 
  private:
-  Status supplySetKV(const string& key, const string& value);
-  Status PutSingleBatch(const string& writeBatch, uint32_t* totalNum);
+  Status supplySetKV(const std::string& key, const std::string& value);
+  Status PutSingleBatch(const std::string& writeBatch, uint32_t* totalNum);
   mutable std::mutex _mutex;
   std::shared_ptr<ServerEntry> _svr;
   const std::shared_ptr<ServerParams> _cfg;

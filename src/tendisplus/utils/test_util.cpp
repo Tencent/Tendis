@@ -76,7 +76,7 @@ std::shared_ptr<ServerParams> makeServerParam(
 
   auto cfg = std::make_shared<ServerParams>();
   auto s = cfg->parseFile(tmp_conf_file);
-  LOG(INFO) << "params:" << endl << cfg->showAll();
+  LOG(INFO) << "params:" << std::endl << cfg->showAll();
   EXPECT_EQ(s.ok(), true);
 
   return cfg;
@@ -519,14 +519,15 @@ Expected<uint64_t> WorkLoad::getIntResult(
   return Command::getInt64FromFmtLongLong(expect.value());
 }
 
-void WorkLoad::addClusterSession(const string& addr, TestSession sess) {
+void WorkLoad::addClusterSession(const std::string& addr, TestSession sess) {
   LOG(INFO) << "addClusterSession:" << addr;
   _clusterSessions[addr] = sess;
 }
 
 // TODO(takenliu): change other api to call runCommand.
 // support MOVED
-Expected<string> WorkLoad::runCommand(const std::vector<std::string>& args) {
+Expected<std::string> WorkLoad::runCommand(
+  const std::vector<std::string>& args) {
   TestSession sess = _session;
   int depth = 0;
   while (true) {
@@ -542,7 +543,7 @@ Expected<string> WorkLoad::runCommand(const std::vector<std::string>& args) {
     LOG(INFO) << "moved depth:" << depth << " " << expect.status().toString();
     auto infos = stringSplit(expect.status().toString(), " ");
     if (infos.size() == 3) {
-      string addr = infos[2].replace(infos[2].find("\r\n"), 2, "");
+      std::string addr = infos[2].replace(infos[2].find("\r\n"), 2, "");
       auto iter = _clusterSessions.find(addr);
       if (iter != _clusterSessions.end()) {
         sess = iter->second;
@@ -2715,7 +2716,7 @@ void testExpireForImmediately(std::shared_ptr<ServerEntry> svr) {
 
   // bounder for optimistic del/pessimistic del
   for (auto v : {1000u, 10000u}) {
-    string key = "testExpireForImmediately";
+    std::string key = "testExpireForImmediately";
     for (uint32_t i = 0; i < v; i++) {
       sess.setArgs({"lpush", key, std::to_string(2 * i)});
       auto expect = Command::runSessionCmd(&sess);
@@ -2749,7 +2750,7 @@ void testExpireForAlreadyExpired1(std::shared_ptr<ServerEntry> svr) {
 
   // bounder for optimistic del/pessimistic del
   for (auto v : {1000u, 10000u}) {
-    string key = "testExpireForAlreadyExpired1";
+    std::string key = "testExpireForAlreadyExpired1";
     for (uint32_t i = 0; i < v; i++) {
       sess.setArgs({"lpush", key, std::to_string(2 * i)});
       auto expect = Command::runSessionCmd(&sess);
@@ -2782,8 +2783,8 @@ void testExpireForAlreadyExpired2(std::shared_ptr<ServerEntry> svr) {
 
   // bounder for optimistic del/pessimistic del
   for (auto v : {1000u, 10000u}) {
-    string key_list = "testExpireForAlreadyExpired2_list";
-    string key_hash = "testExpireForAlreadyExpired2_hash";
+    std::string key_list = "testExpireForAlreadyExpired2_list";
+    std::string key_hash = "testExpireForAlreadyExpired2_hash";
     for (uint32_t i = 0; i < v; i++) {
       sess.setArgs({"lpush", key_list, std::to_string(2 * i)});
       auto expect = Command::runSessionCmd(&sess);
@@ -2837,7 +2838,7 @@ void testExpireForNotExpired(std::shared_ptr<ServerEntry> svr) {
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
   for (uint32_t v = 0; v < 1000; ++v) {
-    string key = "testExpireForNotExpired_" + to_string(v);
+    std::string key = "testExpireForNotExpired_" + std::to_string(v);
     sess.setArgs({"set", key, "value"});
     auto expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());

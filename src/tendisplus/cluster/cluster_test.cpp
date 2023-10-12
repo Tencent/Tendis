@@ -126,7 +126,7 @@ makeCluster(uint32_t startPort,
   }
 
   for (uint32_t i = 0; i < totalNodeNum; ++i) {
-    dirs.push_back("node" + to_string(i));
+    dirs.push_back("node" + std::to_string(i));
   }
 
   std::vector<std::shared_ptr<ServerEntry>> servers;
@@ -244,7 +244,7 @@ std::vector<std::shared_ptr<ServerEntry>> makeSingleCluster(
 #endif
 
   for (uint32_t i = 0; i < totalNodeNum; ++i) {
-    dirs.push_back("node" + to_string(i));
+    dirs.push_back("node" + std::to_string(i));
   }
 
   std::vector<std::shared_ptr<ServerEntry>> servers;
@@ -423,7 +423,7 @@ void waitMigrateTaskStop(std::shared_ptr<ServerEntry> srcNode,
     }
   }
   // maybe exist delete task
-  std::this_thread::sleep_for(5s);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
   LOG(INFO) << "migrate task stop cost time" << (msSinceEpoch() - start) / 1000
             << "s";
 }
@@ -499,7 +499,7 @@ void waitClusterMeetEnd(std::vector<std::shared_ptr<ServerEntry>> servers) {
 void destroyCluster(uint32_t nodeNum) {
   for (uint32_t i = 0; i < nodeNum; ++i) {
     LOG(INFO) << "destroyCluster node i:" << i;
-    destroyEnv("node" + to_string(i));
+    destroyEnv("node" + std::to_string(i));
   }
 }
 
@@ -820,7 +820,7 @@ TEST(ClusterMsg, CommonUpdate) {
 TEST(ClusterMsg, bitsetEncodeSize) {
   SlotsBitmap taskmap;
   taskmap.set(16383);
-  string s = bitsetStrEncode(taskmap);
+  std::string s = bitsetStrEncode(taskmap);
   ASSERT_EQ(s, " 16383 ");
 
   taskmap.set(0);
@@ -916,7 +916,8 @@ bool compareClusterInfo(std::shared_ptr<ServerEntry> svr1,
 // if slot set successfully , return ture
 bool checkSlotInfo(std::shared_ptr<ClusterNode> node, std::string slots) {
   auto slotInfo = node->getSlots();
-  if ((slots.find('{') != string::npos) && (slots.find('}') != string::npos)) {
+  if ((slots.find('{') != std::string::npos) &&
+      (slots.find('}') != std::string::npos)) {
     slots = slots.substr(1, slots.size() - 2);
     std::vector<std::string> s = stringSplit(slots, "..");
     auto startSlot = ::tendisplus::stoul(s[0]);
@@ -1541,17 +1542,17 @@ TEST(Cluster, migrate) {
 
   const uint32_t numData = 20000;
   // for support MOVED
-  string srcAddr =
-    srcNode->getParams()->bindIp + ":" + to_string(srcNode->getParams()->port);
-  string dstAddr =
-    dstNode->getParams()->bindIp + ":" + to_string(dstNode->getParams()->port);
+  std::string srcAddr = srcNode->getParams()->bindIp + ":" +
+    std::to_string(srcNode->getParams()->port);
+  std::string dstAddr = dstNode->getParams()->bindIp + ":" +
+    std::to_string(dstNode->getParams()->port);
   work1.addClusterSession(srcAddr, sess1);
   work1.addClusterSession(dstAddr, sess2);
   work2.addClusterSession(srcAddr, sess1);
   work2.addClusterSession(dstAddr, sess2);
 
   for (size_t j = 0; j < numData; ++j) {
-    string key;
+    std::string key;
     if (j % 2) {
       // write to slot 4310
       key = getUUid(8) + "{11}";
@@ -1559,7 +1560,7 @@ TEST(Cluster, migrate) {
       // write to slot 5970
       key = getUUid(8) + "{123}";
     }
-    string value = getUUid(7);
+    std::string value = getUUid(7);
     auto ret = work1.getStringResult({"set", key, value});
     EXPECT_EQ(ret, "+OK\r\n");
 
@@ -1593,7 +1594,7 @@ TEST(Cluster, migrate) {
   keysize2 = 0;
 
   for (size_t j = 0; j < numData; ++j) {
-    string key;
+    std::string key;
     if (j % 2) {
       // write to slot 4310
       key = getUUid(8) + "{11}";
@@ -1601,7 +1602,7 @@ TEST(Cluster, migrate) {
       // write to slot 5970
       key = getUUid(8) + "{123}";
     }
-    string value = getUUid(7);
+    std::string value = getUUid(7);
     auto ret = work2.getStringResult({"set", key, value});
     EXPECT_EQ(ret, "+OK\r\n");
 
@@ -1623,7 +1624,7 @@ TEST(Cluster, migrate) {
   auto meta1 = work1.getStringResult({"syncversion", "nodeid", "?", "?", "v1"});
   auto meta2 = work2.getStringResult({"syncversion", "nodeid", "?", "?", "v1"});
   ASSERT_EQ(meta1, meta2);
-  std::this_thread::sleep_for(5s);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
 
 #ifndef _WIN32
   for (auto svr : servers) {
@@ -1713,10 +1714,10 @@ TEST(Cluster, migrateChangeThread) {
 
   const uint32_t numData = 10000;
   // for support MOVED
-  string srcAddr =
-    srcNode->getParams()->bindIp + ":" + to_string(srcNode->getParams()->port);
-  string dstAddr =
-    dstNode->getParams()->bindIp + ":" + to_string(dstNode->getParams()->port);
+  std::string srcAddr = srcNode->getParams()->bindIp + ":" +
+    std::to_string(srcNode->getParams()->port);
+  std::string dstAddr = dstNode->getParams()->bindIp + ":" +
+    std::to_string(dstNode->getParams()->port);
   work1.addClusterSession(srcAddr, sess1);
   work1.addClusterSession(dstAddr, sess2);
   work2.addClusterSession(srcAddr, sess1);
@@ -1734,8 +1735,8 @@ TEST(Cluster, migrateChangeThread) {
   auto bitmap = getBitSet(slotsList);
 
   for (size_t j = 0; j < numData; ++j) {
-    string key = getUUid(10);
-    string value = getUUid(10);
+    std::string key = getUUid(10);
+    std::string value = getUUid(10);
     auto ret = work1.getStringResult({"set", key, value});
     EXPECT_EQ(ret, "+OK\r\n");
 
@@ -1817,7 +1818,7 @@ TEST(Cluster, stopMigrate) {
   const uint32_t numData = 20000;
   std::string taskid;
   for (size_t j = 0; j < numData; ++j) {
-    string key;
+    std::string key;
     if (j % 2) {
       // write to slot 4310
       key = getUUid(8) + "{11}";
@@ -1825,7 +1826,7 @@ TEST(Cluster, stopMigrate) {
       // write to slot 5970
       key = getUUid(8) + "{123}";
     }
-    string value = getUUid(7);
+    std::string value = getUUid(7);
     auto ret = work1.getStringResult({"set", key, value});
     EXPECT_EQ(ret, "+OK\r\n");
   }
@@ -1836,7 +1837,7 @@ TEST(Cluster, stopMigrate) {
    * the working task num of this taskid should be 0,
    * than use (cluster setslot retart) to continue jobs
    * finally all the tasks should be done */
-  std::this_thread::sleep_for(500ms);
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
   work2.stopMigrate(taskid);
 
   waitMigrateTaskStop(srcNode, dstNode, taskid);
@@ -1844,7 +1845,7 @@ TEST(Cluster, stopMigrate) {
   exptTaskid = migrate(srcNode, dstNode, bitmap, true);
   EXPECT_TRUE(exptTaskid.ok());
 
-  std::this_thread::sleep_for(30s);
+  std::this_thread::sleep_for(std::chrono::seconds(30));
 
   uint32_t keysize = 0;
   for (auto& vs : slotsList) {
@@ -1915,7 +1916,7 @@ TEST(Cluster, stopAllMigrate) {
   const uint32_t numData = 100000;
   std::string taskid;
   for (size_t j = 0; j < numData; ++j) {
-    string key;
+    std::string key;
     if (j % 2) {
       // write to slot 4310
       key = getUUid(8) + "{11}";
@@ -1923,7 +1924,7 @@ TEST(Cluster, stopAllMigrate) {
       // write to slot 5970
       key = getUUid(8) + "{123}";
     }
-    string value = getUUid(7);
+    std::string value = getUUid(7);
     auto ret = work1.getStringResult({"set", key, value});
     EXPECT_EQ(ret, "+OK\r\n");
   }
@@ -1934,16 +1935,16 @@ TEST(Cluster, stopAllMigrate) {
    * stopall), the working task num of this taskid should be 0, than use
    * (cluster setslot restartall) to continue jobs
    * finally all the tasks should be done */
-  std::this_thread::sleep_for(100ms);
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
   work2.stopAllMigTasks();
-  std::this_thread::sleep_for(1s);
+  std::this_thread::sleep_for(std::chrono::seconds(1));
   work1.stopAllMigTasks();
-  std::this_thread::sleep_for(3s);
+  std::this_thread::sleep_for(std::chrono::seconds(3));
 
   waitMigrateTaskStop(srcNode, dstNode, taskid);
 
   work2.restartAllMigTasks();
-  std::this_thread::sleep_for(40s);
+  std::this_thread::sleep_for(std::chrono::seconds(40));
   uint32_t keysize = 0;
   for (auto& vs : slotsList) {
     LOG(INFO) << "node2->getClusterMgr()->countKeysInSlot:" << vs
@@ -2034,10 +2035,10 @@ TEST(Cluster, restartMigrate) {
 
   const uint32_t numData = 10000;
   // for support MOVED
-  string srcAddr =
-    srcNode->getParams()->bindIp + ":" + to_string(srcNode->getParams()->port);
-  string dstAddr =
-    dstNode->getParams()->bindIp + ":" + to_string(dstNode->getParams()->port);
+  std::string srcAddr = srcNode->getParams()->bindIp + ":" +
+    std::to_string(srcNode->getParams()->port);
+  std::string dstAddr = dstNode->getParams()->bindIp + ":" +
+    std::to_string(dstNode->getParams()->port);
   work1.addClusterSession(srcAddr, sess1);
   work1.addClusterSession(dstAddr, sess2);
   work2.addClusterSession(srcAddr, sess1);
@@ -2056,8 +2057,8 @@ TEST(Cluster, restartMigrate) {
   std::string taskid;
 
   for (size_t j = 0; j < numData; ++j) {
-    string key = getUUid(10);
-    string value = getUUid(10);
+    std::string key = getUUid(10);
+    std::string value = getUUid(10);
     auto ret = work1.getStringResult({"set", key, value});
     EXPECT_EQ(ret, "+OK\r\n");
 
@@ -2083,7 +2084,7 @@ TEST(Cluster, restartMigrate) {
   /* NOTE(wayenchen) first we stop receiver tasks
    * than use (cluster setslot retart) to continue jobs */
   work2.stopMigrate(taskid, true);
-  std::this_thread::sleep_for(10s);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   taskNum1 = srcNode->getMigrateManager()->getTaskNum(taskid);
   taskNum2 = dstNode->getMigrateManager()->getTaskNum(taskid);
@@ -2108,7 +2109,7 @@ TEST(Cluster, restartMigrate) {
   s = migrate(srcNode, dstNode, bitmap, true);
   EXPECT_TRUE(s.ok());
 
-  std::this_thread::sleep_for(20s);
+  std::this_thread::sleep_for(std::chrono::seconds(20));
 
   // bitmap should belong to dstNode
   ASSERT_EQ(checkSlotsBlong(
@@ -2200,12 +2201,12 @@ TEST(Cluster, migrateAndImport) {
   const uint32_t numData = 10000;
 
   // for support MOVED
-  string srcAddr =
-    srcNode->getParams()->bindIp + ":" + to_string(srcNode->getParams()->port);
-  string dstAddr1 = dstNode1->getParams()->bindIp + ":" +
-    to_string(dstNode1->getParams()->port);
-  string dstAddr2 = dstNode2->getParams()->bindIp + ":" +
-    to_string(dstNode2->getParams()->port);
+  std::string srcAddr = srcNode->getParams()->bindIp + ":" +
+    std::to_string(srcNode->getParams()->port);
+  std::string dstAddr1 = dstNode1->getParams()->bindIp + ":" +
+    std::to_string(dstNode1->getParams()->port);
+  std::string dstAddr2 = dstNode2->getParams()->bindIp + ":" +
+    std::to_string(dstNode2->getParams()->port);
   work1.addClusterSession(srcAddr, sess1);
   work1.addClusterSession(dstAddr1, sess2);
   work1.addClusterSession(dstAddr2, sess3);
@@ -2217,8 +2218,8 @@ TEST(Cluster, migrateAndImport) {
   work3.addClusterSession(dstAddr2, sess3);
 
   for (size_t j = 0; j < numData; ++j) {
-    string key;
-    string key2;
+    std::string key;
+    std::string key2;
     if (j % 2) {
       // write to slot 8373
       key = getUUid(8) + "{12}";
@@ -2230,7 +2231,7 @@ TEST(Cluster, migrateAndImport) {
       // write to slot 513
       key2 = getUUid(8) + "{113}";
     }
-    string value = getUUid(7);
+    std::string value = getUUid(7);
     auto ret = work1.getStringResult({"set", key, value});
     EXPECT_EQ(ret, "+OK\r\n");
     ret = work1.getStringResult({"set", key2, value});
@@ -2246,7 +2247,7 @@ TEST(Cluster, migrateAndImport) {
       auto s1 = migrate(srcNode, dstNode1, bitmap1);
       EXPECT_TRUE(s1.ok());
 
-      std::this_thread::sleep_for(1s);
+      std::this_thread::sleep_for(std::chrono::seconds(1));
       uint32_t keysize2 = 0;
       for (auto& vs : slotsList2) {
         keysize2 += dstNode1->getClusterMgr()->countKeysInSlot(vs);
@@ -2441,7 +2442,7 @@ TEST(Cluster, deleteChunks) {
   auto kv_keys = work1.writeWork(RecordType::RT_KV, numData);
   LOG(INFO) << "end add data.";
 
-  std::this_thread::sleep_for(5s);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
 
   testDeleteChunks(srcNode, dstNode, {5000});
   testDeleteChunks(srcNode, dstNode, {5200, 5210, 5220, 5280});
@@ -2505,7 +2506,7 @@ TEST(Cluster, deleteFilesInRange) {
   WorkLoad work3(srcNodeSlave, sess3);
   work3.init();
 
-  std::this_thread::sleep_for(20s);
+  std::this_thread::sleep_for(std::chrono::seconds(20));
 
   const uint32_t numData = 10000;
   SlotsBitmap bitmap;
@@ -2652,7 +2653,7 @@ TEST(Cluster, ErrStoreNum) {
   auto s = migrate(srcNode, dstNode, bitmap);
   EXPECT_TRUE(!s.ok());
 
-  std::this_thread::sleep_for(3s);
+  std::this_thread::sleep_for(std::chrono::seconds(3));
   // migrte should fail
   ASSERT_EQ(checkSlotsBlong(
               bitmap,
@@ -2721,7 +2722,7 @@ void checkEpoch(std::vector<std::shared_ptr<ServerEntry>> servers,
         mapCurrentEpoch[currentEpoch]++;
       }
     }
-    stringstream ss;
+    std::stringstream ss;
     for (auto epoch : mapCurrentEpoch) {
       ss << " " << epoch.first << "|" << epoch.second;
     }
@@ -2732,7 +2733,7 @@ void checkEpoch(std::vector<std::shared_ptr<ServerEntry>> servers,
                 << " begin:" << begin << " end:" << end;
       break;
     }
-    std::this_thread::sleep_for(1s);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
   EXPECT_NE(begin, INT32_MAX);
   EXPECT_NE(end, 0);
@@ -2753,7 +2754,7 @@ TEST(Cluster, ConvergenceRate) {
             << " dstNodeIndex:" << dstNodeIndex;
   std::vector<std::string> dirs;
   for (uint32_t i = 0; i < nodeNum; ++i) {
-    dirs.push_back("node" + to_string(i));
+    dirs.push_back("node" + std::to_string(i));
   }
 
   const auto guard = MakeGuard([dirs] {
@@ -2800,7 +2801,8 @@ TEST(Cluster, ConvergenceRate) {
     if (i == nodeNum - 1) {
       end = CLUSTER_SLOTS - 1;
     }
-    std::string slots = "{" + to_string(start) + ".." + to_string(end) + "}";
+    std::string slots =
+      "{" + std::to_string(start) + ".." + std::to_string(end) + "}";
     work.addSlots(slots);
     LOG(INFO) << "addSlots " << i << " " << slots;
   }
@@ -2825,10 +2827,10 @@ TEST(Cluster, ConvergenceRate) {
   auto bitmap = getBitSet(slotsList);
 
   // for support MOVED
-  string srcAddr =
-    srcNode->getParams()->bindIp + ":" + to_string(srcNode->getParams()->port);
-  string dstAddr =
-    dstNode->getParams()->bindIp + ":" + to_string(dstNode->getParams()->port);
+  std::string srcAddr = srcNode->getParams()->bindIp + ":" +
+    std::to_string(srcNode->getParams()->port);
+  std::string dstAddr = dstNode->getParams()->bindIp + ":" +
+    std::to_string(dstNode->getParams()->port);
   work1.addClusterSession(srcAddr, sess1);
   work1.addClusterSession(dstAddr, sess2);
   work2.addClusterSession(srcAddr, sess1);
@@ -2837,9 +2839,9 @@ TEST(Cluster, ConvergenceRate) {
   LOG(INFO) << "begin add keys.";
   const uint32_t numData = 1000;
   for (size_t j = 0; j < numData; ++j) {
-    string key;
-    key = to_string(j) + "{12}";
-    string value = getUUid(7);
+    std::string key;
+    key = std::to_string(j) + "{12}";
+    std::string value = getUUid(7);
     auto ret = work1.getStringResult({"set", key, value});
     EXPECT_EQ(ret, "+OK\r\n");
 
@@ -2893,7 +2895,7 @@ TEST(Cluster, MigrateTTLIndex) {
   LOG(INFO) << "MigrateTTLIndex begin.";
   std::vector<std::string> dirs;
   for (uint32_t i = 0; i < nodeNum; ++i) {
-    dirs.push_back("node" + to_string(i));
+    dirs.push_back("node" + std::to_string(i));
   }
 
   const auto guard = MakeGuard([dirs] {
@@ -2938,8 +2940,8 @@ TEST(Cluster, MigrateTTLIndex) {
   const uint32_t numData = 10;
   for (size_t j = 0; j < numData; ++j) {
     // write to slot 8373
-    string key = to_string(j) + "{12}";
-    string listkey = "list" + to_string(j) + "{12}";
+    std::string key = std::to_string(j) + "{12}";
+    std::string listkey = "list" + std::to_string(j) + "{12}";
 
     auto ret = work1.getStringResult({"set", key, "value"});
     EXPECT_EQ(ret, "+OK\r\n");
@@ -2969,7 +2971,7 @@ TEST(Cluster, MigrateTTLIndex) {
   EXPECT_EQ(dbsize.value(), numData + numData * 4);
 
   // tryDelExpiredKeysJob() is called every 10s
-  std::this_thread::sleep_for(12s);
+  std::this_thread::sleep_for(std::chrono::seconds(12));
 
   dbsize = work2.getIntResult({"dbsize", "containexpire", "containsubkey"});
   // RT_LIST_META and RT_LIST_ELE will be deleted.
@@ -3012,7 +3014,7 @@ TEST(Cluster, ChangeMaster) {
   work1.init();
 
   work1.clusterMeet(node7->getParams()->bindIp, node7->getParams()->port);
-  std::this_thread::sleep_for(10s);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   auto ctx2 = std::make_shared<asio::io_context>();
   auto sess2 = makeSession(node7, ctx2);
@@ -3027,13 +3029,13 @@ TEST(Cluster, ChangeMaster) {
   WorkLoad work3(node2, sess3);
   work3.init();
 
-  std::this_thread::sleep_for(10s);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
   // lock the node6 , && make the node2 to be master by cluster failover command
   work2.lockDb(10);
 
   work3.manualFailover();
   // NOTE(takenliu): tsan manual failover need more than 3s
-  std::this_thread::sleep_for(5s);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
   // expect node2 to be new master
   auto state = node1->getClusterMgr()->getClusterState();
   auto nodeName2 = node2->getClusterMgr()->getClusterState()->getMyselfName();
@@ -3046,7 +3048,7 @@ TEST(Cluster, ChangeMaster) {
   // EXPECT_EQ(node7Ptr->getMaster()->getNodeName(), nodeName2);
   ASSERT_TRUE(nodeIsMySlave(node2, node7));
   // lockdb over, the replication should be fixed
-  std::this_thread::sleep_for(10s);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
   auto masterHost =
     node2->getClusterMgr()->getClusterState()->getMyselfNode()->getNodeIp();
   auto masterPort =
@@ -3082,7 +3084,7 @@ TEST(Cluster, FixReplication) {
     } else {
       destroyCluster(nodeNum);
     }
-    destroyEnv("node" + to_string(7));
+    destroyEnv("node" + std::to_string(7));
     std::this_thread::sleep_for(std::chrono::seconds(5));
   });
 
@@ -3097,7 +3099,7 @@ TEST(Cluster, FixReplication) {
   WorkLoad work1(node1, sess1);
   work1.init();
   work1.clusterMeet(node7->getParams()->bindIp, node7->getParams()->port);
-  std::this_thread::sleep_for(3s);
+  std::this_thread::sleep_for(std::chrono::seconds(3));
 
   auto ctx2 = std::make_shared<asio::io_context>();
   auto sess2 = makeSession(node7, ctx2);
@@ -3105,7 +3107,7 @@ TEST(Cluster, FixReplication) {
   work2.init();
   auto nodeName1 = node1->getClusterMgr()->getClusterState()->getMyselfName();
   work2.replicate(nodeName1);
-  std::this_thread::sleep_for(10s);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
   // EXPECT_EQ(node7->getReplManager()->isSlaveFullSyncDone(), true);
 
   auto ctx3 = std::make_shared<asio::io_context>();
@@ -3116,7 +3118,7 @@ TEST(Cluster, FixReplication) {
   work2.manualFailover();
   // lock the node2 , so the replication will set new Master will fail
   work3.lockDb(10);
-  std::this_thread::sleep_for(5s);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
   // expect node7 to be new master
   auto state = node1->getClusterMgr()->getClusterState();
   auto nodeName7 = node7->getClusterMgr()->getClusterState()->getMyselfName();
@@ -3136,7 +3138,7 @@ TEST(Cluster, FixReplication) {
     node2->getReplManager()->checkMasterHost(masterHost, masterPort);
 
   // lockdb over, the replication should be fixed
-  std::this_thread::sleep_for(5s);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
   ASSERT_TRUE(nodeIsMySlave(node7, node2));
 
   // check all storeid is right, gossip cron fix the replicatipn data
@@ -3170,7 +3172,7 @@ TEST(Cluster, ManualfailoverCheck) {
     } else {
       destroyCluster(nodeNum);
     }
-    destroyEnv("node" + to_string(7));
+    destroyEnv("node" + std::to_string(7));
     std::this_thread::sleep_for(std::chrono::seconds(5));
   });
 
@@ -3184,7 +3186,7 @@ TEST(Cluster, ManualfailoverCheck) {
   WorkLoad work1(master, sess1);
   work1.init();
   work1.clusterMeet(slave->getParams()->bindIp, slave->getParams()->port);
-  std::this_thread::sleep_for(3s);
+  std::this_thread::sleep_for(std::chrono::seconds(3));
 
   auto ctx2 = std::make_shared<asio::io_context>();
   auto sess2 = makeSession(slave, ctx2);
@@ -3225,7 +3227,7 @@ TEST(Cluster, lockConfict) {
   work.init();
   work.lockDb(60);  // 60 seconds is enough
 
-  std::this_thread::sleep_for(15s);
+  std::this_thread::sleep_for(std::chrono::seconds(15));
 
   auto server2 = servers[1];
   EXPECT_EQ(server2->getClusterMgr()->getClusterState()->clusterIsOK(), true);
@@ -3561,7 +3563,7 @@ TEST(Cluster, failoverNeedFullSyncDone) {
     originSlave);
 
   // restart origin master
-  auto cfg1 = makeServerParam(startPort, 10, "node" + to_string(0), true);
+  auto cfg1 = makeServerParam(startPort, 10, "node" + std::to_string(0), true);
   cfg1->clusterEnabled = true;
   cfg1->pauseTimeIndexMgr = 1;
   cfg1->rocksBlockcacheMB = 24;
@@ -3634,7 +3636,7 @@ TEST(Cluster, bindZeroAddr) {
   std::this_thread::sleep_for(std::chrono::seconds(5));
 
   // restart  master
-  auto cfg1 = makeServerParam(startPort, 10, "node" + to_string(0), true);
+  auto cfg1 = makeServerParam(startPort, 10, "node" + std::to_string(0), true);
   cfg1->clusterEnabled = true;
   cfg1->pauseTimeIndexMgr = 1;
   cfg1->rocksBlockcacheMB = 24;
@@ -3646,7 +3648,8 @@ TEST(Cluster, bindZeroAddr) {
   LOG(INFO) << "master restart ok.";
   std::this_thread::sleep_for(std::chrono::seconds(5));
   // restart slave
-  auto cfg2 = makeServerParam(startPort + 3, 10, "node" + to_string(3), true);
+  auto cfg2 =
+    makeServerParam(startPort + 3, 10, "node" + std::to_string(3), true);
   cfg2->clusterEnabled = true;
   cfg2->pauseTimeIndexMgr = 1;
   cfg2->rocksBlockcacheMB = 24;
@@ -3671,25 +3674,25 @@ TEST(Cluster, bindZeroAddr) {
 
   std::string ret1 = work1.getStringResult({"info", "replication"});
   // info should not contain 0.0.0.0
-  EXPECT_TRUE(ret1.find("0.0.0.0") == string::npos);
-  EXPECT_TRUE(ret1.find("role:master") != string::npos);
+  EXPECT_TRUE(ret1.find("0.0.0.0") == std::string::npos);
+  EXPECT_TRUE(ret1.find("role:master") != std::string::npos);
 
   auto ret2 = work2.getStringResult({"info", "replication"});
-  EXPECT_TRUE(ret2.find("0.0.0.0") == string::npos);
-  EXPECT_TRUE(ret2.find("role:slave") != string::npos);
+  EXPECT_TRUE(ret2.find("0.0.0.0") == std::string::npos);
+  EXPECT_TRUE(ret2.find("role:slave") != std::string::npos);
 
   work2.manualFailover();
-  std::this_thread::sleep_for(10s);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   ret1 = work1.getStringResult({"info", "replication"});
-  EXPECT_TRUE(ret1.find("0.0.0.0") == string::npos);
+  EXPECT_TRUE(ret1.find("0.0.0.0") == std::string::npos);
   // master become slave
-  EXPECT_TRUE(ret1.find("role:slave") != string::npos);
+  EXPECT_TRUE(ret1.find("role:slave") != std::string::npos);
 
   ret2 = work2.getStringResult({"info", "replication"});
-  EXPECT_TRUE(ret2.find("0.0.0.0") == string::npos);
+  EXPECT_TRUE(ret2.find("0.0.0.0") == std::string::npos);
   // slave become master
-  EXPECT_TRUE(ret2.find("role:master") != string::npos);
+  EXPECT_TRUE(ret2.find("role:master") != std::string::npos);
 
   state.reset();
 #ifndef _WIN32
@@ -3729,7 +3732,7 @@ TEST(Cluster, failoverConfilct) {
   auto sess1 = makeSession(node1, ctx1);
   WorkLoad work1(node1, sess1);
   work1.init();
-  std::this_thread::sleep_for(3s);
+  std::this_thread::sleep_for(std::chrono::seconds(3));
 
   auto ctx2 = std::make_shared<asio::io_context>();
   auto sess2 = makeSession(node2, ctx2);
@@ -3737,10 +3740,10 @@ TEST(Cluster, failoverConfilct) {
   work2.init();
 
   // for support MOVED
-  string srcAddr =
-    node1->getParams()->bindIp + ":" + to_string(node1->getParams()->port);
-  string dstAddr =
-    node2->getParams()->bindIp + ":" + to_string(node2->getParams()->port);
+  std::string srcAddr =
+    node1->getParams()->bindIp + ":" + std::to_string(node1->getParams()->port);
+  std::string dstAddr =
+    node2->getParams()->bindIp + ":" + std::to_string(node2->getParams()->port);
   work1.addClusterSession(srcAddr, sess1);
   work1.addClusterSession(dstAddr, sess2);
   work2.addClusterSession(srcAddr, sess1);
@@ -3749,8 +3752,8 @@ TEST(Cluster, failoverConfilct) {
   // write data to masterNode
   uint32_t numData = 30000;
   for (size_t j = 0; j < numData; ++j) {
-    string key = getUUid(8) + "{11}";
-    string value = getUUid(10);
+    std::string key = getUUid(8) + "{11}";
+    std::string value = getUUid(10);
     auto ret = work1.getStringResult({"set", key, value});
     if (j == numData / 2) {
       work2.manualFailover();
@@ -3763,10 +3766,10 @@ TEST(Cluster, failoverConfilct) {
   uint32_t retry_time = 5;
   while (retry_time--) {
     state1->cronCheckReplicate();
-    std::this_thread::sleep_for(1s);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 
-  std::this_thread::sleep_for(10s);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
   // expect node2 to be new master
   auto state = node1->getClusterMgr()->getClusterState();
   auto nodeName2 = node2->getClusterMgr()->getClusterState()->getMyselfName();
@@ -3778,7 +3781,7 @@ TEST(Cluster, failoverConfilct) {
   ASSERT_TRUE(nodeIsMySlave(node2, node1));
 
   // the replication should be right
-  std::this_thread::sleep_for(10s);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
   auto masterHost =
     node2->getClusterMgr()->getClusterState()->getMyselfNode()->getNodeIp();
   auto masterPort =
@@ -3843,8 +3846,8 @@ TEST(Cluster, failoveCheckBinlogTs) {
   // write data to masterNode
   uint32_t numData = 10000;
   for (size_t j = 0; j < numData; ++j) {
-    string key = getUUid(8) + "{11}";
-    string value = getUUid(10);
+    std::string key = getUUid(8) + "{11}";
+    std::string value = getUUid(10);
     auto ret = work1.getStringResult({"set", key, value});
     EXPECT_EQ(ret, "+OK\r\n");
   }
@@ -3856,7 +3859,7 @@ TEST(Cluster, failoveCheckBinlogTs) {
   ret = work2.getStringResult({"config", "set", "cluster-node-timeout", "500"});
   EXPECT_EQ(ret, "+OK\r\n");
 
-  std::this_thread::sleep_for(10s);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
   EXPECT_EQ(slaveNode->getReplManager()->isSlaveFullSyncDone(), true);
 
   std::this_thread::sleep_for(std::chrono::seconds(10));
@@ -3868,7 +3871,7 @@ TEST(Cluster, failoveCheckBinlogTs) {
 
   CNodePtr nodePtr2 = state->clusterLookupNode(slaveName);
   // slave should not become master beacause data_age is too big
-  std::this_thread::sleep_for(10s);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
   ASSERT_EQ(nodeIsMaster(slaveNode), false);
   ASSERT_EQ(slaveNode->getClusterMgr()->getClusterState()->isDataAgeTooLarge(),
             true);
@@ -3882,7 +3885,7 @@ TEST(Cluster, failoveCheckBinlogTs) {
     work2.getStringResult({"config", "set", "cluster-node-timeout", "15000"});
   EXPECT_EQ(ret, "+OK\r\n");
 
-  std::this_thread::sleep_for(5s);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
   ASSERT_EQ(nodeIsMaster(slaveNode), true);
 
   // cluster work ok after vote sucessful
@@ -3933,7 +3936,8 @@ TEST(Cluster, saveNode) {
 
   for (uint16_t i = 0; i < size; i++) {
     // restart origin master
-    auto cfg = makeServerParam(startPort + i, 10, "node" + to_string(i), true);
+    auto cfg =
+      makeServerParam(startPort + i, 10, "node" + std::to_string(i), true);
     cfg->clusterEnabled = true;
     cfg->pauseTimeIndexMgr = 1;
     cfg->rocksBlockcacheMB = 24;

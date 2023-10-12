@@ -190,7 +190,7 @@ class ChunkMigrateSender {
   bool _consistency;
   std::string _nodeid;
   std::atomic<uint64_t> _curBinlogid;
-  string _dstIp;
+  std::string _dstIp;
   uint16_t _dstPort;
   uint32_t _dstStoreid;
   std::shared_ptr<ClusterNode> _dstNode;

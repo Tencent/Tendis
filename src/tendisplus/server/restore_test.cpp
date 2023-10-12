@@ -49,7 +49,8 @@ void addOneKeyEveryKvstore(const std::shared_ptr<ServerEntry>& server,
   }
 }
 
-void backup(const std::shared_ptr<ServerEntry>& server, const string& mode) {
+void backup(const std::shared_ptr<ServerEntry>& server,
+            const std::string& mode) {
   auto ctx = std::make_shared<asio::io_context>();
   auto sess = makeSession(server, ctx);
 
@@ -125,7 +126,7 @@ bool runShell(const std::string& cmd) {
   return success;
 }
 
-void restoreBinlog(const string& src_binlog_dir,
+void restoreBinlog(const std::string& src_binlog_dir,
                    const std::shared_ptr<ServerEntry>& server,
                    uint64_t end_ts = UINT64_MAX) {
   for (size_t i = 0; i < server->getKVStoreCount(); i++) {
@@ -210,7 +211,7 @@ void waitBinlogDump(const std::shared_ptr<ServerEntry>& server) {
                   << ",maxBinlogId=" << maxBinlogId;
         break;
       } else {
-        std::this_thread::sleep_for(10ms);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
       }
     }
   }

@@ -184,7 +184,7 @@ std::unique_ptr<RepllogCursorV2> RocksTxn::createRepllogCursorV2(
 
 std::unique_ptr<TTLIndexCursor> RocksTxn::createTTLIndexCursor(uint64_t until) {
   RecordKey upper(TTLIndex::CHUNKID + 1, 0, RecordType::RT_INVALID, "", "");
-  string upperBound = upper.prefixChunkid();
+  std::string upperBound = upper.prefixChunkid();
   auto cursor =
     createCursor(ColumnFamilyNumber::ColumnFamily_Default, &upperBound);
   return std::make_unique<TTLIndexCursor>(std::move(cursor), until);
@@ -192,16 +192,16 @@ std::unique_ptr<TTLIndexCursor> RocksTxn::createTTLIndexCursor(uint64_t until) {
 
 std::unique_ptr<SlotCursor> RocksTxn::createSlotCursor(uint32_t slot) {
   RecordKey chunkMax(slot + 1, 0, RecordType::RT_INVALID, "", "");
-  string upperbound = chunkMax.prefixChunkid();
+  std::string upperbound = chunkMax.prefixChunkid();
   auto cursor =
     createCursor(ColumnFamilyNumber::ColumnFamily_Default, &upperbound);
   return std::make_unique<SlotCursor>(std::move(cursor), slot);
 }
 
-unique_ptr<SlotsCursor> RocksTxn::createSlotsCursor(uint32_t start,
-                                                    uint32_t end) {
+std::unique_ptr<SlotsCursor> RocksTxn::createSlotsCursor(uint32_t start,
+                                                         uint32_t end) {
   RecordKey chunkMax(end + 1, 0, RecordType::RT_INVALID, "", "");
-  string upperbound = chunkMax.prefixChunkid();
+  std::string upperbound = chunkMax.prefixChunkid();
   auto cursor =
     createCursor(ColumnFamilyNumber::ColumnFamily_Default, &upperbound);
   return std::make_unique<SlotsCursor>(std::move(cursor), start, end);
@@ -210,7 +210,7 @@ unique_ptr<SlotsCursor> RocksTxn::createSlotsCursor(uint32_t start,
 std::unique_ptr<VersionMetaCursor> RocksTxn::createVersionMetaCursor() {
   RecordKey chunkMax(
     VersionMeta::CHUNKID + 1, 0, RecordType::RT_INVALID, "", "");
-  string upperbound = chunkMax.prefixChunkid();
+  std::string upperbound = chunkMax.prefixChunkid();
   auto cursor =
     createCursor(ColumnFamilyNumber::ColumnFamily_Default, &upperbound);
   return std::make_unique<VersionMetaCursor>(std::move(cursor));
@@ -686,7 +686,7 @@ Status RocksTxn::setBinlogKV(uint64_t binlogId,
 Status RocksTxn::setBinlogKV(const std::string& key, const std::string& value) {
   Expected<ReplLogKeyV2> logkey = ReplLogKeyV2::decode(key);
   if (!logkey.ok()) {
-    cerr << "decode logkey failed." << endl;
+    std::cerr << "decode logkey failed." << std::endl;
     return {ErrorCodes::ERR_INTERGER, "ReplLogKeyV2::decode failed"};
   }
 
@@ -1306,7 +1306,7 @@ RocksKVStore::RocksKVStore(
   initRocksProperties();
 }
 
-rocksdb::Options RocksKVStore::options(const string cf) {
+rocksdb::Options RocksKVStore::options(const std::string cf) {
   rocksdb::Options options;
   rocksdb::BlockBasedTableOptions table_options;
   table_options.block_cache = _blockCache;
@@ -2336,9 +2336,9 @@ Expected<std::string> RocksKVStore::saveBackupMeta(const std::string& dir,
   writer.Key("binlogVersion");
   writer.Uint64((uint64_t)backup->getBinlogVersion());
   writer.EndObject();
-  string data = sb.GetString();
+  std::string data = sb.GetString();
 
-  string filename = dir + "/backup_meta";
+  std::string filename = dir + "/backup_meta";
   std::ofstream metafile(filename);
   if (!metafile.is_open()) {
     return {ErrorCodes::ERR_INTERNAL, "open file failed:" + filename};
@@ -2354,7 +2354,7 @@ Expected<std::string> RocksKVStore::saveBackupMeta(const std::string& dir,
 }
 
 Expected<BackupInfo> RocksKVStore::getBackupMeta(const std::string& dir) {
-  string filename = dir + "/backup_meta";
+  std::string filename = dir + "/backup_meta";
   std::ifstream metafile(filename);
   if (!metafile.is_open()) {
     LOG(ERROR) << "backup_meta open failed:" << filename;
@@ -2985,9 +2985,9 @@ uint64_t RocksKVStore::getStatCountByName(const std::string& name) const {
   }
 
   if (name == "rocksdb.compaction-filter-count") {
-    return stat.compactFilterCount.load(memory_order_relaxed);
+    return stat.compactFilterCount.load(std::memory_order_relaxed);
   } else if (name == "rocksdb.compaction-kv-expired-count") {
-    return stat.compactKvExpiredCount.load(memory_order_relaxed);
+    return stat.compactKvExpiredCount.load(std::memory_order_relaxed);
   }
 
   INVARIANT_D(0);
@@ -3055,10 +3055,10 @@ Status RocksKVStore::setOptionDynamic(const std::string& option,
   // option, example: "rocks.binlogcf.enable_blob_files"
   // new_option, example: "rocks.enable_blob_files"
   // short_option, example: "enable_blob_files"
-  string new_option = option;
-  string short_option = "";
+  std::string new_option = option;
+  std::string short_option = "";
   auto argArray = tendisplus::stringSplit(option, ".");
-  string specialCf = "";
+  std::string specialCf = "";
   if (argArray.size() == 2) {
     // example: "rocks.enable_blob_files"
     short_option = argArray[1];
@@ -3362,7 +3362,7 @@ void RocksKVStore::appendJSONStat(
     }
 
     for (const auto& kv : _rocksStringProperties) {
-      string tmp;
+      std::string tmp;
       bool ok = getProperty(kv.first, &tmp);
       if (!ok) {
         continue;
@@ -3468,7 +3468,7 @@ std::string RocksdbEnv::getErrorString() const {
       break;
   }
 
-  ss << ",count=" << std::to_string(_errCnt.load(memory_order_relaxed));
+  ss << ",count=" << std::to_string(_errCnt.load(std::memory_order_relaxed));
 
   return ss.str();
 }

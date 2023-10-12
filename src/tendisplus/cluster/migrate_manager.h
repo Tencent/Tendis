@@ -41,10 +41,10 @@ enum MigrateBinlogType { RECEIVE_START, RECEIVE_END, SEND_START, SEND_END };
 using SlotsBitmap = std::bitset<CLUSTER_SLOTS>;
 
 Expected<uint64_t> addMigrateBinlog(MigrateBinlogType type,
-                                    string slots,
+                                    std::string slots,
                                     uint32_t storeid,
                                     ServerEntry* svr,
-                                    const string& nodeName);
+                                    const std::string& nodeName);
 
 /* PARENT TASK produce by cluster setslot importing command */
 class pTask {
@@ -72,7 +72,7 @@ class pTask {
 class MigrateSendTask {
  public:
   explicit MigrateSendTask(uint32_t storeId,
-                           const string& taskid_,
+                           const std::string& taskid_,
                            const SlotsBitmap& slots_,
                            std::shared_ptr<ServerEntry> svr,
                            const std::shared_ptr<ServerParams> cfg,
@@ -123,8 +123,8 @@ class MigrateReceiveTask {
  public:
   explicit MigrateReceiveTask(const SlotsBitmap& slots_,
                               uint32_t store_id,
-                              const string& taskid_,
-                              const string& ip,
+                              const std::string& taskid_,
+                              const std::string& ip,
                               uint16_t port,
                               std::shared_ptr<ServerEntry> svr,
                               const std::shared_ptr<ServerParams> cfg,
@@ -146,7 +146,7 @@ class MigrateReceiveTask {
   SlotsBitmap _slots;
   std::string _taskid;
   uint32_t _storeid;
-  string _srcIp;
+  std::string _srcIp;
   uint16_t _srcPort;
   std::shared_ptr<ServerEntry> _svr;
   std::atomic<bool> _isRunning;
@@ -185,7 +185,7 @@ class MigrateManager {
   bool senderSchedule(const SCLOCK::time_point& now);
 
   Status migrating(const SlotsBitmap& slots,
-                   const string& ip,
+                   const std::string& ip,
                    uint16_t port,
                    uint32_t storeid,
                    const std::string& taskid,
@@ -207,7 +207,7 @@ class MigrateManager {
   bool receiverSchedule(const SCLOCK::time_point& now);
 
   Status importing(const SlotsBitmap& slots,
-                   const string& ip,
+                   const std::string& ip,
                    uint16_t port,
                    uint32_t storeid,
                    const std::string& taskid,
@@ -253,11 +253,11 @@ class MigrateManager {
   Expected<uint64_t> applyMigrateBinlog(ServerEntry* svr,
                                         PStore store,
                                         MigrateBinlogType type,
-                                        string slots,
-                                        const string& nodeName);
+                                        std::string slots,
+                                        const std::string& nodeName);
   Status restoreMigrateBinlog(MigrateBinlogType type,
                               uint32_t storeid,
-                              string slots);
+                              std::string slots);
   Status onRestoreEnd(uint32_t storeId);
 
   void requestRateLimit(uint64_t bytes);

@@ -70,7 +70,7 @@ const char* redisProtocolToLuaType(lua_State* lua, const char* reply) {
 }
 
 int string2ll(const char* s, size_t slen, int64_t* value) {
-  auto expt = ::tendisplus::stoll(string(s, slen));
+  auto expt = ::tendisplus::stoll(std::string(s, slen));
   if (!expt.ok()) {
     DLOG(INFO) << "string2ll failed:" << value;
     return 0;
@@ -160,8 +160,8 @@ void luaPushError(lua_State* lua, const char* error) {
 
   /* Attempt to figure out where this function was called, if possible */
   if (lua_getstack(lua, 1, &dbg) && lua_getinfo(lua, "nSl", &dbg)) {
-    string msg = string(dbg.source) + ": " + std::to_string(dbg.currentline) +
-      ": " + string(error);
+    std::string msg = std::string(dbg.source) + ": " +
+      std::to_string(dbg.currentline) + ": " + std::string(error);
     LOG(INFO) << "luaPushError:" << msg;
     lua_pushstring(lua, msg.c_str());
   } else {
@@ -228,8 +228,8 @@ Expected<std::string> LuaState::luaCreateFunction(lua_State* lua,
   funcdef += "\nend";
 
   if (luaL_loadbuffer(lua, funcdef.c_str(), funcdef.length(), "@user_script")) {
-    string err =
-      "Error compiling script (new function):" + string(lua_tostring(lua, -1));
+    std::string err = "Error compiling script (new function):" +
+      std::string(lua_tostring(lua, -1));
     DLOG(ERROR) << err;
 
     lua_pop(lua, 1);
@@ -237,8 +237,8 @@ Expected<std::string> LuaState::luaCreateFunction(lua_State* lua,
   }
 
   if (lua_pcall(lua, 0, 0, 0)) {
-    string err =
-      "Error running script (new function):" + string(lua_tostring(lua, -1));
+    std::string err = "Error running script (new function):" +
+      std::string(lua_tostring(lua, -1));
     DLOG(ERROR) << err;
     lua_pop(lua, 1);
     return {ErrorCodes::ERR_LUA, err};
@@ -250,7 +250,7 @@ Expected<std::string> LuaState::luaCreateFunction(lua_State* lua,
 /* Set an array of Redis String Objects as a Lua array (table) stored into a
  * global variable. */
 void luaSetGlobalArray(lua_State* lua,
-                       const string& var,
+                       const std::string& var,
                        const std::vector<std::string>& args,
                        int start,
                        int num) {
@@ -347,7 +347,7 @@ int LuaState::luaRedisGenericCommand(lua_State* lua, int raise_error) {
     DLOG(INFO) << "Please specify at least one argument for redis.call()";
     return raise_error ? luaRaiseError(lua) : 1;
   }
-  std::vector<string> args;
+  std::vector<std::string> args;
 
   for (j = 0; j < argc; j++) {
     char* obj_s;
@@ -580,7 +580,7 @@ int luaRedisStatusReplyCommand(lua_State* lua) {
 int luaLogCommand(lua_State* lua) {
   int j, argc = lua_gettop(lua);
   int level;
-  string log;
+  std::string log;
 
   if (argc < 2) {
     lua_pushstring(lua, "redis.log() requires two arguments or more.");
@@ -604,7 +604,7 @@ int luaLogCommand(lua_State* lua) {
     if (s) {
       if (j != 1)
         log += " ";
-      log += string(s, len);
+      log += std::string(s, len);
     }
   }
   serverLogNew(level, "%s", log.c_str());
@@ -858,7 +858,7 @@ void LuaState::pushThisToLua(lua_State* lua) {
 
 LuaState* LuaState::getLuaStateFromLua(lua_State* lua) {
   lua_getglobal(lua, "lua_state");
-  string v = string(lua_tostring(lua, -1), lua_strlen(lua, -1));
+  std::string v = std::string(lua_tostring(lua, -1), lua_strlen(lua, -1));
   auto addr = tendisplus::stoul(v);
   if (!addr.ok()) {
     LOG(ERROR) << "getLuaStateFromLua failed.";
@@ -876,13 +876,13 @@ void LuaState::LuaClose() {
 
 Expected<std::string> LuaState::luaReplyToRedisReply(lua_State* lua) {
   int t = lua_type(lua, -1);
-  string repl;
+  std::string repl;
   switch (t) {
     case LUA_TSTRING:
       // addReplyBulkCBuffer(c,(char*)lua_tostring(lua,-1),lua_strlen(lua,-1));
       // LOG(INFO) << "this is a tstring.";
-      repl =
-        Command::fmtBulk(string(lua_tostring(lua, -1), lua_strlen(lua, -1)));
+      repl = Command::fmtBulk(
+        std::string(lua_tostring(lua, -1), lua_strlen(lua, -1)));
       lua_pop(lua, 1);
       return repl;
       break;
@@ -909,7 +909,7 @@ Expected<std::string> LuaState::luaReplyToRedisReply(lua_State* lua) {
       lua_gettable(lua, -2);
       t = lua_type(lua, -1);
       if (t == LUA_TSTRING) {
-        string err = lua_tostring(lua, -1);
+        std::string err = lua_tostring(lua, -1);
         redis_port::strmapchars(err, "\r\n", "  ", 2);
         lua_pop(lua, 2);
         // return Command::fmtBulk("-" + err + "\r\n");
@@ -921,7 +921,7 @@ Expected<std::string> LuaState::luaReplyToRedisReply(lua_State* lua) {
       lua_gettable(lua, -2);
       t = lua_type(lua, -1);
       if (t == LUA_TSTRING) {
-        string ok = lua_tostring(lua, -1);
+        std::string ok = lua_tostring(lua, -1);
         redis_port::strmapchars(ok, "\r\n", "  ", 2);
         lua_pop(lua, 2);
         return "+" + ok + "\r\n";
@@ -930,7 +930,7 @@ Expected<std::string> LuaState::luaReplyToRedisReply(lua_State* lua) {
         int j = 1, mbulklen = 0;
 
         lua_pop(lua, 1); /* Discard the 'ok' field value we popped */
-        string rsp;
+        std::string rsp;
         while (true) {
           lua_pushnumber(lua, j++);
           lua_gettable(lua, -2);
@@ -1185,8 +1185,8 @@ Expected<std::string> LuaState::evalGenericCommand(Session* sess, int evalsha) {
   }
 
   if (err) {
-    string errInfo = "Error running script (call to " + string(funcname) +
-      "):" + string(lua_tostring(_lua, -1));
+    std::string errInfo = "Error running script (call to " +
+      std::string(funcname) + "):" + std::string(lua_tostring(_lua, -1));
     lua_pop(_lua, 2); /* Consume the Lua reply and remove error handler. */
     return {ErrorCodes::ERR_LUA, errInfo};
   } else {

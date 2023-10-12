@@ -136,7 +136,7 @@ class RocksTxn : public Transaction {
 
   // NOTE(deyukong): I believe rocksdb does clean job in txn's destructor
   std::unique_ptr<rocksdb::Transaction> _txn;
-  string _strUpperBound;
+  std::string _strUpperBound;
   rocksdb::Slice _upperBound;
 
   // NOTE(deyukong): not owned by me
@@ -473,7 +473,7 @@ class RocksKVStore : public KVStore {
  private:
   void addUnCommitedTxnInLock(uint64_t txnId);
   void markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId);
-  rocksdb::Options options(const string cf = "");
+  rocksdb::Options options(const std::string cf = "");
   rocksdb::Options binlogColumnOptions();
   rocksdb::Options defaultColumnOptions();
   Expected<bool> deleteBinlog(uint64_t start);
@@ -550,7 +550,7 @@ class RocksdbEnv {
  public:
   RocksdbEnv();
   uint64_t getErrorCnt() const {
-    return _errCnt.load(memory_order_relaxed);
+    return _errCnt.load(std::memory_order_relaxed);
   }
   std::string getErrorString() const;
   void clear();

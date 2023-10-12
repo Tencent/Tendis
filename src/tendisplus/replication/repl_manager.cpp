@@ -66,7 +66,7 @@ std::string getEnumStr(T element) {
 }
 
 std::string MPovFullPushStatus::toString() {
-  stringstream ss_state;
+  std::stringstream ss_state;
   ss_state << "storeId:" << storeid << " node:" << slave_listen_ip << ":"
            << slave_listen_port << " state:" << getEnumStr(state)
            << " binlogPos:" << binlogPos
@@ -225,7 +225,7 @@ Status ReplManager::startup() {
     _pushStatus.emplace_back(std::map<uint64_t, std::unique_ptr<MPovStatus>>());
 
     _fullPushStatus.emplace_back(
-      std::map<string, std::unique_ptr<MPovFullPushStatus>>());
+      std::map<std::string, std::unique_ptr<MPovFullPushStatus>>());
 #endif
 
     Status status;
@@ -1391,7 +1391,7 @@ Status ReplManager::replicationUnSetMaster(uint32_t storeId) {
 }
 
 std::string ReplManager::getRecycleBinlogStr(Session* sess) const {
-  stringstream ss;
+  std::stringstream ss;
 
   for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
     auto expdb =
@@ -1572,19 +1572,19 @@ struct ReplMPovStatus {
   uint32_t dstStoreId = 0;
   uint64_t binlogpos = 0;
   uint64_t clientId = 0;
-  string state;
+  std::string state;
   uint64_t lastBinlogTs = 0;
-  string slave_listen_ip;
+  std::string slave_listen_ip;
   uint16_t slave_listen_port = 0;
 };
 
 void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
   // NOTE(takenliu), only consider slaveof all rockskvstores.
-  string role = "master";
+  std::string role = "master";
   uint64_t master_repl_offset = 0;
-  string master_host = "";
+  std::string master_host = "";
   uint32_t master_port = 0;
-  string master_link_status = "up";
+  std::string master_link_status = "up";
   int64_t master_last_io_seconds_ago = 0;
   int32_t master_sync_in_progress = 0;
   uint64_t slave_repl_offset = 0;
@@ -1653,7 +1653,7 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
     {
       std::lock_guard<std::mutex> lk(_mutex);
       for (auto& iter : _pushStatus[i]) {
-        string key = iter.second->slave_listen_ip + "#" +
+        std::string key = iter.second->slave_listen_ip + "#" +
           std::to_string(iter.second->slave_listen_port);
         auto s = pstatus.find(key);
         if (s == pstatus.end()) {
@@ -1672,7 +1672,7 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
     {
       std::lock_guard<std::mutex> lk(_mutex);
       for (auto& iter : _fullPushStatus[i]) {
-        string key = iter.second->slave_listen_ip + "#" +
+        std::string key = iter.second->slave_listen_ip + "#" +
           std::to_string(iter.second->slave_listen_port);
         auto s = pstatus.find(key);
         if (s == pstatus.end()) {

@@ -597,13 +597,13 @@ TEST(RocksKVStore, PesCursorVisible) {
 
 void setKV(RocksKVStore* kvstore,
            uint32_t chunkid,
-           const string& prefix,
+           const std::string& prefix,
            uint32_t num) {
   auto eTxn1 = kvstore->createTransaction(nullptr);
   EXPECT_EQ(eTxn1.ok(), true);
   std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
   for (uint32_t i = 0; i < num; i++) {
-    string key = prefix + to_string(i);
+    std::string key = prefix + std::to_string(i);
     Status s =
       kvstore->setKV(RecordKey(chunkid, 0, RecordType::RT_KV, key, ""),
                      RecordValue("12345abcdefghijklmn", RecordType::RT_KV, -1),
@@ -634,7 +634,7 @@ TEST(RocksKVStore, CursorUpperBound) {
   EXPECT_EQ(eTxn2.ok(), true);
   std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
   RecordKey upper(1, 0, RecordType::RT_INVALID, "", "");
-  string upperBound = upper.prefixChunkid();
+  std::string upperBound = upper.prefixChunkid();
   // NOTE(takenliu) RocksTxn::createCursor not be public anymore
   std::unique_ptr<SlotCursor> cursor = txn2->createSlotCursor(0);
 
@@ -734,7 +734,7 @@ TEST(RocksKVStore, BackupCkptInter) {
 
 TEST(RocksKVStore, BackupCkpt) {
   auto cfg = genParams();
-  string backup_dir = "backup";
+  std::string backup_dir = "backup";
   EXPECT_TRUE(filesystem::create_directory("db"));
   EXPECT_TRUE(filesystem::create_directory("log"));
   // EXPECT_TRUE(filesystem::create_directory(backup_dir));
@@ -806,7 +806,7 @@ TEST(RocksKVStore, BackupCkpt) {
 
 TEST(RocksKVStore, BackupCopy) {
   auto cfg = genParams();
-  string backup_dir = "backup";
+  std::string backup_dir = "backup";
   EXPECT_TRUE(filesystem::create_directory("db"));
   EXPECT_TRUE(filesystem::create_directory("log"));
   EXPECT_TRUE(filesystem::create_directory(backup_dir));

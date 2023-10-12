@@ -208,14 +208,14 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(
   for (size_t i = 0; i < slargc; i++) {
     if (slargc != args.size() && i == slargc - 1) {
       std::string remain_arg = "... (";
-      remain_arg.append(to_string(args.size() - max_argc + 1));
+      remain_arg.append(std::to_string(args.size() - max_argc + 1));
       remain_arg.append(" more arguments)");
       new_entry.argv.push_back(std::move(remain_arg));
     } else {
       if (args[i].size() > max_string) {
         std::string brief_arg = args[i].substr(0, max_string);
         brief_arg.append("... (");
-        brief_arg.append(to_string(args[i].size() - max_string));
+        brief_arg.append(std::to_string(args[i].size() - max_string));
         brief_arg.append(" more bytes)");
         new_entry.argv.push_back(std::move(brief_arg));
       } else {
@@ -337,7 +337,7 @@ Catalog* ServerEntry::getCatalog() {
   return _catalog.get();
 }
 
-string catRepr(const string& val) {
+std::string catRepr(const std::string& val) {
   size_t len = val.length();
   size_t i = 0;
   std::stringstream s;
@@ -455,8 +455,8 @@ Status ServerEntry::adaptSomeThreadNumByCpuNum(
   return {ErrorCodes::ERR_OK, ""};
 }
 
-extern string gRenameCmdList;
-extern string gMappingCmdList;
+extern std::string gRenameCmdList;
+extern std::string gMappingCmdList;
 Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   std::lock_guard<std::mutex> lk(_mutex);
 
@@ -786,7 +786,7 @@ std::string ServerEntry::requirepass() const {
   return _requirepass;
 }
 
-void ServerEntry::setRequirepass(const string& v) {
+void ServerEntry::setRequirepass(const std::string& v) {
   std::lock_guard<std::mutex> lk(_mutex);
   _requirepass = v;
 }
@@ -796,7 +796,7 @@ std::string ServerEntry::masterauth() const {
   return _masterauth;
 }
 
-void ServerEntry::setMasterauth(const string& v) {
+void ServerEntry::setMasterauth(const std::string& v) {
   std::lock_guard<std::mutex> lk(_mutex);
   _masterauth = v;
 }
@@ -1016,7 +1016,7 @@ void ServerEntry::replyMonitors(Session* sess) {
     return;
   }
 
-  stringstream info;
+  std::stringstream info;
   info << "+";
 
   auto timeNow = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -1653,17 +1653,17 @@ void ServerEntry::jeprofCron() {
 #ifndef _WIN32
 #ifdef TENDIS_JEMALLOC
   size_t rss_human_size = 0;
-  ifstream file;
+  std::ifstream file;
   file.open("/proc/self/status");
   if (file.is_open()) {
-    string strline;
+    std::string strline;
     while (getline(file, strline)) {
       auto v = stringSplit(strline, ":");
       if (v.size() != 2) {
         continue;
       }
       if (v[0] == "VmRSS") {  // physic memory
-        string used_memory_rss_human = trim(v[1]);
+        std::string used_memory_rss_human = trim(v[1]);
         strDelete(used_memory_rss_human, ' ');
         auto s = getIntSize(used_memory_rss_human);
         if (s.ok()) {

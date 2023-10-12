@@ -28,21 +28,22 @@
 
 namespace tendisplus {
 
-using namespace std;  // NOLINT
-
 using funptr = std::function<void()>;
 using checkfunptr =
-  std::function<bool(const string&, bool startup, string* errinfo)>;
-using preProcess = std::function<string(const string&)>;
+  std::function<bool(const std::string&, bool startup, std::string* errinfo)>;
+using preProcess = std::function<std::string(const std::string&)>;
 
-string removeQuotes(const string& v);
-string removeQuotesAndToLower(const string& v);
-void NoUseWarning(const string& name);
+std::string removeQuotes(const std::string& v);
+std::string removeQuotesAndToLower(const std::string& v);
+void NoUseWarning(const std::string& name);
 
 class BaseVar {
  public:
-  BaseVar(
-    const string& s, void* v, checkfunptr ptr, preProcess preFun, bool allowDS)
+  BaseVar(const std::string& s,
+          void* v,
+          checkfunptr ptr,
+          preProcess preFun,
+          bool allowDS)
     : name(s),
       value(v),
       Onupdate(nullptr),
@@ -55,7 +56,7 @@ class BaseVar {
     }
   }
   virtual ~BaseVar() {}
-  Status setVar(const string& value, bool startup = true) {
+  Status setVar(const std::string& value, bool startup = true) {
     if (!allowDynamicSet && !startup) {
       return {ErrorCodes::ERR_PARSEOPT, name + " can't change dynamically"};
     }
@@ -64,13 +65,13 @@ class BaseVar {
   virtual bool need_show() const {
     return true;
   }
-  virtual string show() const = 0;
-  virtual string default_show() const = 0;
+  virtual std::string show() const = 0;
+  virtual std::string default_show() const = 0;
   void setUpdate(funptr f) {
     Onupdate = f;
   }
 
-  string getName() const {
+  std::string getName() const {
     return name;
   }
 
@@ -79,17 +80,17 @@ class BaseVar {
   }
 
  protected:
-  virtual Status set(const string& value, bool startup) = 0;
-  virtual bool check(const string& value,
+  virtual Status set(const std::string& value, bool startup) = 0;
+  virtual bool check(const std::string& value,
                      bool startup,
-                     string* errinfo = NULL) {
+                     std::string* errinfo = NULL) {
     if (checkFun != NULL) {
       return checkFun(value, startup, errinfo);
     }
     return true;
   }
 
-  string name = "";
+  std::string name = "";
   void* value = NULL;
   funptr Onupdate = NULL;
   checkfunptr checkFun = NULL;  // check the value whether it is valid
@@ -100,34 +101,34 @@ class BaseVar {
 
 class StringVar : public BaseVar {
  public:
-  StringVar(const string& name,
+  StringVar(const std::string& name,
             void* v,
             checkfunptr ptr,
             preProcess preFun,
             bool allowDynamicSet)
     : BaseVar(name, v, ptr, preFun, allowDynamicSet),
-      _defaultValue(*reinterpret_cast<string*>(value)) {
+      _defaultValue(*reinterpret_cast<std::string*>(value)) {
     if (!preProcessFun) {
       preProcessFun = removeQuotes;
     }
   }
-  virtual string show() const {
-    return "\"" + *reinterpret_cast<string*>(value) + "\"";
+  virtual std::string show() const {
+    return "\"" + *reinterpret_cast<std::string*>(value) + "\"";
   }
 
-  virtual string default_show() const {
+  virtual std::string default_show() const {
     return "\"" + _defaultValue + "\"";
   }
 
  private:
-  Status set(const string& val, bool startup) {
+  Status set(const std::string& val, bool startup) {
     auto v = preProcessFun ? preProcessFun(val) : val;
     std::string errinfo;
     if (!check(v, startup, &errinfo)) {
       return {ErrorCodes::ERR_PARSEOPT, errinfo};
     }
 
-    *reinterpret_cast<string*>(value) = v;
+    *reinterpret_cast<std::string*>(value) = v;
 
     if (Onupdate != NULL)
       Onupdate();
@@ -139,7 +140,7 @@ class StringVar : public BaseVar {
 // support:int, uint32_t
 class IntVar : public BaseVar {
  public:
-  IntVar(const string& name,
+  IntVar(const std::string& name,
          void* v,
          checkfunptr ptr,
          preProcess preFun,
@@ -150,15 +151,15 @@ class IntVar : public BaseVar {
       _defaultValue(*reinterpret_cast<int*>(value)),
       _minVal(minVal),
       _maxVal(maxVal) {}
-  virtual string show() const {
+  virtual std::string show() const {
     return std::to_string(*reinterpret_cast<int*>(value));
   }
-  virtual string default_show() const {
+  virtual std::string default_show() const {
     return std::to_string(_defaultValue);
   }
 
  private:
-  TSAN_SUPPRESSION Status set(const string& val, bool startup) {
+  TSAN_SUPPRESSION Status set(const std::string& val, bool startup) {
     auto v = preProcessFun ? preProcessFun(val) : val;
     std::string errinfo;
     if (!check(v, startup, &errinfo)) {
@@ -188,7 +189,7 @@ class IntVar : public BaseVar {
 // support:int64_t, uint64_t
 class Int64Var : public BaseVar {
  public:
-  Int64Var(const string& name,
+  Int64Var(const std::string& name,
            void* v,
            checkfunptr ptr,
            preProcess preFun,
@@ -199,15 +200,15 @@ class Int64Var : public BaseVar {
       _defaultValue(*reinterpret_cast<int64_t*>(value)),
       _minVal(minVal),
       _maxVal(maxVal) {}
-  virtual string show() const {
+  virtual std::string show() const {
     return std::to_string(*reinterpret_cast<int64_t*>(value));
   }
-  virtual string default_show() const {
+  virtual std::string default_show() const {
     return std::to_string(_defaultValue);
   }
 
  private:
-  TSAN_SUPPRESSION Status set(const string& val, bool startup) {
+  TSAN_SUPPRESSION Status set(const std::string& val, bool startup) {
     auto v = preProcessFun ? preProcessFun(val) : val;
     std::string errinfo;
     if (!check(v, startup, &errinfo)) {
@@ -236,22 +237,22 @@ class Int64Var : public BaseVar {
 
 class FloatVar : public BaseVar {
  public:
-  FloatVar(const string& name,
+  FloatVar(const std::string& name,
            void* v,
            checkfunptr ptr,
            preProcess preFun,
            bool allowDynamicSet)
     : BaseVar(name, v, ptr, preFun, allowDynamicSet),
       _defaultValue(*reinterpret_cast<float*>(value)) {}
-  virtual string show() const {
+  virtual std::string show() const {
     return std::to_string(*reinterpret_cast<float*>(value));
   }
-  virtual string default_show() const {
+  virtual std::string default_show() const {
     return std::to_string(_defaultValue);
   }
 
  private:
-  TSAN_SUPPRESSION Status set(const string& val, bool startup) {
+  TSAN_SUPPRESSION Status set(const std::string& val, bool startup) {
     auto v = preProcessFun ? preProcessFun(val) : val;
     std::string errinfo;
     if (!check(v, startup, &errinfo)) {
@@ -273,22 +274,22 @@ class FloatVar : public BaseVar {
 
 class DoubleVar : public BaseVar {
  public:
-  DoubleVar(const string& name,
+  DoubleVar(const std::string& name,
             void* v,
             checkfunptr ptr,
             preProcess preFun,
             bool allowDynamicSet)
     : BaseVar(name, v, ptr, preFun, allowDynamicSet),
       _defaultValue(*reinterpret_cast<double*>(value)) {}
-  virtual string show() const {
+  virtual std::string show() const {
     return std::to_string(*reinterpret_cast<double*>(value));
   }
-  virtual string default_show() const {
+  virtual std::string default_show() const {
     return std::to_string(_defaultValue);
   }
 
  private:
-  Status set(const string& val, bool startup) {
+  Status set(const std::string& val, bool startup) {
     auto v = preProcessFun ? preProcessFun(val) : val;
     std::string errinfo;
     if (!check(v, startup, &errinfo)) {
@@ -310,22 +311,22 @@ class DoubleVar : public BaseVar {
 
 class BoolVar : public BaseVar {
  public:
-  BoolVar(const string& name,
+  BoolVar(const std::string& name,
           void* v,
           checkfunptr ptr,
           preProcess preFun,
           bool allowDynamicSet)
     : BaseVar(name, v, ptr, preFun, allowDynamicSet),
       _defaultValue(*reinterpret_cast<bool*>(value)) {}
-  virtual string show() const {
+  virtual std::string show() const {
     return *reinterpret_cast<bool*>(value) ? "yes" : "no";
   }
-  virtual string default_show() const {
+  virtual std::string default_show() const {
     return _defaultValue ? "yes" : "no";
   }
 
  private:
-  TSAN_SUPPRESSION Status set(const string& val, bool startup) {
+  TSAN_SUPPRESSION Status set(const std::string& val, bool startup) {
     auto v = preProcessFun ? preProcessFun(val) : val;
     std::string errinfo;
     if (!check(v, startup, &errinfo)) {
@@ -343,16 +344,16 @@ class BoolVar : public BaseVar {
 
 class NoUseVar : public BaseVar {
  public:
-  NoUseVar(const string& name,
+  NoUseVar(const std::string& name,
            void* v,
            checkfunptr ptr,
            preProcess preFun,
            bool allowDynamicSet)
     : BaseVar(name, v, ptr, preFun, allowDynamicSet), _setFlag(false) {}
-  virtual string show() const {
+  virtual std::string show() const {
     return " not supported anymore";
   }
-  virtual string default_show() const {
+  virtual std::string default_show() const {
     return "no";
   }
   virtual bool need_show() const {
@@ -360,7 +361,7 @@ class NoUseVar : public BaseVar {
   }
 
  private:
-  TSAN_SUPPRESSION Status set(const string& val, bool startup) {
+  TSAN_SUPPRESSION Status set(const std::string& val, bool startup) {
     _setFlag = true;
     NoUseWarning(name);
     return {ErrorCodes::ERR_OK, ""};
@@ -393,30 +394,32 @@ class rewriteConfigState {
   const std::string _fixInfo = "# Generated by CONFIG REWRITE";
 };
 
-typedef std::unordered_map<string, string> ParamsMap;
+typedef std::unordered_map<std::string, std::string> ParamsMap;
 class ServerParams {
  public:
   ServerParams();
   ~ServerParams();
 
   Status parseFile(const std::string& filename);
-  bool registerOnupdate(const string& name, funptr ptr);
-  string showAll() const;
-  bool showVar(const string& key, string* info) const;
-  bool showVar(const string& key, vector<string>* info) const;
-  Status setRocksOption(const string& name, const string& value);
-  Status setVar(const string& name, const string& value, bool startup = true);
+  bool registerOnupdate(const std::string& name, funptr ptr);
+  std::string showAll() const;
+  bool showVar(const std::string& key, std::string* info) const;
+  bool showVar(const std::string& key, std::vector<std::string>* info) const;
+  Status setRocksOption(const std::string& name, const std::string& value);
+  Status setVar(const std::string& name,
+                const std::string& value,
+                bool startup = true);
   Status rewriteConfig() const;
   uint32_t paramsNum() const {
     return _mapServerParams.size();
   }
-  string getConfFile() const {
+  std::string getConfFile() const {
     return _confFile;
   }
   const ParamsMap& getRocksdbOptions() const {
     return _rocksdbOptions;
   }
-  const ParamsMap* getRocksdbCFOptions(const string& cf) const {
+  const ParamsMap* getRocksdbCFOptions(const std::string& cf) const {
     auto it = _rocksdbCFOptions.find(cf);
     if (it == _rocksdbCFOptions.end()) {
       return nullptr;
@@ -431,9 +434,9 @@ class ServerParams {
   Status checkParams();
 
  private:
-  map<string, BaseVar*> _mapServerParams;
+  std::map<std::string, BaseVar*> _mapServerParams;
   ParamsMap _rocksdbOptions;
-  std::unordered_map<string, ParamsMap> _rocksdbCFOptions;
+  std::unordered_map<std::string, ParamsMap> _rocksdbCFOptions;
   std::string _confFile = "";
   std::set<std::string> _setConfFile;
 
@@ -536,7 +539,7 @@ class ServerParams {
   bool rocksRateLimiterAutoTuned = true;
   bool rocksStrictCapacityLimit = false;
   std::string rocksWALDir = "";
-  string rocksCompressType = "snappy";
+  std::string rocksCompressType = "snappy";
   int32_t rocksMaxOpenFiles = -1;
   int32_t rocksMaxBackgroundJobs = 2;
   uint32_t rocksCompactOnDeletionWindow = 0;
