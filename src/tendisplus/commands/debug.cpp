@@ -382,7 +382,7 @@ class RoleCommand : public Command {
   }
 
   Expected<std::string> run(Session* sess) final {
-    stringstream ss;
+    std::stringstream ss;
     if (sess->getServerEntry()->isClusterEnabled()) {
       auto cn = sess->getServerEntry()
                   ->getClusterMgr()
