@@ -622,9 +622,12 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
       ? _cfg->executorWorkPoolSize
       : _cfg->executorThreadNum - i;
     LOG(INFO) << "ServerEntry::startup WorkerPool thread num:" << curNum;
-    auto executor = std::make_unique<WorkerPool>(
-      "tx-worker-" + std::to_string(i), _poolMatrix);
-    Status s = executor->startup(curNum);
+    std::string workPoolName = "tx-worker";
+    if (!_cfg->simpleWorkPoolName) {
+      workPoolName += "-" + std::to_string(i);
+    }
+    auto executor = std::make_unique<WorkerPool>(workPoolName, _poolMatrix);
+    Status s = executor->startup(curNum, _cfg->simpleWorkPoolName);
     if (!s.ok()) {
       LOG(ERROR) << "ServerEntry::startup failed, executor->startup:"
                  << s.toString();

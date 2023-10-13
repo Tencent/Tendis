@@ -395,6 +395,8 @@ ServerParams::ServerParams() {
   REGISTER_VARS_SAME_NAME(
     executorWorkPoolSize, nullptr, nullptr, 1, 200, false);
 
+  REGISTER_VARS(simpleWorkPoolName);
+
   REGISTER_VARS_ALLOW_DYNAMIC_SET(binlogRateLimitMB);
   // Only works on newly created connections(BlockingTcpClient)
   REGISTER_VARS_ALLOW_DYNAMIC_SET(netBatchSize);
