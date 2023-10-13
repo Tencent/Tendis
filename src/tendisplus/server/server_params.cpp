@@ -331,6 +331,7 @@ ServerParams::ServerParams() {
                      -1,
                      false);
   REGISTER_VARS(logDir);
+  REGISTER_VARS(logSize);
   REGISTER_VARS(daemon);
 
   REGISTER_VARS_DIFF_NAME("storage", storageEngine);
@@ -393,6 +394,8 @@ ServerParams::ServerParams() {
     executorThreadNum, executorThreadNumCheck, nullptr, 1, 200, true);
   REGISTER_VARS_SAME_NAME(
     executorWorkPoolSize, nullptr, nullptr, 1, 200, false);
+
+  REGISTER_VARS(simpleWorkPoolName);
 
   REGISTER_VARS_ALLOW_DYNAMIC_SET(binlogRateLimitMB);
   // Only works on newly created connections(BlockingTcpClient)

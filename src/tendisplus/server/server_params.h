@@ -446,6 +446,7 @@ class ServerParams {
   uint32_t port = 8903;
   std::string logLevel = "";
   std::string logDir = "./";
+  uint32_t logSize = 128 * 1024 * 1024;
   bool daemon = true;
 
   std::string storageEngine = "rocks";
@@ -506,6 +507,7 @@ class ServerParams {
   uint32_t netIoThreadNum = 0;
   uint32_t executorThreadNum = 0;
   uint32_t executorWorkPoolSize = 0;
+  bool simpleWorkPoolName = false;
 
   uint32_t binlogRateLimitMB = 64;
   uint32_t netBatchSize = 1024 * 1024;

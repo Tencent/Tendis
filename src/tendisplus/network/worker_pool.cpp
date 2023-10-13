@@ -130,15 +130,18 @@ void WorkerPool::stop() {
   LOG(INFO) << "workerPool stops complete...";
 }
 
-Status WorkerPool::startup(size_t poolsize) {
+Status WorkerPool::startup(size_t poolsize, bool simpleName) {
   std::lock_guard<std::mutex> lk(_mutex);
 
   // worker threads rely on _isRunning flag
   _isRunning.store(true, std::memory_order_relaxed);
 
   for (size_t i = 0; i < poolsize; ++i) {
-    std::thread thd = std::thread([this, i]() {
-      std::string threadName = _name + "_" + std::to_string(i);
+    std::thread thd = std::thread([this, i, simpleName]() {
+      std::string threadName = _name;
+      if (!simpleName) {
+        threadName += "_" + std::to_string(i);
+      }
       threadName.resize(15);  // pthread_setname_np allows a maximum thread
                               // name of 16 bytes including the trailing '\0'
       INVARIANT(!pthread_setname_np(pthread_self(), threadName.c_str()));

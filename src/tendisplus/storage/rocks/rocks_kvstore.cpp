@@ -1316,6 +1316,9 @@ rocksdb::Options RocksKVStore::options(const std::string cf) {
   // let index and filters pining in mem forever
   table_options.cache_index_and_filter_blocks = false;
 
+  // max LOG size: 128(MB) * 10(files) * 10(kvstore) = 12.8GB
+  options.max_log_file_size = 128 * 1024 * 1024;
+  options.keep_log_file_num = 10;
   options.row_cache = _rowCache;
   options.write_buffer_size = 64 * 1024 * 1024;  // 64MB
   // level_0 files don't have a fixed file size.
