@@ -331,7 +331,7 @@ ServerParams::ServerParams() {
                      -1,
                      false);
   REGISTER_VARS(logDir);
-  REGISTER_VARS(logSize);
+  REGISTER_VARS(logSizeMb);
   REGISTER_VARS(daemon);
 
   REGISTER_VARS_DIFF_NAME("storage", storageEngine);
