@@ -14,12 +14,6 @@ import (
 	"time"
 )
 
-var (
-	mport = flag.Int("masterport", 41001, "master port")
-	sport = flag.Int("slaveport", 41102, "slave port")
-	tport = flag.Int("targetport", 41203, "target port")
-)
-
 func checkBinlog(servers *[]util.RedisServer, index int, num int) {
 	var expectLog string = "clusterSetMaster incrSync:1"
 	logfile := (*servers)[index].Path + "/log/tendisplus.INFO"
@@ -33,7 +27,7 @@ func checkBinlog(servers *[]util.RedisServer, index int, num int) {
 	log.Infof("check incrSync log end")
 }
 
-func testClusterManualFailoverIncrSync() {
+func testClusterManualFailoverIncrSync(mport int) {
 	cfg := make(map[string]string)
 	cfg["aof-enabled"] = "yes"
 	cfg["kvStoreCount"] = "2"
@@ -43,13 +37,14 @@ func testClusterManualFailoverIncrSync() {
 	cfg["cluster-enabled"] = "yes"
 	cfg["masterauth"] = "tendis+test"
 
-	var servers, predixy, _ = startCluster("127.0.0.1", *mport, 3, map[string]string{"minBinlogKeepSec": "60"}, util.GetCurrentDirectory(), "")
+	sport := mport + 6
+	var servers, predixy, _ = startCluster("127.0.0.1", mport, 3, map[string]string{"minBinlogKeepSec": "60"}, util.GetCurrentDirectory(), "")
 
 	master := (*servers)[0]
 	// defer shutdownServer(master, *shutdown, *clear)
 	slave1 := (*servers)[3]
 	// defer shutdownServer(slave1, *shutdown, *clear)
-	slave2 := util.StartSingleServer("s_", *sport, &cfg)
+	slave2 := util.StartSingleServer("s_", sport, &cfg)
 	defer shutdownServer(slave2, *shutdown, *clear)
 
 	// add another slave node
@@ -115,7 +110,7 @@ func testClusterManualFailoverIncrSync() {
 	log.Debug("test manualFailover incr-sync ok!")
 }
 
-func testClusterShutdownFailoverIncrSync() {
+func testClusterShutdownFailoverIncrSync(mport int) {
 	cfg := make(map[string]string)
 	cfg["aof-enabled"] = "yes"
 	cfg["kvStoreCount"] = "2"
@@ -126,18 +121,19 @@ func testClusterShutdownFailoverIncrSync() {
 	cfg["masterauth"] = "tendis+test"
 	cfg["minBinlogKeepSec"] = "3600"
 
-	var servers, predixy, _ = startCluster("127.0.0.1", *mport, 3, map[string]string{"minBinlogKeepSec": "3600"}, util.GetCurrentDirectory(), "")
+	sport := mport + 6
+	var servers, predixy, _ = startCluster("127.0.0.1", mport, 3, map[string]string{"minBinlogKeepSec": "3600"}, util.GetCurrentDirectory(), "")
 
 	master := (*servers)[0]
 	// defer shutdownServer(master, *shutdown, *clear)
 	slave1 := (*servers)[3]
 	// defer shutdownServer(slave1, *shutdown, *clear)
-	slave2 := util.StartSingleServer("s_", *sport, &cfg)
+	slave2 := util.StartSingleServer("s_", sport, &cfg)
 	defer shutdownServer(slave2, *shutdown, *clear)
 
-	arbiter1 := util.StartSingleServer("m_", *mport, &cfg)
+	arbiter1 := util.StartSingleServer("m_", mport+7, &cfg)
 	defer shutdownServer(arbiter1, *shutdown, *clear)
-	arbiter2 := util.StartSingleServer("m_", *mport, &cfg)
+	arbiter2 := util.StartSingleServer("m_", mport+8, &cfg)
 	defer shutdownServer(arbiter2, *shutdown, *clear)
 
 	cluster_meet(&master, &slave1)
@@ -387,8 +383,8 @@ func main() {
 	flag.Parse()
 	// rand.Seed(time.Now().UnixNano())
 	testClusterFailover(*clusterIp, 45200, 3, false)
-	testClusterFailover(*clusterIp, 45300, 3, true)
-	testClusterManualFailoverIncrSync()
-	testClusterShutdownFailoverIncrSync()
+	testClusterFailover(*clusterIp, 45220, 3, true)
+	testClusterManualFailoverIncrSync(45240)
+	testClusterShutdownFailoverIncrSync(45260)
 	log.Infof("clustertestFilover.go passed.")
 }
