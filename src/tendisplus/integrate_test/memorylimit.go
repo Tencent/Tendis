@@ -52,9 +52,10 @@ func testMemoryLimit() {
 	pws := []paramWrapper{{2, 1, 5}, {0, 1, 5}, {2, 0, 5}, {0, 0, 5}, {2, 1, 0}, {0, 1, 0}, {2, 0, 0}, {0, 0, 0}}
 
 	for _, pw := range pws {
-		_ = cli1.Cmd("config", "set", "client-output-buffer-limit-normal-hard-mb", strconv.Itoa(pw.hardLimit))
-		_ = cli1.Cmd("config", "set", "client-output-buffer-limit-normal-soft-mb", strconv.Itoa(pw.softLimit))
-		_ = cli1.Cmd("config", "set", "client-output-buffer-limit-normal-soft-second", strconv.Itoa(pw.softSecond))
+		cli2 := createClient(&m1)
+		_ = cli2.Cmd("config", "set", "client-output-buffer-limit-normal-hard-mb", strconv.Itoa(pw.hardLimit))
+		_ = cli2.Cmd("config", "set", "client-output-buffer-limit-normal-soft-mb", strconv.Itoa(pw.softLimit))
+		_ = cli2.Cmd("config", "set", "client-output-buffer-limit-normal-soft-second", strconv.Itoa(pw.softSecond))
 
 		// soft limit work correctly
 		cliSoft := createClient(&m1)
@@ -88,7 +89,7 @@ func testMemoryLimit() {
 			}
 		} else {
 			if err != nil {
-				log.Fatalf("hard limit failed! err:%v", err)
+				log.Fatalf("hard limit failed!, current limit %d %d %d , err:%v", pw.hardLimit, pw.softLimit, pw.softSecond, err)
 			}
 		}
 
