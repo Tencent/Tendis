@@ -1448,7 +1448,17 @@ TEST(Repl, autoRemoveDumpFile) {
   std::thread dateThread([&]() {
     auto ctx = std::make_shared<asio::io_context>();
     auto session = makeSession(master, ctx);
+#ifdef WITH_TSAN
+    // NOTE(barneyxiao): when TSAN on, it should set larger length of key and
+    // value to get enough dump files.
+    session->setArgs({"set",
+                      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                      "aaaaaaaaaaaaaaaaaaaaaaaa",
+                      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                      "bbbbbbbbbbbbbbbbbbbbbbbb"});
+#else
     session->setArgs({"set", "aaaaaaaa", "bbbbbbbb"});
+#endif  // !WITH_TSAN
 
     while (isRunning) {
       auto ret = Command::runSessionCmd(session.get());
@@ -1465,11 +1475,13 @@ TEST(Repl, autoRemoveDumpFile) {
 
   cfg2->dumpFileKeepNum = 10;
   sleepFun(5);
+  // NOTE(barneyxiao): In case there is a file being written when get file
+  // number, the number of files can be dumpFileKeepNum or dumpFileKeepNum + 1.
   EXPECT_GE(getFileNum(slaveDumpPath), 10);
   EXPECT_LE(getFileNum(slaveDumpPath), 11);
 
   cfg2->dumpFileKeepNum = 20;
-  sleepFun(15);
+  sleepFun(30);
   EXPECT_GE(getFileNum(slaveDumpPath), 20);
   EXPECT_LE(getFileNum(slaveDumpPath), 21);
 
