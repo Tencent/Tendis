@@ -986,6 +986,7 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
   static std::set<std::string> notIntParams = {
     "blob_compression_type",
     "blob_garbage_collection_age_cutoff",
+    "blob_garbage_collection_force_threshold",
   };
 
   int64_t value = 0;
@@ -1190,10 +1191,26 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
     auto ed = tendisplus::stod(rawValue);
     if (ed.ok()) {
       data = ed.value();
-      options.blob_garbage_collection_age_cutoff = static_cast<double>(data);
+      options.blob_garbage_collection_age_cutoff = data;
     } else {
       LOG(ERROR) << "error param, not double, " << key << ":" << rawValue;
     }
+  } else if (key == "blob_garbage_collection_force_threshold") {
+    double data = 0.0;
+    auto ed = tendisplus::stod(rawValue);
+    if (ed.ok()) {
+      data = ed.value();
+      options.blob_garbage_collection_force_threshold = data;
+    } else {
+      LOG(ERROR) << "error param, not double, " << key << ":" << rawValue;
+    }
+  } else if (key == "blob_compaction_readahead_size") {
+    options.blob_compaction_readahead_size = static_cast<uint64_t>(value);
+  } else if (key == "blob_file_starting_level") {
+    options.blob_file_starting_level = static_cast<uint64_t>(value);
+  } else if (key == "prepopulate_blob_cache") {
+    options.prepopulate_blob_cache =
+      static_cast<rocksdb::PrepopulateBlobCache>(value);
 #endif
   } else {
     return {ErrorCodes::ERR_PARSEOPT, "invalid rocksdb option :" + key};
@@ -1271,6 +1288,7 @@ RocksKVStore::RocksKVStore(
   const std::shared_ptr<ServerParams>& cfg,
   std::shared_ptr<rocksdb::Cache> blockCache,
   std::shared_ptr<rocksdb::Cache> rowCache,
+  std::shared_ptr<rocksdb::Cache> blobCache,
   std::shared_ptr<rocksdb::RateLimiter> rateLimiter,
   std::shared_ptr<rocksdb::SstFileManager> sstFileManager,
   bool enableRepllog,
@@ -1290,6 +1308,7 @@ RocksKVStore::RocksKVStore(
     _stats(rocksdb::CreateDBStatistics()),
     _blockCache(blockCache),
     _rowCache(rowCache),
+    _blobCache(blobCache),
     _rateLimiter(rateLimiter),
     _sstFileManager(sstFileManager),
     _nextTxnSeq(0),
@@ -1310,6 +1329,7 @@ rocksdb::Options RocksKVStore::options(const std::string cf) {
   rocksdb::Options options;
   rocksdb::BlockBasedTableOptions table_options;
   table_options.block_cache = _blockCache;
+  options.blob_cache = _blobCache;
   table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
   table_options.block_size = 16 * 1024;  // 16KB
   table_options.format_version = 2;
@@ -2862,6 +2882,14 @@ void RocksKVStore::initRocksProperties() {
     {"rocksdb.is-write-stopped", "is_write_stopped"},
     {"rocksdb.num-immutable-mem-table-flushed",
      "num-immutable-mem-table-flushed"},
+    {"rocksdb.num-blob-files", "num_blob_files"},
+    {"rocksdb.total-blob-file-size", "total_blob_file_size"},
+    {"rocksdb.live-blob-file-size", "live_blob_file_size"},
+    {"rocksdb.live-blob-file-garbage-size", "live_blob_file_garbage_size"},
+    {"rocksdb.estimate-live-data-size", "estimate_live_data_size"},
+    {"rocksdb.blob-cache-capacity", "blob_cache_capacity"},
+    {"rocksdb.blob-cache-usage", "blob_cache_usage"},
+    {"rocksdb.blob-cache-pinned-usage", "blob_cache_pinned_usage"},
   };
 
   _rocksStringProperties = {
@@ -2875,6 +2903,7 @@ void RocksKVStore::initRocksProperties() {
     {"rocksdb.aggregated-table-properties", "aggregated-table-properties"},
     {"rocksdb.num-files-at-level0", "num-files-at-level0"},
     // {"rocksdb.estimate-oldest-key-time", "estimate-oldest-key-time"},
+    {"rocksdb.blob-stats", "blob_stats"},
   };
   for (int i = 0; i < ROCKSDB_NUM_LEVELS; ++i) {
     _rocksStringProperties["rocksdb.num-files-at-level" + std::to_string(i)] =
@@ -3053,8 +3082,14 @@ Status RocksKVStore::setOptionDynamic(const std::string& option,
     "rocks.min_blob_size",
     "rocks.blob_file_size",
     "rocks.blob_garbage_collection_age_cutoff",
+    "rocks.blob_garbage_collection_force_threshold",
+    "rocks.blob_compaction_readahead_size",
+    "rocks.blob_file_starting_level",
+    "rocks.prepopulate_blob_cache",
     "rocks.enable_blob_garbage_collection",
-    "rocks.blob_compression_type"};
+    "rocks.blob_compression_type",
+    "rocks.disable_auto_compactions",
+  };
   // option, example: "rocks.binlogcf.enable_blob_files"
   // new_option, example: "rocks.enable_blob_files"
   // short_option, example: "enable_blob_files"

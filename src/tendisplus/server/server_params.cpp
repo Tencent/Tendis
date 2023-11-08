@@ -368,6 +368,7 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME("databases", dbNum);
 
   REGISTER_VARS_ALLOW_DYNAMIC_SET(noexpire);
+  REGISTER_VARS_ALLOW_DYNAMIC_SET(noexpireBlob);
   REGISTER_VARS_SAME_NAME(
     maxBinlogKeepNum, nullptr, nullptr, 1, INT64_MAX, true);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(minBinlogKeepSec);
@@ -446,6 +447,16 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME("rocks.blockcache_strict_capacity_limit",
                           rocksStrictCapacityLimit);
   REGISTER_VARS_DIFF_NAME("rocks.rowcachemb", rocksRowcacheMB);
+  REGISTER_VARS_DIFF_NAME("rocks.blobcache_in_blockcache",
+                          rocksBlobcacheInBlockcache);
+  REGISTER_VARS_DIFF_NAME("rocks.blobcachemb", rocksBlobcacheMB);
+  REGISTER_VARS_FULL("rocks.blobcache_num_shard_bits",
+                     rocksBlobcacheNumShardBits,
+                     nullptr,
+                     nullptr,
+                     -1,
+                     19,
+                     false);
 
   REGISTER_VARS_DIFF_NAME("rocks.rate_limiter_rate_bytes_per_sec",
                           rocksRateLimiterRateBytesPerSec);

@@ -479,6 +479,7 @@ class ServerParams {
   uint32_t dbNum = CONFIG_DEFAULT_DBNUM;
 
   bool noexpire = false;
+  bool noexpireBlob = false;
   uint64_t maxBinlogKeepNum = 1;
   uint32_t minBinlogKeepSec = 3600;
   uint64_t slaveBinlogKeepNum = 1;
@@ -535,6 +536,9 @@ class ServerParams {
   uint32_t rocksBlockcacheMB = 4096;
   int32_t rocksBlockcacheNumShardBits = 6;
   uint32_t rocksRowcacheMB = 0;
+  bool rocksBlobcacheInBlockcache = false;
+  uint32_t rocksBlobcacheMB = 0;
+  int32_t rocksBlobcacheNumShardBits = 6;
   int64_t rocksRateLimiterRateBytesPerSec = 0;
   int64_t rocksRateLimiterRefillPeriodUs = 100 * 1000;
   int64_t rocksRateLimiterFairness = 10;

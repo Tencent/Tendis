@@ -188,6 +188,22 @@ std::shared_ptr<ServerParams> genParamsRocks() {
   return cfg;
 }
 
+std::unique_ptr<RocksKVStore> genRocksKVStore(
+  std::shared_ptr<ServerParams> cfg,
+  std::shared_ptr<rocksdb::Cache> blockCache,
+  TxnMode txnMode) {
+  auto kvstore = std::make_unique<RocksKVStore>("0",
+                                                cfg,
+                                                blockCache,
+                                                nullptr,
+                                                nullptr,
+                                                nullptr,
+                                                nullptr,
+                                                true,
+                                                KVStore::StoreMode::READ_WRITE,
+                                                txnMode);
+  return kvstore;
+}
 void testMaxBinlogId(const std::unique_ptr<RocksKVStore>& kvstore) {
   auto eTxn1 = kvstore->createTransaction(nullptr);
   EXPECT_EQ(eTxn1.ok(), true);
@@ -561,15 +577,7 @@ TEST(RocksKVStore, OptCursorVisible) {
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
-  auto kvstore = std::make_unique<RocksKVStore>("0",
-                                                cfg,
-                                                blockCache,
-                                                nullptr,
-                                                nullptr,
-                                                nullptr,
-                                                true,
-                                                KVStore::StoreMode::READ_WRITE,
-                                                TxnMode::TXN_OPT);
+  auto kvstore = genRocksKVStore(cfg, blockCache, TxnMode::TXN_OPT);
   cursorVisibleRoutine(kvstore.get());
 }
 
@@ -583,15 +591,7 @@ TEST(RocksKVStore, PesCursorVisible) {
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
-  auto kvstore = std::make_unique<RocksKVStore>("0",
-                                                cfg,
-                                                blockCache,
-                                                nullptr,
-                                                nullptr,
-                                                nullptr,
-                                                true,
-                                                KVStore::StoreMode::READ_WRITE,
-                                                TxnMode::TXN_PES);
+  auto kvstore = genRocksKVStore(cfg, blockCache, TxnMode::TXN_PES);
   cursorVisibleRoutine(kvstore.get());
 }
 
@@ -974,15 +974,7 @@ TEST(RocksKVStore, OptCommon) {
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
-  auto kvstore = std::make_unique<RocksKVStore>("0",
-                                                cfg,
-                                                blockCache,
-                                                nullptr,
-                                                nullptr,
-                                                nullptr,
-                                                true,
-                                                KVStore::StoreMode::READ_WRITE,
-                                                TxnMode::TXN_OPT);
+  auto kvstore = genRocksKVStore(cfg, blockCache, TxnMode::TXN_OPT);
   commonRoutine(kvstore.get());
 }
 
@@ -997,15 +989,7 @@ TEST(RocksKVStore, PesCommon) {
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
-  auto kvstore = std::make_unique<RocksKVStore>("0",
-                                                cfg,
-                                                blockCache,
-                                                nullptr,
-                                                nullptr,
-                                                nullptr,
-                                                true,
-                                                KVStore::StoreMode::READ_WRITE,
-                                                TxnMode::TXN_PES);
+  auto kvstore = genRocksKVStore(cfg, blockCache, TxnMode::TXN_PES);
   commonRoutine(kvstore.get());
 }
 
@@ -1020,15 +1004,7 @@ TEST(RocksKVStore, WBCommon) {
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
-  auto kvstore = std::make_unique<RocksKVStore>("0",
-                                                cfg,
-                                                blockCache,
-                                                nullptr,
-                                                nullptr,
-                                                nullptr,
-                                                true,
-                                                KVStore::StoreMode::READ_WRITE,
-                                                TxnMode::TXN_WB);
+  auto kvstore = genRocksKVStore(cfg, blockCache, TxnMode::TXN_WB);
   {
     auto eTxn1 = kvstore->createTransaction(nullptr);
     EXPECT_EQ(eTxn1.ok(), true);
@@ -1075,15 +1051,7 @@ TEST(RocksKVStore, PesTruncateBinlog) {
   cfg->maxBinlogKeepNum = keepBinlog;
   cfg->minBinlogKeepSec = 0;
   cfg->truncateBinlogNum = 1;
-  auto kvstore = std::make_unique<RocksKVStore>("0",
-                                                cfg,
-                                                blockCache,
-                                                nullptr,
-                                                nullptr,
-                                                nullptr,
-                                                true,
-                                                KVStore::StoreMode::READ_WRITE,
-                                                TxnMode::TXN_PES);
+  auto kvstore = genRocksKVStore(cfg, blockCache, TxnMode::TXN_PES);
 
   LocalSessionGuard sg(nullptr);
   uint64_t firstBinlog = 1;
@@ -1264,15 +1232,7 @@ TEST(RocksKVStore, Compaction) {
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
-  auto kvstore = std::make_unique<RocksKVStore>("0",
-                                                cfg,
-                                                blockCache,
-                                                nullptr,
-                                                nullptr,
-                                                nullptr,
-                                                true,
-                                                KVStore::StoreMode::READ_WRITE,
-                                                TxnMode::TXN_PES);
+  auto kvstore = genRocksKVStore(cfg, blockCache, TxnMode::TXN_PES);
 
   SyncPoint::GetInstance()->EnableProcessing();
   SyncPoint::GetInstance()->ClearAllCallBacks();
@@ -1345,15 +1305,7 @@ TEST(RocksKVStore, CompactionWithNoexpire) {
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
-  auto kvstore = std::make_unique<RocksKVStore>("0",
-                                                cfg,
-                                                blockCache,
-                                                nullptr,
-                                                nullptr,
-                                                nullptr,
-                                                true,
-                                                KVStore::StoreMode::READ_WRITE,
-                                                TxnMode::TXN_PES);
+  auto kvstore = genRocksKVStore(cfg, blockCache, TxnMode::TXN_PES);
 
   SyncPoint::GetInstance()->EnableProcessing();
   SyncPoint::GetInstance()->ClearAllCallBacks();
