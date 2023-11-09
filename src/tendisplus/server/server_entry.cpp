@@ -262,6 +262,7 @@ ServerEntry::ServerEntry()
     _poolMatrix(std::make_shared<PoolMatrix>()),
     _reqMatrix(std::make_shared<RequestMatrix>()),
     _cronThd(nullptr),
+    _bgcompactThd(nullptr),
     _enableCluster(false),
     _requirepass(""),
     _masterauth(""),
@@ -727,6 +728,11 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   _cronThd = std::make_unique<std::thread>([this] {
     INVARIANT(!pthread_setname_np(pthread_self(), "tx-svr-cron"));
     serverCron();
+  });
+
+  _bgcompactThd = std::make_unique<std::thread>([this] {
+    INVARIANT(!pthread_setname_np(pthread_self(), "tx-bgcom-cron"));
+    bgCompactCron();
   });
 
   // init slowlog
@@ -1562,19 +1568,68 @@ Status ServerEntry::generateHeartbeatBinlogRoutine() {
   return {ErrorCodes::ERR_OK, ""};
 }
 
+void ServerEntry::bgCompactCron() {
+  size_t counter = 0, storeIndex = 0;
+
+  LOG(INFO) << "bgcompact thread running...";
+  while (_isRunning.load(std::memory_order_relaxed)) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // check for every 1 min
+    if (!_cfg->bgcompactEnabled ||
+        ++counter % (_cfg->bgcompactInterval * 10) != 0) {
+      continue;
+    }
+
+    // check current hour is in specific duration [begin, end)
+    // case 1: begin < end (in day)
+    // [2, 7) -> 02:00-06:59
+    // [        begin//////////end          ]
+    // case 2: begin > end (next day)
+    // [23, 5) -> 23:00-04:59
+    // [//////end                   begin///]
+    // case 3: begin = end (whole day)
+    // [5, 5) -> 0:00-23:59
+    // [////////////////////////////////////]
+    auto now = static_cast<time_t>(sinceEpoch());
+    std::tm local_time{};
+    localtime_r(&now, &local_time);
+    if (((_cfg->bgcompactBegin < _cfg->bgcompactEnd) &&
+         (local_time.tm_hour < _cfg->bgcompactBegin ||
+          local_time.tm_hour >= _cfg->bgcompactEnd)) ||
+        ((_cfg->bgcompactBegin > _cfg->bgcompactEnd) &&
+         (local_time.tm_hour < _cfg->bgcompactBegin &&
+          local_time.tm_hour >= _cfg->bgcompactEnd))) {
+      continue;
+    }
+    LocalSessionGuard g(this);
+    auto expdb = getSegmentMgr()->getDb(
+      g.getSession(), storeIndex, mgl::LockMode::LOCK_IS);
+    storeIndex++;
+    if (storeIndex == getKVStoreCount()) {
+      storeIndex = 0;
+    }
+    if (!expdb.ok()) {
+      LOG(ERROR) << "getdb failed." << expdb.status().getErrmsg();
+      continue;
+    }
+    expdb.value().store->bgCompact();
+  }
+  LOG(INFO) << "bgcompact thread exit.";
+}
+
 #define run_with_period(_ms_) \
   if ((_ms_ <= 1000 / hz) || !(cronLoop % ((_ms_) / (1000 / hz))))
 
 void ServerEntry::serverCron() {
-  using namespace std::chrono_literals;  // NOLINT(build/namespaces)
-
   auto oldNetMatrix = *_netMatrix;
   auto oldPoolMatrix = *_poolMatrix;
   auto oldReqMatrix = *_reqMatrix;
 
   uint64_t cronLoop = 0;
-  auto interval = 100ms;  // every 100ms execute one time
-  uint64_t hz = 1000ms / interval;
+  auto interval =
+    std::chrono::milliseconds(100);  // every 100ms execute one time
+  uint64_t hz = std::chrono::milliseconds(1000) / interval;
 
   LOG(INFO) << "serverCron thread starts, hz:" << hz;
   while (_isRunning.load(std::memory_order_relaxed)) {
@@ -1698,11 +1753,10 @@ void ServerEntry::jemallocBgThreadConf() {
 }
 
 void ServerEntry::waitStopComplete() {
-  using namespace std::chrono_literals;  // NOLINT(build/namespaces)
   bool shutdowned = false;
   while (_isRunning.load(std::memory_order_relaxed)) {
     std::unique_lock<std::mutex> lk(_mutex);
-    bool ok = _eventCV.wait_for(lk, 1000ms, [this] {
+    bool ok = _eventCV.wait_for(lk, std::chrono::milliseconds(1000), [this] {
       return _isRunning.load(std::memory_order_relaxed) == false &&
         _isStopped.load(std::memory_order_relaxed) == true;
     });
@@ -1736,6 +1790,7 @@ void ServerEntry::stop() {
   LOG(INFO) << "server begins to stop...";
   _isRunning.store(false, std::memory_order_relaxed);
   _eventCV.notify_all();
+  _bgcompactThd->join();
   _cronThd->join();
 
   // NOTE(takenliu): _scriptMgr need stop earlier than _executorList

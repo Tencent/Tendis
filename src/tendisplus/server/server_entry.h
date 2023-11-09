@@ -380,6 +380,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   void resizeIncrExecutorThreadNum(uint64_t newThreadNum);
   void resizeDecrExecutorThreadNum(uint64_t newThreadNum);
   Status generateHeartbeatBinlogRoutine();
+  void bgCompactCron();
 
   // NOTE(deyukong): _isRunning = true -> running
   // _isRunning = false && _isStopped = false -> stopping in progress
@@ -422,6 +423,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   std::shared_ptr<PoolMatrix> _poolMatrix;
   std::shared_ptr<RequestMatrix> _reqMatrix;
   std::unique_ptr<std::thread> _cronThd;
+  std::unique_ptr<std::thread> _bgcompactThd;
 
   bool _enableCluster;
   // NOTE(deyukong):

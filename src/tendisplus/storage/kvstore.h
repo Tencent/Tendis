@@ -416,6 +416,7 @@ class KVStore {
                               const std::string* begin,
                               const std::string* end) = 0;
   virtual Status fullCompact() = 0;
+  virtual void bgCompact() = 0;
 
   virtual Expected<uint64_t> GetApproximateSizes(ColumnFamilyNumber cf,
                                                  const std::string* begin,

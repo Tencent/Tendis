@@ -1872,6 +1872,172 @@ Status RocksKVStore::fullCompact() {
   return s;
 }
 
+// collect sst file's startkey and endkey
+class KeyCollector : public rocksdb::TablePropertiesCollector {
+  const char* Name() const override {
+    return "KeyCollector";
+  }
+
+  bool NeedCompact() const override {
+    return false;
+  }
+
+  rocksdb::Status Finish(
+    rocksdb::UserCollectedProperties* properties) override {
+    *properties = rocksdb::UserCollectedProperties{
+      {"start_key", _startKey},
+      {"end_key", _endKey},
+    };
+    return rocksdb::Status::OK();
+  }
+
+  // rocksdb will call AddUserKey in key order.
+  rocksdb::Status AddUserKey(const rocksdb::Slice& key,
+                             const rocksdb::Slice&,
+                             rocksdb::EntryType,
+                             rocksdb::SequenceNumber,
+                             uint64_t) override {
+    if (_startKey.empty()) {
+      _startKey = key.ToString();
+    }
+    _endKey = key.ToString();
+    return rocksdb::Status::OK();
+  }
+
+  rocksdb::UserCollectedProperties GetReadableProperties() const override {
+    return rocksdb::UserCollectedProperties{};
+  }
+
+ private:
+  std::string _startKey = "";
+  std::string _endKey = "";
+};
+
+class KeyCollectorFactory : public rocksdb::TablePropertiesCollectorFactory {
+ public:
+  ~KeyCollectorFactory() override = default;
+
+  rocksdb::TablePropertiesCollector* CreateTablePropertiesCollector(
+    rocksdb::TablePropertiesCollectorFactory::Context) override {
+    return new KeyCollector{};
+  }
+
+  const char* Name() const override {
+    return "KeyCollector";
+  };
+};
+
+std::shared_ptr<KeyCollectorFactory> NewKeyCollectorFactory() {
+  return std::make_shared<KeyCollectorFactory>();
+}
+
+void RocksKVStore::bgCompact() {
+  rocksdb::TablePropertiesCollection props;
+  auto s = getBaseDB()->GetPropertiesOfAllTables(&props);  // default cf;
+  if (!s.ok()) {
+    LOG(WARNING) << "get table properties failed. dbid:" << dbId()
+                 << " reason: " << s.ToString();
+    return;
+  }
+  // do not compact when there is just single sst.
+  if (props.size() <= 1) {
+    return;
+  }
+
+  // select at most 1% data
+  size_t maxSuggestFiles = props.size() > 1024 ? (props.size() >> 10) : 1;
+  size_t now = sinceEpoch();
+  size_t forceCompactAge = 2 * 24 * 60 * 60;  // two days
+  double forceDeletePercentage =
+    static_cast<double>(_cfg->bgcompactForceDeletePercentage) / 100.0;
+
+  std::string preferredFilename;
+  double mostDeleteRatio{0.0};
+  size_t mostDeleteNum{0};
+  size_t mostDeleteRangeNum{0};
+  std::string preferredStartKey, preferredEndKey, startKey, endKey;
+  for (const auto& it : props) {
+    if (!maxSuggestFiles) {
+      return;
+    }
+
+    uint64_t fileCreateTime = it.second->file_creation_time;
+    if (!fileCreateTime) {
+      s = rocksdb::Env::Default()->GetFileModificationTime(it.first,
+                                                           &fileCreateTime);
+      if (!s.ok()) {
+        DLOG(WARNING) << "get file creation time failed. dbid:" << dbId()
+                      << " file:" << it.first << " error:" << s.ToString();
+        continue;
+      }
+    }
+
+    // not use user_collected_properties["start_key"] in case of if we won't
+    // use KeyCollector in future.
+    for (const auto& [key, value] : it.second->user_collected_properties) {
+      if (key == "start_key") {
+        startKey = value;
+      } else if (key == "end_key") {
+        endKey = value;
+      }
+    }
+    if (startKey.empty() || endKey.empty()) {
+      continue;
+    }
+
+    double deleteRatio = static_cast<double>(it.second->num_deletions) /
+      static_cast<double>(it.second->num_entries);
+    if (fileCreateTime < now - forceCompactAge &&
+        (it.second->num_range_deletions ||
+         deleteRatio >= forceDeletePercentage)) {
+      rocksdb::Slice start(startKey);
+      rocksdb::Slice end(endKey);
+      LOG(INFO) << "force compact on dbid:" << dbId() << " sst:" << it.first
+                << " due to deleteRange:" << it.second->num_range_deletions
+                << " or deleted key:" << it.second->num_deletions
+                << " delete ratio:" << deleteRatio;
+      getBaseDB()->SuggestCompactRange(
+        getDataColumnFamilyHandle(), &start, &end);
+      maxSuggestFiles--;
+      continue;
+    }
+
+    if (fileCreateTime > now - 3600) {
+      continue;
+    }
+
+    if (it.second->num_range_deletions > mostDeleteRangeNum) {
+      mostDeleteRangeNum = it.second->num_range_deletions;
+      preferredFilename = it.first;
+      preferredStartKey = startKey;
+      preferredEndKey = endKey;
+      startKey.clear();
+      endKey.clear();
+      continue;
+    }
+
+    if (!mostDeleteRangeNum && deleteRatio > mostDeleteRatio) {
+      mostDeleteRatio = deleteRatio;
+      mostDeleteNum = it.second->num_deletions;
+      preferredFilename = it.first;
+      preferredStartKey = startKey;
+      preferredEndKey = endKey;
+      startKey.clear();
+      endKey.clear();
+    }
+  }
+
+  if (mostDeleteRangeNum || mostDeleteRatio > 0.01) {
+    rocksdb::Slice start(preferredStartKey);
+    rocksdb::Slice end(preferredEndKey);
+    LOG(INFO) << "compact on dbid:" << dbId() << " sst:" << preferredFilename
+              << " due to deleteRange:" << mostDeleteRangeNum
+              << " or deleted key:" << mostDeleteNum
+              << " delete ratio:" << mostDeleteRatio;
+    getBaseDB()->SuggestCompactRange(getDataColumnFamilyHandle(), &start, &end);
+  }
+}
+
 Status RocksKVStore::clear() {
   std::lock_guard<std::mutex> lk(_mutex);
   if (_isRunning) {
@@ -2019,6 +2185,8 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
           _cfg->rocksCompactOnDeletionTrigger));
     }
 #endif
+    defaultColumnFamilyOpts.table_properties_collector_factories.emplace_back(
+      NewKeyCollectorFactory());
     std::unique_ptr<rocksdb::Iterator> iter = nullptr;
     std::unique_ptr<rocksdb::Iterator> binlog_iter = nullptr;
     // In clear() we use _cfDescs, so we don't put _cfDescs.clear() in

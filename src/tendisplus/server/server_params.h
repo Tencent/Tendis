@@ -561,6 +561,12 @@ class ServerParams {
   bool skipConcurrencyControl = false;
   // #endif
 
+  bool bgcompactEnabled = false;
+  uint64_t bgcompactInterval = 60;  // s
+  int bgcompactBegin = 0;
+  int bgcompactEnd = 7;
+  uint32_t bgcompactForceDeletePercentage = 10;
+
   uint32_t binlogSendBatch = 256;
   uint32_t binlogSendBytes = 16 * 1024 * 1024;
 

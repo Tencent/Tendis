@@ -491,6 +491,26 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME("rocks.delete_bytes_per_second",
                           rocksDeleteBytesPerSecond);
 
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("bgcompact-enabled", bgcompactEnabled);
+  REGISTER_VARS_FULL("bgcompact-interval",
+                     bgcompactInterval,
+                     nullptr,
+                     nullptr,
+                     10,
+                     UINT_MAX,
+                     true);
+  REGISTER_VARS_FULL(
+    "bgcompact-begin", bgcompactBegin, nullptr, nullptr, 0, 23, true);
+  REGISTER_VARS_FULL(
+    "bgcompact-end", bgcompactEnd, nullptr, nullptr, 0, 23, true);
+  REGISTER_VARS_FULL("bgcompact-force-delete-percentage",
+                     bgcompactForceDeletePercentage,
+                     nullptr,
+                     nullptr,
+                     1,
+                     100,
+                     true);
+
   REGISTER_VARS_SAME_NAME(
     migrateSenderThreadnum, nullptr, nullptr, 1, 200, true);
   REGISTER_VARS_SAME_NAME(
