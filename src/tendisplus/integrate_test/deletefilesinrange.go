@@ -7,11 +7,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/ngaut/log"
 	"strconv"
 	"strings"
 	"tendisplus/integrate_test/util"
 	"time"
+
+	"github.com/ngaut/log"
 )
 
 func getDataCFLevel6FileNum(m *util.RedisServer, storeid int) int {
@@ -110,7 +111,7 @@ func testDeleteFilesInRange() {
 		<-channel
 	}
 
-	cli1LongTimeout := createClientWithTimeout(&m1, 60) // timeout need be longger
+	cli1LongTimeout := createClientWithTimeout(&m1, 120) // timeout need be longger
 	r, err = cli1LongTimeout.Cmd("compactrange", "data", "0", "16384").Str()
 	if err != nil || r != "OK" {
 		log.Fatalf("reshape error errmsg:%v ret:%v", err, r)
