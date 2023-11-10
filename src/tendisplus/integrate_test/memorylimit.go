@@ -47,18 +47,26 @@ func testMemoryLimit() {
 	cli1 := createClient(&m1)
 
 	// write data
-	_ = cli1.Cmd("eval", "for i=0,100000 do redis.call('lpush', 'l1', '100000000000000') end", "0")
+	log.Infof("lpush start")
+	for i := 0; i < 100000; i++ {
+		err := cli1.Cmd("lpush", "l1", "100000000000000").Err
+		if err != nil {
+			log.Fatalf("error %d %v", i, err)
+		}
+	}
+	log.Infof("lpush end")
 
-	pws := []paramWrapper{{2, 1, 5}, {0, 1, 5}, {2, 0, 5}, {0, 0, 5}, {2, 1, 0}, {0, 1, 0}, {2, 0, 0}, {0, 0, 0}}
+	pws := []paramWrapper{{2, 1, 15}, {0, 1, 15}, {2, 0, 15}, {0, 0, 15}, {2, 1, 0}, {0, 1, 0}, {2, 0, 0}, {0, 0, 0}}
 
 	for _, pw := range pws {
+		log.Infof("current limit %d %d %d, start", pw.hardLimit, pw.softLimit, pw.softSecond)
 		cli2 := createClient(&m1)
 		_ = cli2.Cmd("config", "set", "client-output-buffer-limit-normal-hard-mb", strconv.Itoa(pw.hardLimit))
 		_ = cli2.Cmd("config", "set", "client-output-buffer-limit-normal-soft-mb", strconv.Itoa(pw.softLimit))
 		_ = cli2.Cmd("config", "set", "client-output-buffer-limit-normal-soft-second", strconv.Itoa(pw.softSecond))
 
 		// soft limit work correctly
-		cliSoft := createClient(&m1)
+		cliSoft := createClientWithTimeout(&m1, 80)
 		// exceed soft limit first time
 		if _, err := cliSoft.Cmd("lrange", "l1", "0", "30000").Array(); err != nil {
 			log.Fatalf("lrange failed! err:%v", err)
@@ -67,12 +75,12 @@ func testMemoryLimit() {
 		if _, err := cliSoft.Cmd("lrange", "l1", "0", "30000").Array(); err != nil {
 			log.Fatalf("lrange failed! err:%v", err)
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(15 * time.Second)
 		// should be closed
 		_, err := cliSoft.Cmd("lrange", "l1", "0", "30000").Array()
 		if pw.softLimit != 0 && pw.softSecond != 0 {
 			if err == nil {
-				log.Fatal("soft limit failed!")
+				log.Fatalf("soft limit failed!, current limit : %d %d %d", pw.hardLimit, pw.softLimit, pw.softSecond)
 			}
 		} else {
 			if err != nil {
@@ -81,7 +89,7 @@ func testMemoryLimit() {
 		}
 
 		// hard limit work correctly
-		cliHard := createClient(&m1)
+		cliHard := createClientWithTimeout(&m1, 80)
 		_, err = cliHard.Cmd("lrange", "l1", "0", "60000").Array()
 		if pw.hardLimit != 0 {
 			if err == nil {
@@ -94,7 +102,7 @@ func testMemoryLimit() {
 		}
 
 		// normal command should reset soft limit state
-		cliSoft1 := createClient(&m1)
+		cliSoft1 := createClientWithTimeout(&m1, 80)
 		// exceed soft limit first time
 		if _, err := cliSoft1.Cmd("lrange", "l1", "0", "30000").Array(); err != nil {
 			log.Fatalf("lrange failed! err:%v", err)
@@ -103,11 +111,12 @@ func testMemoryLimit() {
 		if _, err := cliSoft1.Cmd("llen", "l1").Int64(); err != nil {
 			log.Fatalf("llen failed! err:%v", err)
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(15 * time.Second)
 		// should not be closed
 		if _, err := cliSoft1.Cmd("lrange", "l1", "0", "30000").Array(); err != nil {
 			log.Fatalf("reset soft limit failed! err:%v", err)
 		}
+		log.Infof("current limit %d %d %d, end", pw.hardLimit, pw.softLimit, pw.softSecond)
 	}
 
 	log.Info("memorylimit.go passed.")
