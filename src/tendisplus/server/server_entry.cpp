@@ -486,6 +486,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
                        nullptr,
                        nullptr,
                        nullptr,
+                       nullptr,
                        false,
                        KVStore::StoreMode::READ_WRITE,
                        static_cast<TxnMode>(cfg->rocksTransactionMode)))),
@@ -528,6 +529,14 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   if (cfg->rocksRowcacheMB > 0) {
     _rowCache = rocksdb::NewLRUCache(cfg->rocksRowcacheMB * 1024 * 1024LL);
   }
+  if (cfg->rocksBlobcacheInBlockcache) {
+    _blobCache = _blockCache;
+  } else if (cfg->rocksBlobcacheMB > 0) {
+    _blobCache = rocksdb::NewLRUCache(cfg->rocksBlobcacheMB * 1024 * 1024LL,
+                                      cfg->rocksBlobcacheNumShardBits,
+                                      cfg->rocksStrictCapacityLimit);
+  }
+
 
   if (cfg->rocksDeleteBytesPerSecond > 0) {
     _sstFileManager =
@@ -571,6 +580,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
                        cfg,
                        _blockCache,
                        _rowCache,
+                       _blobCache,
                        _rateLimiter,
                        _sstFileManager,
                        _cfg->binlogEnabled,
