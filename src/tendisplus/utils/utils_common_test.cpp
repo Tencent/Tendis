@@ -338,8 +338,6 @@ TEST(CursorMap, evictMapping) {
 void testSimulateScanCmd(uint64_t totalScanSession,
                          uint64_t totalScanTimes,
                          CursorMap* map) {
-  using namespace std::chrono_literals;  // NOLINT
-
   auto simulateScanCmd = [&](size_t step, size_t id) {
     thread_local static uint64_t cursor = 0;  // static data
     if (cursor) {
@@ -353,7 +351,7 @@ void testSimulateScanCmd(uint64_t totalScanSession,
   };
 
   std::vector<std::thread> threads;
-  auto awakeTime = std::chrono::steady_clock::now() + 5s;
+  auto awakeTime = std::chrono::steady_clock::now() + std::chrono::seconds(5);
 
   // simulate scan operations, multi scan session at the same time.
   for (size_t session = 1; session <= totalScanSession; ++session) {
@@ -363,7 +361,7 @@ void testSimulateScanCmd(uint64_t totalScanSession,
         if ((totalScanSession <
              map->maxCursorCount() / map->maxSessionLimit()) &&
             (times == 10)) {
-          std::this_thread::sleep_for(10s);
+          std::this_thread::sleep_for(std::chrono::seconds(10));
         }
         auto step = session;
         simulateScanCmd(step, session);

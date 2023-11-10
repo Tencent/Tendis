@@ -311,6 +311,7 @@ class RocksKVStore : public KVStore {
                       const std::string* begin,
                       const std::string* end) override;
   Status fullCompact() override;
+  void bgCompact() override;
 
   Expected<uint64_t> GetApproximateSizes(ColumnFamilyNumber cf,
                                          const std::string* begin,

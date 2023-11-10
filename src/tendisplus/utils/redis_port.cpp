@@ -337,7 +337,7 @@ size_t popCount(const std::string& value, size_t offset, size_t end) {
 int ld2string(char* buf, size_t len, long double value, int humanfriendly) {
   size_t l;
 
-  if (isinf(value)) {
+  if (std::isinf(value)) {
     /* Libc in odd systems (Hi Solaris!) will format infinite in a
      * different way, so better to handle it in an explicit way. */
     if (len < 5)
@@ -570,23 +570,23 @@ int zslParseRange(const char* min, const char* max, Zrangespec* spec) {
    * ZRANGEBYSCORE zset 1.5 2.5 will instead match min <= x <= max */
   if (min[0] == '(') {
     spec->min = strtod(min + 1, &eptr);
-    if (eptr[0] != '\0' || isnan(spec->min))
+    if (eptr[0] != '\0' || std::isnan(spec->min))
       return -1;
     spec->minex = 1;
   } else {
     spec->min = strtod(min, &eptr);
-    if (eptr[0] != '\0' || isnan(spec->min))
+    if (eptr[0] != '\0' || std::isnan(spec->min))
       return -1;
   }
 
   if (max[0] == '(') {
     spec->max = strtod(max + 1, &eptr);
-    if (eptr[0] != '\0' || isnan(spec->max))
+    if (eptr[0] != '\0' || std::isnan(spec->max))
       return -1;
     spec->maxex = 1;
   } else {
     spec->max = strtod(max, &eptr);
-    if (eptr[0] != '\0' || isnan(spec->max))
+    if (eptr[0] != '\0' || std::isnan(spec->max))
       return -1;
   }
   return 0;

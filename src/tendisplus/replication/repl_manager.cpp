@@ -502,7 +502,6 @@ std::shared_ptr<BlockingTcpClient> ReplManager::createClient(
 }
 
 void ReplManager::controlRoutine() {
-  using namespace std::chrono_literals;  // (NOLINT)
   // schedSlaveInLock, schedMasterInLock, schedRecycLogInLock requires
   // ReplManager::_mutex locked
   auto schedSlaveInLock = [this](const SCLOCK::time_point& now) {
@@ -580,7 +579,7 @@ void ReplManager::controlRoutine() {
     if (doSth) {
       std::this_thread::yield();
     } else {
-      std::this_thread::sleep_for(1ms);
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
   }
   LOG(INFO) << "repl controller exits";

@@ -143,11 +143,11 @@ class session : public std::enable_shared_from_this<session> {
  private:
   void do_read() {
     auto self(shared_from_this());
-    using namespace std::chrono_literals;  // NOLINT
     _socket.async_read_some(asio::buffer(_data, max_length),
                             [this, self](std::error_code ec, size_t length) {
                               if (!ec) {
-                                std::this_thread::sleep_for(2s);
+                                std::this_thread::sleep_for(
+                                  std::chrono::seconds(2));
                                 do_write(length);
                               }
                             });
@@ -308,7 +308,6 @@ class session2 : public std::enable_shared_from_this<session2> {
  private:
   void do_read() {
     auto self(shared_from_this());
-    using namespace std::chrono_literals;  // NOLINT
     _socket.async_read_some(asio::buffer(_data, max_length),
                             [this, self](std::error_code ec, size_t length) {
                               if (ec) {
