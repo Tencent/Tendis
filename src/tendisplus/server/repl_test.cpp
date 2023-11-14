@@ -989,6 +989,15 @@ TEST(Repl, BinlogKeepNum_Test) {
     auto cfg2 = makeServerParam(slave_port, 0, slave_dir, false);
     auto cfg3 = makeServerParam(slave1_port, 0, slave1_dir, false);
     auto cfg4 = makeServerParam(single_port, 0, single_dir, false);
+
+#ifdef WITH_ASAN
+    cfg1->binlogSendBatch = 64;
+#endif  // !WITH_ASAN
+
+#ifdef WITH_TSAN
+    cfg1->binlogSendBatch = 64;
+#endif  // !WITH_TSAN
+
     uint64_t masterBinlogNum = 10;
     cfg1->maxBinlogKeepNum = masterBinlogNum;
     cfg1->minBinlogKeepSec = 0;
