@@ -402,7 +402,7 @@ Expected<uint32_t> ReplManager::maxDumpFileSeq(uint32_t storeId) {
         LOG(ERROR) << "invalid fileno:" << fno.value();
         return {ErrorCodes::ERR_INTERNAL, "invalid fileno"};
       }
-      maxFno = std::max(maxFno, (uint32_t)fno.value());
+      maxFno = std::max(maxFno, static_cast<uint32_t>(fno.value()));
     }
   } catch (const std::exception& ex) {
     LOG(ERROR) << "store:" << storeId << " get fileno failed:" << ex.what();
@@ -934,7 +934,7 @@ Expected<uint64_t> ReplManager::getDumpBinlogID(uint32_t storeId,
         LOG(ERROR) << "invalid fileno:" << fno.value();
         return {ErrorCodes::ERR_INTERNAL, "invalid fileno"};
       }
-      if (fileSeq == (uint32_t)fno.value()) {
+      if (fileSeq == static_cast<uint32_t>(fno.value())) {
         maxPath = path.string();
         break;
       }
@@ -1492,7 +1492,7 @@ uint64_t ReplManager::getLastBinlogTs() const {
   return min;
 }
 
-uint64_t ReplManager::replicationGetOffset() const {
+uint64_t ReplManager::replicationGetOffset(bool isPrintLog) const {
   uint64_t totalBinlog = 0;
   LocalSessionGuard sg(_svr.get());
 
@@ -1506,6 +1506,9 @@ uint64_t ReplManager::replicationGetOffset() const {
 
     auto kvstore = std::move(expdb.value().store);
     uint64_t maxBinlog = kvstore->getHighestBinlogId();
+    if (isPrintLog) {
+      LOG(WARNING) << "kvstore : " << i << " binlog offset : " << maxBinlog;
+    }
     totalBinlog += maxBinlog;
   }
   return totalBinlog;
@@ -1695,7 +1698,8 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
          << ",offset=" << iter.second.binlogpos
          << ",lag=" << (msSinceEpoch() - iter.second.lastBinlogTs) / 1000
          << ",binlog_lag="
-         << (int64_t)master_repl_offset - (int64_t)iter.second.binlogpos
+         << static_cast<int64_t>(master_repl_offset) -
+          static_cast<int64_t>(iter.second.binlogpos)
          << "\r\n";
     }
   }
