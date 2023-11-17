@@ -2853,7 +2853,7 @@ void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node,
 // offsets are more likely to win. */
 uint32_t ClusterState::clusterGetSlaveRank(void) {
   uint32_t rank = 0;
-  auto myoffset = _server->getReplManager()->replicationGetOffset();
+  auto myoffset = _server->getReplManager()->replicationGetOffset(true);
   INVARIANT_D(_myself->nodeIsSlave());
   std::lock_guard<myMutex> lk(_mutex);
 
@@ -2866,10 +2866,17 @@ uint32_t ClusterState::clusterGetSlaveRank(void) {
     return 0;
   }
   auto slaveList = exptSlaveList.value();
-  for (uint32_t j = 0; j < slaveList.size(); j++)
-    if (slaveList[j] != _myself && !slaveList[j]->nodeCantFailover() &&
-        slaveList[j]->getReplOffset() > myoffset)
-      rank++;
+  for (uint32_t j = 0; j < slaveList.size(); j++) {
+    if (slaveList[j] != _myself && !slaveList[j]->nodeCantFailover()) {
+      serverLog(LL_NOTICE,
+                "slave #%s , offset #%" PRIu64 "",
+                slaveList[j]->getNodeName().c_str(),
+                slaveList[j]->getReplOffset());
+      if (slaveList[j]->getReplOffset() > myoffset) {
+        rank++;
+      }
+    }
+  }
   return rank;
 }
 
@@ -5229,7 +5236,7 @@ void ClusterSession::drainReqNet() {
   }
   // here we use >= than >, so the last element will always be 0,
   // it's convinent for c-style string search
-  if (readlen + (size_t)_queryBufPos >= _queryBuf.size()) {
+  if (readlen + static_cast<size_t>(_queryBufPos) >= _queryBuf.size()) {
     // the fill should be as fast as memset in 02 mode, refer to here
     // NOLINT(whitespace/line_length)
     // https://stackoverflow.com/questions/8848575/fastest-way-to-reset-every-value-of-stdvectorint-to-0)
@@ -5266,7 +5273,7 @@ void ClusterSession::drainReqCallback(const std::error_code& ec,
   _queryBuf[_queryBufPos] = 0;
 
   /* Total length obtained? Process this packet. */
-  if (_queryBufPos >= 8 && (size_t)_queryBufPos == _pkgSize) {
+  if (_queryBufPos >= 8 && static_cast<size_t>(_queryBufPos) == _pkgSize) {
     setState(State::Process);
     schedule();
   } else {
