@@ -44,7 +44,8 @@ proc spawn_instance {type base_port count {conf {}}} {
         # Create a directory for this instance.
         set dirname "../tmp/tendisplus_${j}"
         lappend ::dirs $dirname
-        catch {exec rm -rf $dirname}
+        file delete -force $dirname
+        # catch {exec rm -rf $dirname}
         file mkdir $dirname
         file mkdir $dirname/db
 
@@ -118,7 +119,8 @@ proc cleanup {} {
         catch {exec kill -9 $pid}
     }
     foreach dir $::dirs {
-        catch {exec rm -rf $dir}
+        file delete -force $dir
+        # catch {exec rm -rf $dir}
     }
 }
 

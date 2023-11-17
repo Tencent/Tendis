@@ -174,12 +174,13 @@ proc cleanup {} {
     puts "clean up..."
     if {!$::quiet} {puts -nonewline "Cleanup: may take some time... "}
     flush stdout
-    catch {exec rm -rf {*}[glob tests/tmp/tendisplus.conf.*]}
-    catch {exec rm -rf {*}[glob tests/tmp/server.*]}
-    catch {exec rm -rf {*}[glob tests/tmp/slave.*]}
-    catch {exec rm -rf {*}[glob tests/tmp/dump*]}
-    catch {exec rm -rf {*}[glob tests/tmp/log*]}
-    catch {exec rm -rf {*}[glob tests/tmp/tendisplus.pid*]}
+
+    file delete -force tests/tmp/tendisplus.conf.*
+    file delete -force tests/tmp/server.*
+    file delete -force tests/tmp/slave.*
+    file delete -force tests/tmp/dump*
+    file delete -force tests/tmp/log*
+    file delete -force tests/tmp/tendisplus.pid*
     if {!$::quiet} {puts "OK"}
 }
 
