@@ -664,6 +664,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
     return _state;
   }
 
+  bool checkOriginMasterNodeName(CNodePtr srcNode, CNodePtr node);
   Status clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
                               const ClusterMsg& msg);
   bool clusterProcessGossipSection(std::shared_ptr<ClusterSession> sess,
@@ -692,6 +693,8 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void cronPingSomeNodes();
   void cronCheckFailState();
   void cronCheckReplicate();
+  void cronCheckDisk();
+  bool diskCheckSucess();
 
   std::string clusterGenNodesDescription(uint16_t filter, bool simple);
   std::string clusterGenStateDescription();
@@ -858,6 +861,8 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   // Messages received and sent by type.
   std::array<uint64_t, CLUSTERMSG_TYPE_COUNT> _statsMessagesSent;
   std::array<uint64_t, CLUSTERMSG_TYPE_COUNT> _statsMessagesReceived;
+  std::atomic<bool> _diskCheckSucess;
+  std::atomic<mstime_t> _diskCheckTime;
 };
 
 class ClusterGossip;
@@ -966,6 +971,7 @@ class ClusterManager {
 
   // controller
   std::unique_ptr<std::thread> _controller;
+  std::unique_ptr<std::thread> _diskChecker;
 
   std::shared_ptr<NetworkMatrix> _netMatrix;
   std::shared_ptr<RequestMatrix> _reqMatrix;

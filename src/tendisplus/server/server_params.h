@@ -604,6 +604,9 @@ class ServerParams {
   uint32_t clusterMigrationBarrier = 1;
   uint32_t clusterSlaveValidityFactor = 10;
   bool clusterSingleNode = false;
+  bool clusterCheckDiskBeforePong = false;
+  bool clusterCheckDiskWrite = false;
+  bool clusterCheckDiskRead = false;
 
   uint64_t tbitmapFragmentSize = 1024;
 
