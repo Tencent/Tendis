@@ -203,9 +203,10 @@ class HLenCommand : public Command {
   }
 } hlenCommand;
 
-class HSizeCommand : public Command {
+class SizeGeneric : public Command {
  public:
-  HSizeCommand() : Command("hsize", "rF") {}
+  SizeGeneric(const std::string& name, const char* sflags)
+    : Command(name, sflags) {}
 
   ssize_t arity() const {
     return -2;
@@ -223,7 +224,9 @@ class HSizeCommand : public Command {
     return 1;
   }
 
-  Expected<std::string> run(Session* sess) final {
+  Expected<std::string> runGeneric(Session* sess,
+                                   RecordType metaType,
+                                   const std::vector<RecordType>& eleType) {
     const std::vector<std::string>& args = sess->getArgs();
     const std::string& key = args[1];
     bool include_memtabtles = true;
@@ -241,8 +244,7 @@ class HSizeCommand : public Command {
     SessionCtx* pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_HASH_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(sess, key, metaType);
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
       return fmtZero();
     } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -258,36 +260,72 @@ class HSizeCommand : public Command {
       return expdb.status();
     }
 
+    uint64_t result = 0;
     RecordKey mk(expdb.value().chunkId,
                  sess->getCtx()->getDbId(),
                  RecordType::RT_DATA_META,
                  key,
                  "");
-    RecordKey start(mk.getChunkId(),
+    for (const auto oneEletype : eleType) {
+      RecordKey start(
+        mk.getChunkId(), mk.getDbId(), oneEletype, mk.getPrimaryKey(), "", 0);
+      RecordKey end(mk.getChunkId(),
                     mk.getDbId(),
-                    RecordType::RT_HASH_ELE,
+                    oneEletype,
                     mk.getPrimaryKey(),
                     "",
-                    0);
-    RecordKey end(mk.getChunkId(),
-                  mk.getDbId(),
-                  RecordType::RT_HASH_ELE,
-                  mk.getPrimaryKey(),
-                  "",
-                  UINT64_MAX);
-    std::string sbegin = start.prefixPk();
-    std::string send = end.prefixPk();
-    auto size = expdb.value().store->GetApproximateSizes(
-      ColumnFamilyNumber::ColumnFamily_Default,
-      &sbegin,
-      &send,
-      include_memtabtles);
-    if (!size.ok()) {
-      return size.status();
+                    UINT64_MAX);
+      std::string sbegin = start.prefixPk();
+      std::string send = end.prefixPk();
+      auto size = expdb.value().store->GetApproximateSizes(
+        ColumnFamilyNumber::ColumnFamily_Default,
+        &sbegin,
+        &send,
+        include_memtabtles);
+      if (!size.ok()) {
+        return size.status();
+      }
+      result += size.value();
     }
-    return fmtLongLong(size.value());
+    return fmtLongLong(result);
+  }
+};
+
+class HSizeCommand : public SizeGeneric {
+ public:
+  HSizeCommand() : SizeGeneric("hsize", "rF") {}
+  Expected<std::string> run(Session* sess) final {
+    return runGeneric(
+      sess, RecordType::RT_HASH_META, {RecordType::RT_HASH_ELE});
   }
 } hsizeCommand;
+
+class LSizeCommand : public SizeGeneric {
+ public:
+  LSizeCommand() : SizeGeneric("lsize", "rF") {}
+  Expected<std::string> run(Session* sess) final {
+    return runGeneric(
+      sess, RecordType::RT_LIST_META, {RecordType::RT_LIST_ELE});
+  }
+} lsizeCommand;
+
+class SSizeCommand : public SizeGeneric {
+ public:
+  SSizeCommand() : SizeGeneric("ssize", "rF") {}
+  Expected<std::string> run(Session* sess) final {
+    return runGeneric(sess, RecordType::RT_SET_META, {RecordType::RT_SET_ELE});
+  }
+} ssizeCommand;
+
+class ZSizeCommand : public SizeGeneric {
+ public:
+  ZSizeCommand() : SizeGeneric("zsize", "rF") {}
+  Expected<std::string> run(Session* sess) final {
+    return runGeneric(sess,
+                      RecordType::RT_ZSET_META,
+                      {RecordType::RT_ZSET_S_ELE, RecordType::RT_ZSET_H_ELE});
+  }
+} zsizeCommand;
 
 class HExistsCommand : public Command {
  public:
