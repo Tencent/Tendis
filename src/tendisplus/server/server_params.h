@@ -485,6 +485,7 @@ class ServerParams {
   uint64_t slaveBinlogKeepNum = 1;
   uint64_t dumpFileKeepNum = 0;
   uint64_t dumpFileKeepHour = 0;
+  bool dumpFileFlush = true;
 
   uint32_t maxClients = CONFIG_DEFAULT_MAX_CLIENTS;
   std::string slowlogPath = "./slowlog";

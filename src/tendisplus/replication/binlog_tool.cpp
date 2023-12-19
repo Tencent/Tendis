@@ -273,16 +273,16 @@ class BinlogScanner {
 
   Expected<std::string> run() {
     auto e = scan();
+    if (!e.ok()) {
+      return {e.status().code(),
+              e.status().getErrmsg() + ". file name: " + _logfile};
+    }
+
     if (_mode == TOOL_MODE::TEXT_SHOW_SCOPE) {
       std::cout << "firstbinlogid:" << _firstbinlogid << std::endl;
       std::cout << "lastbinlogid:" << _lastbinlogid << std::endl;
       std::cout << "firstbinlogtime:" << _firstbinlogtime << std::endl;
       std::cout << "lastbinlogtime:" << _lastbinlogtime << std::endl;
-    }
-
-    if (!e.ok()) {
-      return {e.status().code(),
-              e.status().getErrmsg() + ". file name: " + _logfile};
     }
 
     return e;

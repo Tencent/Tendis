@@ -787,7 +787,6 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
   }
 
   updateCurBinlogFs(storeId, 0, 0);
-  bool tailSlave = false;
   uint64_t highest = kvstore->getHighestBinlogId();
   end = highest;
   {
@@ -813,10 +812,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     uint64_t maxKeepLogs = _cfg->maxBinlogKeepNum;
     if (_syncMeta[storeId]->syncFromHost != "" &&
         _pushStatus[storeId].size() == 0) {
-      tailSlave = true;
-    }
-    if (tailSlave) {
-      maxKeepLogs = _cfg->slaveBinlogKeepNum;
+      maxKeepLogs = _cfg->slaveBinlogKeepNum;  // tailSlave
     }
 
     maxKeepLogs = std::max((uint64_t)1, maxKeepLogs);
@@ -841,7 +837,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
   uint64_t newStart = 0;
   {
     std::ofstream* fs = nullptr;
-    int64_t maxWriteLen = 0;
+    uint64_t maxWriteLen = 0;
     if (!_svr->getParams()->binlogSaveLogs) {
       dumpLogs = false;
     }
@@ -852,13 +848,13 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
         return;
       }
       std::lock_guard<std::mutex> lk(_mutex);
-      maxWriteLen = _cfg->binlogFileSizeMB * 1024 * 1024 -
+      // updateCurBinlogFs ensures file size is within the limit
+      maxWriteLen = _cfg->binlogFileSizeMB * 1024ull * 1024ull -
         _logRecycStatus[storeId]->fileSize;
     }
     DLOG(INFO) << "store:" << storeId << " "
                << _logRecycStatus[storeId]->toString();
-    auto s =
-      kvstore->truncateBinlogV2(start, end, dump, fs, maxWriteLen, tailSlave);
+    auto s = kvstore->truncateBinlogV2(fs, start, end, dump, maxWriteLen);
     if (!s.ok()) {
       LOG(ERROR) << "kvstore->truncateBinlogV2 store:" << storeId
                  << "failed:" << s.status().toString();

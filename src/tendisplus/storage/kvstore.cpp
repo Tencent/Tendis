@@ -629,6 +629,7 @@ std::unique_ptr<std::ofstream> KVStore::createBinlogFile(
     LOG(ERROR) << "fs->write() failed:" << name;
     return nullptr;
   }
+  fs->flush();
   return fs;
 }
 
