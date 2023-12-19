@@ -173,6 +173,49 @@ void testScanIndex(std::shared_ptr<ServerEntry> server,
   return;
 }
 
+void testChangeThreadNum(std::shared_ptr<ServerEntry> server,
+                         NetSession& sess,
+                         uint32_t threadnum) {
+  sess.setArgs(
+    {"config", "set", "executorthreadnum", std::to_string(threadnum)});
+  auto expect = Command::runSessionCmd(&sess);
+  auto val = expect.value();
+  EXPECT_TRUE(expect.ok());
+
+  auto testTask = []() { ; };
+  uint32_t tid = 0;
+  server->schedule(std::move(testTask), tid);
+
+  std::this_thread::sleep_for(std::chrono::seconds(2));
+  ASSERT_EQ(threadnum, server->getExeThreadNum());
+}
+
+TEST(IndexManager, setExecutorThreadNum) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+
+  auto cfg = makeServerParam();
+  cfg->executorThreadNum = 16;
+  cfg->executorWorkPoolSize = 2;
+  auto server = std::make_shared<ServerEntry>(cfg);
+  auto s = server->startup(cfg);
+  ASSERT_TRUE(s.ok());
+
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext);
+  NetSession sess(server, std::move(socket), 1, false, nullptr, nullptr);
+
+  testChangeThreadNum(server, sess, 10);
+  testChangeThreadNum(server, sess, 14);
+  testChangeThreadNum(server, sess, 6);
+  testChangeThreadNum(server, sess, 8);
+  testChangeThreadNum(server, sess, 4);
+
+  server->stop();
+  ASSERT_EQ(server.use_count(), 1);
+}
+
 TEST(IndexManager, generateIndex) {
   const auto guard = MakeGuard([] { destroyEnv(); });
 

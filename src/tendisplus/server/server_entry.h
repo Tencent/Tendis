@@ -166,11 +166,24 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   uint64_t getStartupTimeNs() const;
   template <typename fn>
   void schedule(fn&& task, uint32_t& ctxId) {  // NOLINT
+    if (UNLIKELY(_newExecutorThreadNum.load() != 0)) {
+      std::unique_lock<std::shared_timed_mutex> lock(_exeThreadMutex);
+      // NOTE(takenliu): need check again in write lock;
+      if (_newExecutorThreadNum.load() != 0) {
+        resizeExecutorThreadNum(_newExecutorThreadNum.load());
+        _newExecutorThreadNum.store(0);
+      }
+    }
+    std::shared_lock<std::shared_timed_mutex> lock(_exeThreadMutex);
     if (ctxId == UINT32_MAX || ctxId >= _executorList.size()) {
       ctxId = _scheduleNum.fetch_add(1, std::memory_order_relaxed) %
         _executorList.size();
     }
     _executorList[ctxId]->schedule(std::forward<fn>(task));
+  }
+  uint32_t getExeThreadNum() const {
+    std::shared_lock<std::shared_timed_mutex> lock(_exeThreadMutex);
+    return _executorList.size() * _executorList.back()->size();
   }
   std::shared_ptr<ServerParams>& getParams() {
     return _cfg;
@@ -400,6 +413,8 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   std::map<uint64_t, std::shared_ptr<Session>> _sessions;
   std::list<std::shared_ptr<Session>> _monitors;
 
+  std::atomic<uint64_t> _newExecutorThreadNum = 0;
+  mutable std::shared_timed_mutex _exeThreadMutex;
   std::vector<std::unique_ptr<WorkerPool>> _executorList;
   std::set<std::unique_ptr<WorkerPool>> _executorRecycleSet;
   std::unique_ptr<SegmentMgr> _segmentMgr;

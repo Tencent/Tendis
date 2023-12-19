@@ -833,7 +833,7 @@ Status ServerParams::setVar(const std::string& name,
       }
     }
 
-    LOG(INFO) << "ServerParams setVar dynamic," << argname << " : " << value;
+    LOG(INFO) << "ServerParams setVar dynamic, " << argname << ": " << value;
     if (iter == _mapServerParams.end()) {
       return setRocksOption(argname, value);
     } else {

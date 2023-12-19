@@ -11,6 +11,15 @@
 #include "unistd.h"
 #endif  // _WIN32
 
+
+#ifndef LIKELY
+#define LIKELY(x) (__builtin_expect((x), 1))
+#endif
+#ifndef UNLIKELY
+#define UNLIKELY(x) (__builtin_expect((x), 0))
+#endif
+
+
 #define INVARIANT(e)                                                    \
   do {                                                                  \
     if (!__builtin_expect(e, 1)) {                                      \
