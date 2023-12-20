@@ -81,7 +81,8 @@ func testVersion(versions []string) {
 
 		for i := clusterNodeNum; i < clusterNodeNum*2; i++ {
 			cluster_manual_failover(&(*servers)[i])
-			time.Sleep(1 * time.Second)
+			// In tsan, tendis will taken 2~4 seconds to perform failover.
+			time.Sleep(5 * time.Second)
 		}
 
 		time.Sleep(5 * time.Second)
