@@ -7,13 +7,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"integrate_test/util"
+	"strconv"
+	"time"
+
 	"github.com/mediocregopher/radix.v2/redis"
 	"github.com/ngaut/log"
-	"os/exec"
-	"strconv"
-	"strings"
-	"tendisplus/integrate_test/util"
-	"time"
 )
 
 func printNodes(m *util.RedisServer) {
@@ -24,300 +23,6 @@ func printNodes(m *util.RedisServer) {
 		return
 	}
 	log.Infof("printNodes sucess. %s:%d nodes:%s", m.Ip, m.Port, output)
-}
-
-func addDataByClientInCoroutine(m *util.RedisServer, num int, prefixkey string, channel chan int) {
-	var optype string = *benchtype
-	//log.Infof("optype is : %s", optype)
-	switch optype {
-	case "set":
-		log.Infof("optype is : %s", optype)
-		addDataByClient(m, num, prefixkey)
-	case "sadd":
-		log.Infof("optype is : %s", optype)
-		addSetDataByClient(m, num, prefixkey)
-	case "hmset":
-		log.Infof("optype is : %s", optype)
-		addHashDataByClient(m, num, prefixkey)
-	case "rpush":
-		log.Infof("optype is : %s", optype)
-		addListDataByClient(m, num, prefixkey)
-	case "zadd":
-		log.Infof("optype is : %s", optype)
-		addSortedDataByClient(m, num, prefixkey)
-	default:
-		log.Infof("no benchtype")
-	}
-	//addDataByClient(m, num, prefixkey)
-	channel <- 0
-}
-
-// set key value
-func addDataByClient(m *util.RedisServer, num int, prefixkey string) {
-	log.Infof("addData begin. %s:%d", m.Ip, m.Port)
-	// TODO(takenliu):mset dont support moved ???
-	for i := 0; i < num; i++ {
-		var args []string
-		args = append(args, "-h", m.Ip, "-p", strconv.Itoa(m.Port),
-			"-c", "-a", *auth, "set")
-
-		key := "key" + prefixkey + "_" + strconv.Itoa(i)
-		value := "value" + prefixkey + "_" + strconv.Itoa(i)
-		args = append(args, key)
-		args = append(args, value)
-
-		cmd := exec.Command("../../../bin/redis-cli", args...)
-		//cmd := exec.Command("../../../bin/redis-cli", "-h", m.Ip, "-p", strconv.Itoa(m.Port),
-		//    "-c", "-a", *auth, "mset", kvs...)
-		data, err := cmd.Output()
-		//fmt.Print(string(output))
-		if string(data) != "OK\n" || err != nil {
-			log.Infof("set failed, key:%v data:%s err:%v", key, data, err)
-		}
-	}
-	log.Infof("addData sucess. %s:%d num:%d", m.Ip, m.Port, num)
-}
-
-// sadd key elements [elements...]
-func addSetDataByClient(m *util.RedisServer, num int, prefixkey string) {
-	log.Infof("addData begin(Sadd). %s:%d", m.Ip, m.Port)
-
-	for i := 0; i < num; i++ {
-		var args []string
-		args = append(args, "-h", m.Ip, "-p", strconv.Itoa(m.Port),
-			"-c", "-a", *auth, "sadd")
-
-		key := "key" + prefixkey + "_" + strconv.Itoa(i)
-		args = append(args, key)
-		for h := 0; h < 2; h++ {
-			value := "value" + prefixkey + "_" + strconv.Itoa(h)
-			args = append(args, value)
-		}
-
-		cmd := exec.Command("../../../bin/redis-cli", args...)
-		data, err := cmd.Output()
-		//log.Infof("sadd:  %s", data)
-		if string(data) != "2\n" || err != nil {
-			log.Infof("sadd failed, key%v data:%s err:%v", key, data, err)
-		}
-	}
-	log.Infof("addData success(Sadd). %s:%d num:%d", m.Ip, m.Port, num)
-}
-
-func addHashDataByClient(m *util.RedisServer, num int, prefixkey string) {
-	log.Infof("addData begin(Hmset). %s:%d", m.Ip, m.Port)
-
-	for i := 0; i < num; i++ {
-		var args []string
-		args = append(args, "-h", m.Ip, "-p", strconv.Itoa(m.Port),
-			"-c", "-a", *auth, "hmset")
-
-		key := "key" + prefixkey + "_" + strconv.Itoa(i)
-		args = append(args, key)
-		for h := 0; h < 2; h++ {
-			value := "value" + prefixkey + "_" + strconv.Itoa(h)
-			args = append(args, strconv.Itoa(h))
-			args = append(args, value)
-		}
-
-		cmd := exec.Command("../../../bin/redis-cli", args...)
-		data, err := cmd.Output()
-		//log.Infof("sadd:  %s", data)
-		if string(data) != "OK\n" || err != nil {
-			log.Infof("hmset failed, key%v data:%s err:%v", key, data, err)
-		}
-	}
-	log.Infof("addData success(Hmset). %s:%d num:%d", m.Ip, m.Port, num)
-}
-
-func addListDataByClient(m *util.RedisServer, num int, prefixkey string) {
-	log.Infof("addData begin(Rpush). %s:%d", m.Ip, m.Port)
-
-	for i := 0; i < num; i++ {
-		var args []string
-		args = append(args, "-h", m.Ip, "-p", strconv.Itoa(m.Port),
-			"-c", "-a", *auth, "rpush")
-
-		key := "key" + prefixkey + "_" + strconv.Itoa(i)
-		args = append(args, key)
-		for h := 0; h < 2; h++ {
-			value := "value" + prefixkey + "_" + strconv.Itoa(h)
-			args = append(args, value)
-		}
-
-		cmd := exec.Command("../../../bin/redis-cli", args...)
-		data, err := cmd.Output()
-		//log.Infof("sadd:  %s", data)
-		if string(data) != "2\n" || err != nil {
-			log.Infof("Rpush failed, key%v data:%s err:%v", key, data, err)
-		}
-	}
-	log.Infof("addData success(Rpush). %s:%d num:%d", m.Ip, m.Port, num)
-}
-
-func addSortedDataByClient(m *util.RedisServer, num int, prefixkey string) {
-	log.Infof("addData begin(Zadd). %s:%d", m.Ip, m.Port)
-
-	for i := 0; i < num; i++ {
-		var args []string
-		args = append(args, "-h", m.Ip, "-p", strconv.Itoa(m.Port),
-			"-c", "-a", *auth, "zadd")
-
-		key := "key" + prefixkey + "_" + strconv.Itoa(i)
-		args = append(args, key)
-		for h := 0; h < 1; h++ {
-			value := "value" + prefixkey + "_" + strconv.Itoa(h)
-			args = append(args, strconv.Itoa(h))
-			args = append(args, value)
-		}
-
-		cmd := exec.Command("../../../bin/redis-cli", args...)
-		data, err := cmd.Output()
-		//log.Infof("sadd:  %s", data)
-		if string(data) != "1\n" || err != nil {
-			log.Infof("Zadd failed, key%v data:%s err:%v", key, data, err)
-		}
-	}
-	log.Infof("addData success(Zadd). %s:%d num:%d", m.Ip, m.Port, num)
-}
-
-func checkDataInCoroutine2(m *[]util.RedisServer, num int, prefixkey string, channel chan int) {
-	var optype string = *benchtype
-	//log.Infof("optype is : %s", optype)
-	switch optype {
-	case "set":
-		log.Infof("optype is : %s", optype)
-		checkData2(m, num, prefixkey)
-	case "sadd":
-		log.Infof("optype is : %s", optype)
-		checkSetData2(m, num, prefixkey)
-	case "hmset":
-		log.Infof("optype is : %s", optype)
-		checkHashData2(m, num, prefixkey)
-	case "rpush":
-		log.Infof("optype is : %s", optype)
-		checkListData2(m, num, prefixkey)
-	case "zadd":
-		log.Infof("optype is : %s", optype)
-		checkSortedData2(m, num, prefixkey)
-	default:
-		log.Infof("no benchtype:%s", optype)
-	}
-	//checkData2(m, num, prefixkey)
-	channel <- 0
-}
-
-func checkData2(m *[]util.RedisServer, num int, prefixkey string) {
-	log.Infof("checkData begin. prefixkey:%s", prefixkey)
-
-	cli := createClient(&(*m)[0])
-	for i := 0; i < num; i++ {
-		// redis-cli will process moved station in get command
-		key := "key" + prefixkey + "_" + strconv.Itoa(i)
-		value := "value" + prefixkey + "_" + strconv.Itoa(i)
-		data, err := cli.Cmd("get", key).Str()
-		if err != nil {
-			log.Infof("get failed, key:%v data:%s err:%v", key, data, err)
-		}
-
-		retValue := strings.Replace(string(data), "\n", "", -1)
-		if retValue != value {
-			log.Infof("find failed, key:%v data:%s value:%s err:%v", key, retValue, value, err)
-		}
-	}
-	log.Infof("checkData end. prefixkey:%s", prefixkey)
-}
-
-func checkSetData2(m *[]util.RedisServer, num int, prefixkey string) {
-	log.Infof("checkData begin(Sadd). prefixkey:%s", prefixkey)
-
-	for i := 0; i < num; i++ {
-		var args []string
-		args = append(args, "-h", (*m)[0].Ip, "-p", strconv.Itoa((*m)[0].Port),
-			"-c", "-a", *auth, "scard")
-
-		key := "key" + prefixkey + "_" + strconv.Itoa(i)
-		value := "2"
-		args = append(args, key)
-
-		cmd := exec.Command("../../../bin/redis-cli", args...)
-		data, err := cmd.Output()
-
-		retValue := strings.Replace(string(data), "\n", "", -1)
-		if retValue != value {
-			log.Infof("find failed(command : scard), key:%v data:%s value:%s err:%v", key, retValue, value, err)
-		}
-	}
-	log.Infof("checkData end(Sadd). prefixkey:%s", prefixkey)
-}
-
-func checkHashData2(m *[]util.RedisServer, num int, prefixkey string) {
-	log.Infof("checkData begin(Hmset). prefixkey:%s", prefixkey)
-
-	for i := 0; i < num; i++ {
-		var args []string
-		args = append(args, "-h", (*m)[0].Ip, "-p", strconv.Itoa((*m)[0].Port),
-			"-c", "-a", *auth, "hlen")
-
-		key := "key" + prefixkey + "_" + strconv.Itoa(i)
-		value := "2"
-		args = append(args, key)
-
-		cmd := exec.Command("../../../bin/redis-cli", args...)
-		data, err := cmd.Output()
-
-		retValue := strings.Replace(string(data), "\n", "", -1)
-		if retValue != value {
-			log.Infof("find failed(command : hlen), key:%v data:%s value:%s err:%v", key, retValue, value, err)
-		}
-	}
-	log.Infof("checkData end(Hmset). prefixkey:%s", prefixkey)
-}
-
-func checkListData2(m *[]util.RedisServer, num int, prefixkey string) {
-	log.Infof("checkData begin(Rpush). prefixkey:%s", prefixkey)
-
-	for i := 0; i < num; i++ {
-		var args []string
-		args = append(args, "-h", (*m)[0].Ip, "-p", strconv.Itoa((*m)[0].Port),
-			"-c", "-a", *auth, "llen")
-
-		key := "key" + prefixkey + "_" + strconv.Itoa(i)
-		value := "2"
-		args = append(args, key)
-
-		cmd := exec.Command("../../../bin/redis-cli", args...)
-		data, err := cmd.Output()
-
-		retValue := strings.Replace(string(data), "\n", "", -1)
-		if retValue != value {
-			log.Infof("find failed(command : llen), key:%v data:%s value:%s err:%v", key, retValue, value, err)
-		}
-	}
-	log.Infof("checkData end(Rpush). prefixkey:%s", prefixkey)
-}
-
-func checkSortedData2(m *[]util.RedisServer, num int, prefixkey string) {
-	log.Infof("checkData begin(Zadd). prefixkey:%s", prefixkey)
-
-	for i := 0; i < num; i++ {
-		var args []string
-		args = append(args, "-h", (*m)[0].Ip, "-p", strconv.Itoa((*m)[0].Port),
-			"-c", "-a", *auth, "zcard")
-
-		key := "key" + prefixkey + "_" + strconv.Itoa(i)
-		value := "1"
-		args = append(args, key)
-
-		cmd := exec.Command("../../../bin/redis-cli", args...)
-		data, err := cmd.Output()
-
-		retValue := strings.Replace(string(data), "\n", "", -1)
-		if retValue != value {
-			log.Infof("find failed(command : zcard), key:%v data:%s value:%s err:%v", key, retValue, value, err)
-		}
-	}
-	log.Infof("checkData end(Zadd). prefixkey:%s", prefixkey)
 }
 
 func checkSlots(servers *[]util.RedisServer, serverIdx int, nodeInfoArray *[]NodeInfo,
@@ -469,7 +174,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
 		port := util.FindAvailablePort(clusterPortStart)
 		log.Infof("start server i:%d port:%d", i, port)
 		//port := clusterPortStart + i
-		server.Init(clusterIp, port, pwd, "m"+strconv.Itoa(i)+"_")
+		server.Init(clusterIp, port, pwd, "m"+strconv.Itoa(i)+"_", util.Cluster)
 		cfgArgs := make(map[string]string)
 		cfgArgs["maxBinlogKeepNum"] = "100"
 		cfgArgs["kvstorecount"] = strconv.Itoa(kvstorecount)
@@ -562,7 +267,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
 	log.Infof("cluster add data begin")
 	var channel chan int = make(chan int)
 	for i := 0; i < clusterNodeNum; i++ {
-		util.AddData(&predixy.RedisServer, *num1, 0, strconv.Itoa(i), channel)
+		util.AddData(&predixy.RedisServer, *auth, *num1, 0, 0, strconv.Itoa(i), channel)
 	}
 
 	// if add 10000 key, need about 15s
@@ -686,7 +391,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
 		var fake_servers []util.RedisServer
 		fake_servers = append(fake_servers, predixy.RedisServer)
 		for i := 0; i < clusterNodeNum; i++ {
-			go checkDataInCoroutine2(&fake_servers, *num1, strconv.Itoa(i), channel)
+			go util.CheckDataInCoroutine(&(fake_servers[0]), *auth, *util.Optype, 0, *num1, 1, strconv.Itoa(i), channel)
 		}
 		for i := 0; i < clusterNodeNum; i++ {
 			<-channel
@@ -709,5 +414,5 @@ func main() {
 	// rand.Seed(time.Now().UnixNano())
 	testCluster(*clusterIp, *clusterPortStart, 1)
 	testCluster(*clusterIp, *clusterPortStart+100, *clusterNodeNum)
-	log.Infof("clustertest.go passed. command : %s", *benchtype)
+	log.Infof("clustertest.go passed. command : %s", *util.Optype)
 }

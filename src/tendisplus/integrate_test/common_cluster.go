@@ -6,11 +6,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/ngaut/log"
+	"integrate_test/util"
 	"strconv"
 	"strings"
-	"tendisplus/integrate_test/util"
 	"time"
+
+	"github.com/ngaut/log"
 )
 
 func cluster_meet(m *util.RedisServer, s *util.RedisServer) {
@@ -58,19 +59,36 @@ func cluster_extract_field(reply string, prefix string, delimiter string) string
 	return tmp[0]
 }
 
-func cluster_check_state(m *util.RedisServer) bool {
+func cluster_check_state_with_timeout(m *util.RedisServer, timeoutSecond int, durationMs int) bool {
+	log.Infof("check cluster state start, m.Ip:%v, m.Port:%v", m.Ip, m.Port)
+	deadLine := time.Now().Add(time.Duration(timeoutSecond) * time.Second)
 	cli := createClient(m)
-	defer cli.Close()
+	for {
+		reply, err := cli.Cmd("cluster", "info").Str()
+		if err != nil {
+			log.Fatalf("cluster info failed:%v", err)
+		}
+		state := cluster_extract_field(reply, "cluster_state:", "\r\n")
+		log.Infof("check cluster state, state[%s]", state)
+		if state == "ok" {
+			return true
+		}
+		time.Sleep(time.Duration(durationMs) * time.Millisecond)
 
-	reply, err := cli.Cmd("cluster", "info").Str()
-	if err != nil {
-		log.Fatalf("cluster info failed:%v", err)
+		if time.Now().After(deadLine) {
+			break
+		}
 	}
+	log.Infof("check cluster state timeout, m.Ip:%v, m.Port:%v", m.Ip, m.Port)
+	return false
+}
 
-	state := cluster_extract_field(reply, "cluster_state:", "\r\n")
-	log.Infof("check cluster state, state[%s]", state)
+func cluster_check_state_continuous(m *util.RedisServer) bool {
+	return cluster_check_state_with_timeout(m, 20, 100)
+}
 
-	return state == "ok"
+func cluster_check_state_once(m *util.RedisServer) bool {
+	return cluster_check_state_with_timeout(m, 0, 0)
 }
 
 func cluster_check_is_master(m *util.RedisServer) bool {
@@ -261,7 +279,7 @@ func startCluster(
 		port := util.FindAvailablePort(clusterPortStart)
 		log.Infof("start server i:%d port:%d", i, port)
 		//port := clusterPortStart + i
-		server.Init(clusterIp, port, pwd, "m"+strconv.Itoa(i)+"_")
+		server.Init(clusterIp, port, pwd, "m"+strconv.Itoa(i)+"_", util.Cluster)
 		if binpath != "" {
 			server.WithBinPath(binpath)
 		}

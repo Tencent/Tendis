@@ -7,13 +7,14 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/mediocregopher/radix.v2/redis"
-	"github.com/ngaut/log"
+	"integrate_test/util"
 	"math/rand"
 	"sync"
 	"sync/atomic"
-	"tendisplus/integrate_test/util"
 	"time"
+
+	"github.com/mediocregopher/radix.v2/redis"
+	"github.com/ngaut/log"
 )
 
 var (
@@ -29,29 +30,12 @@ var (
 	loadsecs    = flag.Int("loadsecs", 20, "seconds for loading data")
 )
 
-type TendisType int
-
-const (
-	KV TendisType = iota
-	SET
-	ZSET
-	LIST
-	HASH
-	SCRIPT
-)
-
 type Record struct {
-	Pk   string
-	Sk   string
-	Type TendisType
+	Pk string
+	Sk string
 }
 
-func getRandomType() TendisType {
-	typelist := []TendisType{KV, SET, ZSET, SCRIPT}
-	return typelist[rand.Int()%len(typelist)]
-}
-
-func testReplMatch2(kvstore_count int, m *util.RedisServer, s *util.RedisServer) {
+func loadScriptwithMultiTread(m *util.RedisServer) []*Record {
 	var wg sync.WaitGroup
 	running := int32(1)
 	buf := make(chan *Record)
@@ -62,50 +46,15 @@ func testReplMatch2(kvstore_count int, m *util.RedisServer, s *util.RedisServer)
 			defer wg.Done()
 			cli := createClient(m)
 			for atomic.LoadInt32(&running) == 1 {
-				tp := getRandomType()
-				if tp == KV {
-					suffix := rand.Int() % (*kvcount)
-					pk := fmt.Sprintf("kv%d", suffix)
-					r, err := cli.Cmd("set", pk, fmt.Sprintf("%d", suffix)).Str()
-					if err != nil {
-						log.Fatalf("do set failed:%v", err)
-					} else if r != "OK" {
-						log.Fatalf("do set error:%s", r)
-					}
-					buf <- &Record{Pk: pk, Sk: "", Type: tp}
-				} else if tp == SET {
-					suffix := rand.Int() % (*setcount)
-					pk := fmt.Sprintf("set%d", suffix)
-					sk := fmt.Sprintf("sk%d", rand.Int()%10000)
-					_, err := cli.Cmd("sadd", pk, sk).Int()
-					if err != nil {
-						log.Fatalf("do sadd failed:%v", err)
-					}
-					buf <- &Record{Pk: pk, Sk: sk, Type: tp}
-				} else if tp == ZSET {
-					suffix := rand.Int() % (*zsetcount)
-					pk := fmt.Sprintf("zset%d", suffix)
-					sk := fmt.Sprintf("sk%d", rand.Int()%20000000)
-					_, err := cli.Cmd("zrem", pk, sk).Int()
-					if err != nil {
-						log.Fatalf("do zrem %s %s failed:%v", pk, sk, err)
-					}
-					_, err = cli.Cmd("zadd", pk, rand.Int()%10000000, sk).Int()
-					if err != nil {
-						log.Fatalf("do zadd %s %s failed:%v,%d", pk, sk, err)
-					}
-					buf <- &Record{Pk: pk, Sk: sk, Type: tp}
-				} else if tp == SCRIPT {
-					suffix := rand.Int() % (*scriptcount)
-					pk := fmt.Sprintf("return KEYS[%d]", suffix)
-					sk, err := cli.Cmd("script", "load", pk).Str()
-					if err != nil {
-						log.Fatalf("load script error:%v", err)
-					} else if len(sk) != 40 {
-						log.Fatalf("script sha code has wrong size")
-					}
-					buf <- &Record{Pk: pk, Sk: sk, Type: tp}
+				suffix := rand.Int() % (*scriptcount)
+				pk := fmt.Sprintf("return KEYS[%d]", suffix)
+				sk, err := cli.Cmd("script", "load", pk).Str()
+				if err != nil {
+					log.Fatalf("load script error:%v", err)
+				} else if len(sk) != 40 {
+					log.Fatalf("script sha code has wrong size")
 				}
+				buf <- &Record{Pk: pk, Sk: sk}
 			}
 		}(i)
 	}
@@ -128,6 +77,41 @@ func testReplMatch2(kvstore_count int, m *util.RedisServer, s *util.RedisServer)
 	log.Infof("queue closed")
 	wg1.Wait()
 	log.Infof("consumer closed")
+	return keys
+}
+
+func checkScripts(m *util.RedisServer, s *util.RedisServer, scripts []*Record) {
+	cli1 := createClient(m)
+	cli2 := createClient(s)
+	for _, o := range scripts {
+		r, err := cli2.Cmd("script", "exists", o.Sk).Array()
+		if err != nil {
+			log.Fatalf("do script exists on slave failed:%v", err)
+		}
+		r0, err := r[0].Int()
+		if err != nil {
+			log.Fatalf("do script exists on slave failed:%v", err)
+		}
+		r1, err := cli1.Cmd("script", "exists", o.Sk).Array()
+		if err != nil {
+			log.Fatalf("do script exists on master failed:%v", err)
+		}
+		r10, err := r1[0].Int()
+		if err != nil {
+			log.Fatalf("do script exists on master failed:%v", err)
+		}
+		if r0 != r10 {
+			log.Fatalf("script:%s,%s not match", o.Pk, o.Sk)
+		}
+	}
+}
+
+func testReplMatch2(kvstore_count int, m *util.RedisServer, s *util.RedisServer) {
+
+	channel := make(chan int)
+	util.AddDataWithTime(m, *auth, *loadsecs, 0, "", 0, channel)
+
+	scripts := loadScriptwithMultiTread(m)
 
 	cli1 := createClient(m)
 	cli2 := createClient(s)
@@ -151,66 +135,11 @@ func testReplMatch2(kvstore_count int, m *util.RedisServer, s *util.RedisServer)
 			}
 		}
 	}
-	for _, o := range keys {
-		//log.Infof("%s", o.Pk)
-		if o.Type == KV {
-			r, err := cli2.Cmd("get", o.Pk).Str()
-			if err != nil {
-				log.Fatalf("do get on slave failed:%v, get %s", err, o.Pk)
-			}
-			r1, err := cli1.Cmd("get", o.Pk).Str()
-			if err != nil {
-				log.Fatalf("do get on master failed:%v, get %s", err, o.Pk)
-			}
-			if r != r1 {
-				log.Fatalf("kv:%s not match", o.Pk)
-			}
-		} else if o.Type == SET {
-			r, err := cli2.Cmd("sismember", o.Pk, o.Sk).Int()
-			if err != nil {
-				log.Fatalf("do sismember on slave failed:%s,%s,%v", o.Pk, o.Sk, err)
-			}
-			r1, err := cli1.Cmd("sismember", o.Pk, o.Sk).Int()
-			if err != nil {
-				log.Fatalf("do sismember on master failed:%v", err)
-			}
-			if r != r1 {
-				log.Fatalf("sismember:%s,%s not match", o, o.Pk, o.Sk)
-			}
-		} else if o.Type == ZSET {
-			r, err := cli2.Cmd("zscore", o.Pk, o.Sk).Str()
-			if err != nil {
-				log.Fatalf("do zscore on slave failed:%v, zscore %s %s", err, o.Pk, o.Sk)
-			}
-			r1, err := cli1.Cmd("zscore", o.Pk, o.Sk).Str()
-			if err != nil {
-				log.Fatalf("do zscore on master failed:%v, zscore %s %s", err, o.Pk, o.Sk)
-			}
-			if r != r1 {
-				log.Fatalf("zscore:%s,%s not match", o.Pk, o.Sk)
-			}
-		} else if o.Type == SCRIPT {
-			r, err := cli2.Cmd("script", "exists", o.Sk).Array()
-			if err != nil {
-				log.Fatalf("do script exists on slave failed:%v", err)
-			}
-			r0, err := r[0].Int()
-			if err != nil {
-				log.Fatalf("do script exists on slave failed:%v", err)
-			}
-			r1, err := cli1.Cmd("script", "exists", o.Sk).Array()
-			if err != nil {
-				log.Fatalf("do script exists on master failed:%v", err)
-			}
-			r10, err := r1[0].Int()
-			if err != nil {
-				log.Fatalf("do script exists on master failed:%v", err)
-			}
-			if r0 != r10 {
-				log.Fatalf("script:%s,%s not match", o.Pk, o.Sk)
-			}
-		}
-	}
+
+	log.Infof("add data num %v", <-channel)
+	util.CompareDataWithAuth(m.Addr(), *auth, s.Addr(), *auth, kvstore_count)
+	checkScripts(m, s, scripts)
+
 	log.Infof("compare complete")
 }
 
@@ -224,14 +153,8 @@ func testReplMatch1(kvstore_count int, m *util.RedisServer, s *util.RedisServer)
 		log.Fatalf("do slaveof error:%s", r)
 	}
 
-	for i := 0; i < 10000; i += 1 {
-		r, err := cli1.Cmd("set", fmt.Sprintf("%d", i), fmt.Sprintf("%d", i)).Str()
-		if err != nil {
-			log.Fatalf("do set on master failed:%v", err)
-		} else if r != "OK" {
-			log.Fatalf("do set on master error:%s", r)
-		}
-	}
+	cliWithGoredis := util.CreateClientWithGoRedis(m, *auth)
+	util.AddTypeDataWithNum(cliWithGoredis, "set", 0, 10000, 0, 0, 0, "")
 	time.Sleep(10 * time.Second)
 	for i := 0; i < kvstore_count; i++ {
 		mPos, err := cli1.Cmd("binlogpos", i).Int64()
@@ -253,13 +176,9 @@ func testReplMatch1(kvstore_count int, m *util.RedisServer, s *util.RedisServer)
 		}
 	}
 
-	for i := 0; i < 10000; i += 1 {
-		r, err := cli2.Cmd("get", fmt.Sprintf("%d", i)).Str()
-		if err != nil {
-			log.Fatalf("do get on slave failed:%v", err)
-		} else if r != fmt.Sprintf("%d", i) {
-			log.Fatalf("do get on slave bad return:%s", r)
-		}
+	wrongKeyNumber := util.CheckTypeData(cliWithGoredis, "set", 0, 10000, 0, "")
+	if wrongKeyNumber > 0 {
+		log.Fatalf("do get on slave bad return. wrong key number: %v", wrongKeyNumber)
 	}
 }
 
@@ -275,13 +194,13 @@ func testRepl(m_port int, s_port int, kvstore_count int) {
 
 	m_port = util.FindAvailablePort(m_port)
 	log.Infof("FindAvailablePort:%d", m_port)
-	m.Init("127.0.0.1", m_port, pwd, "m_")
+	m.Init("127.0.0.1", m_port, pwd, "m_", util.Standalone)
 	if err := m.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup master failed:%v", err)
 	}
 	s_port = util.FindAvailablePort(s_port)
 	log.Infof("FindAvailablePort:%d", s_port)
-	s.Init("127.0.0.1", s_port, pwd, "s_")
+	s.Init("127.0.0.1", s_port, pwd, "s_", util.Standalone)
 	if err := s.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup slave failed:%v", err)
 	}
@@ -310,7 +229,7 @@ func testBindMultiIP(m_port int, kvstore_count int) {
 
 	m_port = util.FindAvailablePort(m_port)
 	log.Infof("FindAvailablePort:%d", m_port)
-	m.Init("127.0.0.1", m_port, pwd, "m_")
+	m.Init("127.0.0.1", m_port, pwd, "m_", util.Standalone)
 	if err := m.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup master failed:%v", err)
 	}

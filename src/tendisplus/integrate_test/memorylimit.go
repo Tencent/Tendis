@@ -6,8 +6,8 @@ package main
 
 import (
 	"flag"
+	"integrate_test/util"
 	"strconv"
-	"tendisplus/integrate_test/util"
 	"time"
 
 	"github.com/ngaut/log"
@@ -20,7 +20,7 @@ type paramWrapper struct {
 }
 
 func testMemoryLimit() {
-	*benchtype = "set"
+	*util.Optype = "set"
 	ip := "127.0.0.1"
 	*kvstorecount = 2
 	portStart := 42050
@@ -39,7 +39,7 @@ func testMemoryLimit() {
 	cfgArgs["client-output-buffer-limit-normal-soft-second"] = "5"
 
 	portStart = util.FindAvailablePort(portStart)
-	m1.Init(ip, portStart, pwd, "m1_")
+	m1.Init(ip, portStart, pwd, "m1_", util.Standalone)
 	if err := m1.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}

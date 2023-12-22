@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"integrate_test/util"
 	"math/rand"
 	"os"
 	"os/exec"
 	"strings"
-	"tendisplus/integrate_test/util"
 	"time"
 
 	"github.com/mediocregopher/radix.v2/redis"
@@ -92,7 +92,7 @@ func main() {
 	masterPort := util.FindAvailablePort(*mport)
 	log.Infof("FindAvailablePort:%d", masterPort)
 
-	m.Init("127.0.0.1", masterPort, pwd, "m_")
+	m.Init("127.0.0.1", masterPort, pwd, "m_", util.Standalone)
 
 	if err := m.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup master failed:%v", err)
@@ -105,7 +105,7 @@ func main() {
 	slavePort := util.FindAvailablePort(*sport)
 	log.Infof("FindAvailablePort:%d", slavePort)
 
-	s.Init("127.0.0.1", slavePort, pwd, "s_")
+	s.Init("127.0.0.1", slavePort, pwd, "s_", util.Standalone)
 
 	if err := s.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup slave failed:%v", err)
@@ -118,7 +118,7 @@ func main() {
 	log.Infof("FindAvailablePort:%d", targetPort)
 
 	var stdoutRedis, stderrRedis bytes.Buffer
-	cmdRedis := exec.Command("redis-server", fmt.Sprintf("--port %d", targetPort))
+	cmdRedis := exec.Command("../../../bin/redis-server", fmt.Sprintf("--port %d", targetPort))
 	cmdRedis.Stdout = &stdoutRedis
 	cmdRedis.Stderr = &stderrRedis
 	err := cmdRedis.Start()
@@ -142,7 +142,8 @@ func main() {
 
 	time.Sleep(15 * time.Second)
 
-	util.WriteData(m)
+	util.AddSomeData(m, "", 0)
+	SpecifHashData(m, "", "first")
 	log.Infof("Wrtite data Ok!, master-port:%d", masterPort)
 
 	for i := 0; i < 10; i++ {
@@ -151,7 +152,8 @@ func main() {
 		runRedisSync(syncPort, masterPort, targetPort, i)
 	}
 
-	util.WriteData(m)
+	util.AddSomeData(m, "", 20000)
+	SpecifHashData(m, "", "second")
 	// wait slave catch up master
 	time.Sleep(time.Second * 10)
 	// m and s no expire now

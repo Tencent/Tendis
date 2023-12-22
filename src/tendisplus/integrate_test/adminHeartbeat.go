@@ -6,15 +6,17 @@ package main
 
 import (
 	"flag"
-	"github.com/ngaut/log"
 	"math"
 	"strconv"
-	"tendisplus/integrate_test/util"
 	"time"
+
+	"integrate_test/util"
+
+	"github.com/ngaut/log"
 )
 
 func testAutoGenerateHeartbeatTimestamp() {
-	*benchtype = "set"
+	*util.Optype = "set"
 	ip := "127.0.0.1"
 	*kvstorecount = 2
 	portStart := 42000
@@ -40,19 +42,19 @@ func testAutoGenerateHeartbeatTimestamp() {
 	cfgArgs["cluster-enabled"] = "true"
 
 	portStart = util.FindAvailablePort(portStart)
-	m1.Init(ip, portStart, pwd, "m1_")
+	m1.Init(ip, portStart, pwd, "m1_", util.Cluster)
 	if err := m1.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
 
 	portStart = util.FindAvailablePort(portStart)
-	m2.Init(ip, portStart, pwd, "m2_")
+	m2.Init(ip, portStart, pwd, "m2_", util.Cluster)
 	if err := m2.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
 
 	portStart = util.FindAvailablePort(portStart)
-	m3.Init(ip, portStart, pwd, "m3_")
+	m3.Init(ip, portStart, pwd, "m3_", util.Cluster)
 	if err := m3.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
@@ -145,7 +147,7 @@ func testAutoGenerateHeartbeatTimestamp() {
 		time.Sleep(1 * time.Second)
 	}
 
-	log.Infof("adminHeartbeat.go passed. command : %s", *benchtype)
+	log.Infof("adminHeartbeat.go passed. command : %s", *util.Optype)
 
 	shutdownServer(&m3, *shutdown, *clear)
 	shutdownServer(&m2, *shutdown, *clear)

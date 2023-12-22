@@ -6,12 +6,13 @@ package main
 
 import (
 	"flag"
-	"github.com/ngaut/log"
+	"integrate_test/util"
 	"math"
 	"strconv"
 	"strings"
-	"tendisplus/integrate_test/util"
 	"time"
+
+	"github.com/ngaut/log"
 )
 
 func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstorecount int, backup_mode string) {
@@ -29,13 +30,13 @@ func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstoreco
 
 	m1_port = util.FindAvailablePort(m1_port)
 	log.Infof("FindAvailablePort:%d", m1_port)
-	m1.Init(m1_ip, m1_port, pwd, "m1_")
+	m1.Init(m1_ip, m1_port, pwd, "m1_", util.Standalone)
 	if err := m1.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup master1 failed:%v", err)
 	}
 	m2_port = util.FindAvailablePort(m2_port)
 	log.Infof("FindAvailablePort:%d", m2_port)
-	m2.Init(m2_ip, m2_port, pwd, "s1_")
+	m2.Init(m2_ip, m2_port, pwd, "s1_", util.Standalone)
 	if err := m2.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup master2 failed:%v", err)
 	}
@@ -55,18 +56,18 @@ func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstoreco
 	}
 
 	ch := make(chan int)
-	util.AddData(&m1, *num1, 0, "aa", ch)
+	util.AddData(&m1, *auth, *num1, 0, 0, "aa", ch)
 	<-ch
 	backup(&m1, backup_mode, "/tmp/back_test")
 	restoreBackup(&m2, "/tmp/back_test")
 
-	util.AddData(&m1, *num2, 0, "bb", ch)
+	util.AddData(&m1, *auth, *num2, 0, 0, "bb", ch)
 	<-ch
-	addOnekeyEveryStore(&m1, kvstorecount)
+	util.AddOnekeyEveryStore(&m1, *auth, kvstorecount)
 	waitDumpBinlog(&m1, kvstorecount)
 	flushBinlog(&m1)
 	restoreBinlog(&m1, &m2, kvstorecount, math.MaxUint64)
-	addOnekeyEveryStore(&m2, kvstorecount)
+	util.AddOnekeyEveryStore(&m2, *auth, kvstorecount)
 	compare(&m1, &m2)
 
 	shutdownServer(&m1, *shutdown, *clear)

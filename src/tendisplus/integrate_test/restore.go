@@ -6,11 +6,12 @@ package main
 
 import (
 	"flag"
-	"github.com/ngaut/log"
+	"integrate_test/util"
 	"math"
 	"strconv"
-	"tendisplus/integrate_test/util"
 	"time"
+
+	"github.com/ngaut/log"
 )
 
 func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
@@ -33,7 +34,7 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
 
 	m1_port = util.FindAvailablePort(m1_port)
 	log.Infof("FindAvailablePort:%d", m1_port)
-	m1.Init(m1_ip, m1_port, pwd, "m1_")
+	m1.Init(m1_ip, m1_port, pwd, "m1_", util.Standalone)
 	if err := m1.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup master1 failed:%v", err)
 	}
@@ -42,7 +43,7 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
 	cfgArgs["minbinlogkeepsec"] = "60"
 	s1_port = util.FindAvailablePort(s1_port)
 	log.Infof("FindAvailablePort:%d", s1_port)
-	s1.Init(s1_ip, s1_port, pwd, "s1_")
+	s1.Init(s1_ip, s1_port, pwd, "s1_", util.Standalone)
 	if err := s1.Setup(false, &cfgArgs); err != nil {
 		cfgArgs["maxbinlogkeepnum"] = "1"
 		cfgArgs["minbinlogkeepsec"] = "0"
@@ -53,7 +54,7 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
 	cfgArgs["minbinlogkeepsec"] = "0"
 	s2_port = util.FindAvailablePort(s2_port)
 	log.Infof("FindAvailablePort:%d", s2_port)
-	s2.Init(s2_ip, s2_port, pwd, "s2_")
+	s2.Init(s2_ip, s2_port, pwd, "s2_", util.Standalone)
 	if err := s2.Setup(false, &cfgArgs); err != nil {
 		cfgArgs["maxbinlogkeepnum"] = "1"
 		cfgArgs["minbinlogkeepsec"] = "0"
@@ -64,7 +65,7 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
 	cfgArgs["minbinlogkeepsec"] = "3600"
 	m2_port = util.FindAvailablePort(m2_port)
 	log.Infof("FindAvailablePort:%d", m2_port)
-	m2.Init(m2_ip, m2_port, pwd, "m2_")
+	m2.Init(m2_ip, m2_port, pwd, "m2_", util.Standalone)
 	if err := m2.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup master2 failed:%v", err)
 	}
@@ -81,7 +82,7 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
 	waitFullsync(&s2, kvstorecount)
 
 	ch := make(chan int)
-	util.AddData(&m1, *num1, 0, "aa", ch)
+	util.AddData(&m1, *auth, *num1, 0, 0, "aa", ch)
 	<-ch
 	sha, err := clim1.Cmd("script", "load", "return KEYS[1]").Str()
 	if err != nil {
@@ -140,14 +141,14 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
 		log.Fatalf("script exists on slave2 err:%v, script not exists", err)
 	}
 
-	addData(&m1, *num2, "bb")
+	util.AddDataWithBenchmark(&m1, *auth, *num2, "bb", "set")
 	sha1, err := clim1.Cmd("script", "load", "return KEYS[2]").Str()
 	if err != nil {
 		log.Fatalf("script load on master1 err:%v", err)
 	} else if len(sha1) != 40 {
 		log.Fatalf("wrong sha code length:%v on master1", len(sha1))
 	}
-	addOnekeyEveryStore(&m1, kvstorecount)
+	util.AddOnekeyEveryStore(&m1, *auth, kvstorecount)
 
 	waitCatchup(&m1, &s1, kvstorecount)
 	waitCatchup(&s1, &s2, kvstorecount)
@@ -155,7 +156,7 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
 	waitDumpBinlog(&s2, kvstorecount)
 	flushBinlog(&s2)
 	restoreBinlog(&s2, &m2, kvstorecount, math.MaxUint64)
-	addOnekeyEveryStore(&m2, kvstorecount)
+	util.AddOnekeyEveryStore(&m2, *auth, kvstorecount)
 	sha2, err := clim2.Cmd("script", "load", "return KEYS[2]").Str()
 	if err != nil {
 		log.Fatalf("script load on master2 err:%v", err)
