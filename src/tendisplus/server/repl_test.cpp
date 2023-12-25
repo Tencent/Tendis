@@ -1501,6 +1501,24 @@ TEST(Repl, autoRemoveDumpFile) {
 
   slave->stop();
 
+  sleepFun(60);
+  EXPECT_GE(getFileNum(masterDumpPath), 10);
+
+  cfg->dumpFileKeepNum = 10;
+  sleepFun(5);
+  EXPECT_GE(getFileNum(masterDumpPath), 10);
+  EXPECT_LE(getFileNum(masterDumpPath), 11);
+
+  cfg->dumpFileKeepNum = 20;
+  sleepFun(30);
+  EXPECT_GE(getFileNum(masterDumpPath), 20);
+  EXPECT_LE(getFileNum(masterDumpPath), 21);
+
+  cfg->dumpFileKeepNum = 5;
+  sleepFun(5);
+  EXPECT_GE(getFileNum(masterDumpPath), 5);
+  EXPECT_LE(getFileNum(masterDumpPath), 6);
+
   isRunning = false;
   dateThread.join();
 

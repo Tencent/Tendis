@@ -1671,12 +1671,11 @@ Expected<bool> RocksKVStore::deleteBinlog(uint64_t start) {
 
 // [start, end]
 Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
+  std::ofstream* fs,
   uint64_t start,
   uint64_t end,
   uint64_t dump,
-  std::ofstream* fs,
-  int64_t maxWritelen,
-  bool tailSlave) {
+  uint64_t maxWriteLen) {
   // DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
   //    << " getHighestBinlogId:" << getHighestBinlogId()
   //    << " start:"<<start <<" end:"<< end;
@@ -1698,11 +1697,9 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     dump = start;
   }
 
-  TruncateBinlogResult result;
+  TruncateBinlogResult result{};
   uint64_t cur_ts = msSinceEpoch();
   uint64_t minKeepLogMs = static_cast<uint64_t>(_cfg->minBinlogKeepSec) * 1000;
-  bool shouldCheckBinlogTime = minKeepLogMs != 0;
-  Status s{ErrorCodes::ERR_OK, ""};
   uint64_t newStart = start;
   uint64_t newEnd = end;
   uint64_t newDump = dump;
@@ -1715,13 +1712,11 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     while (true) {
       auto explog = cursor->next();
       if (!explog.ok() || explog.value().getBinlogId() > end ||
-          (!tailSlave && shouldCheckBinlogTime &&
-           explog.value().getTimestamp() >= cur_ts - minKeepLogMs) ||
-          int64_t(written) >= maxWritelen) {
+          written >= maxWriteLen) {
         break;
       }
       // dump binlog
-      int len = dumpBinlogV2(fs, explog.value());
+      int64_t len = dumpBinlogV2(fs, explog.value());
       if (len < 0) {
         LOG(ERROR) << "dumpBinlogV2 failed, break.";
         // NOTE(takenliu): maybe write part of explog, so the binlog file's last
@@ -1731,7 +1726,9 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
       }
       written += len;
       newDump = explog.value().getBinlogId() + 1;
-      ts = explog.value().getTimestamp();
+    }
+    if (_cfg->dumpFileFlush) {
+      fs->flush();
     }
 
     result.err = err;
@@ -1752,7 +1749,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     }
     // NOTE(takenliu) binlogid maybe has lag, so we need check again.
     if (explog.value().getBinlogId() > newEnd ||
-        (shouldCheckBinlogTime &&
+        (minKeepLogMs &&
          explog.value().getTimestamp() >= cur_ts - minKeepLogMs)) {
       break;
     }
@@ -1769,8 +1766,14 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     return result;
   }
 
+  auto explog = txn->createRepllogCursorV2(newStart)->next();
+  if (!explog.ok()) {
+    LOG(WARNING) << "Couldn't load minbinlogid.";
+  } else {
+    ts = explog.value().getTimestamp();
+  }
   INVARIANT_D(ts != 0);
-  s = saveMinBinlogId(newStart, ts);
+  Status s = saveMinBinlogId(newStart, ts);
   RET_IF_ERR(s);
   s = deleteRangeBinlog(0, newStart);
   if (!s.ok()) {

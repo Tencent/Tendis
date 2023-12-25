@@ -324,12 +324,11 @@ class RocksKVStore : public KVStore {
   Status assignBinlogIdIfNeeded(Transaction* txn) final;
   void setNextBinlogSeq(uint64_t binlogId, Transaction* txn) final;
   uint64_t getNextBinlogSeq() const final;
-  Expected<TruncateBinlogResult> truncateBinlogV2(uint64_t start,
+  Expected<TruncateBinlogResult> truncateBinlogV2(std::ofstream* fs,
+                                                  uint64_t start,
                                                   uint64_t end,
                                                   uint64_t dump,
-                                                  std::ofstream* fs,
-                                                  int64_t maxWritelen,
-                                                  bool tailSlave) final;
+                                                  uint64_t maxWriteLen) final;
   int64_t dumpBinlogV2(std::ofstream* fs, const ReplLogRawV2& log);
   Expected<uint64_t> getBinlogCnt(Transaction* txn) const final;
   Expected<bool> validateAllBinlog(Transaction* txn) const final;

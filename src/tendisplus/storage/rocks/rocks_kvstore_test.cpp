@@ -1106,7 +1106,7 @@ TEST(RocksKVStore, PesTruncateBinlog) {
     uint64_t written = 0;
     // TODO(takenliu): save binlog
     auto s = kvstore->truncateBinlogV2(
-      firstBinlog, firstBinlog, firstBinlog, nullptr, 0, false);
+      nullptr, firstBinlog, firstBinlog, firstBinlog, 0);
     EXPECT_TRUE(s.ok());
     ts = s.value().timestamp;
     written = s.value().written;
@@ -1188,7 +1188,7 @@ TEST(RocksKVStore, PesTruncateBinlog) {
       lastFirstBinlog = firstBinlog;
       // TODO(takenliu): save binlog
       auto s = kvstore->truncateBinlogV2(
-        firstBinlog, endBinlog - keepBinlog, firstBinlog, nullptr, 0, false);
+        nullptr, firstBinlog, endBinlog - keepBinlog, firstBinlog, 0);
       EXPECT_TRUE(s.ok());
       if (s.value().newStart == firstBinlog) {
         break;
