@@ -164,16 +164,13 @@ class UnlinkCommand : public Command {
           LOG(ERROR) << "UnlinkCommand commitAll failed:" << s.toString();
         }
       };
-    if (elesNum > 1024) {
-      std::thread unlink(delKeyInTranscation,
-                         sess,
-                         std::move(validKeys),
-                         std::move(locklist.value()));
-      unlink.detach();
-    } else {
-      delKeyInTranscation(
-        sess, std::move(validKeys), std::move(locklist.value()));
-    }
+    // NOTE(takenliu):
+    //   we can't delete key in new thread, because SessionCtx::_txnMap
+    //     can only used by one thread.
+    //   we needn't delete key in new thread, because we use deleteRange()
+    //     if fields is more than 2048.
+    delKeyInTranscation(
+      sess, std::move(validKeys), std::move(locklist.value()));
     return Command::fmtLongLong(size);
   }
 } unlinkCmd;
