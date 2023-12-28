@@ -29,7 +29,7 @@ echo "#define TENDISPLUS_GIT_DIRTY \"$GIT_DIRTY\"" >> ${h_file}
 echo "#define TENDISPLUS_BUILD_ID \"$BUILD_ID\"" >> ${h_file}
 
 echo "" >> ${h_file}
-echo "#include <stdint.h>" >> ${h_file}
+echo "#include <cstdint>" >> ${h_file}
 echo "uint64_t redisBuildId(void);" >> ${h_file}
 
 echo "" >> ${h_file}

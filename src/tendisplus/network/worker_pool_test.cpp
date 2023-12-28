@@ -62,11 +62,11 @@ TEST(Workerpool, schedule) {
 
   std::thread t([&pool]() { pool.startup(3); });
 
-  int val = 5;
-  pool.schedule([&val]() { val = 10; });
+  std::atomic<int> val{5};
+  pool.schedule([&val]() { val.store(10); });
 
   usleep(10000);
-  ASSERT_EQ(val, 10);
+  ASSERT_EQ(val.load(), 10);
 
   pool.stop();
   t.join();
