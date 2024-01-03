@@ -34,9 +34,9 @@ startTask() {
         elif [[ "${task}" == "sadd" ]]; then
             ${cmdPrefix} --command='sadd __key__ __data__' --key-prefix='set_' &
         elif [[ "${task}" == "zadd" ]]; then
-            ${cmdPrefix} --command='zadd __key__ __key__ __data__' --key-prefix='' &
+            ${cmdPrefix} --command='zadd __key__ __float__ __data__' --key-prefix='zset_' &
         elif [[ "${task}" == "hset" ]]; then
-            ${cmdPrefix} --command='hset __key__ __data__ __data__' --key-prefix='hash_' &
+            ${cmdPrefix} --command='hset __key__ __field__ __data__' --key-prefix='hash_' &
         fi
         benchmarkPidList+=($!)
     done
@@ -137,12 +137,7 @@ runTest() {
                     fi
                 fi
             done
-            let duration=${endTimestamp}-${startTimestamp}
-            qps=$(curl -g "http://${prometheusURL}/api/v1/query?query=sum(increase(redis_command_call_duration_seconds_count{gcs_app=\"${appname}\",gcs_cluster=\"${tendisVersionShortFormat}\",gcs_dbrole=\"master\",cmd=\"${cmd}\"}[${duration}s]))by(cmd)&time=${endTimestamp}" 2>/dev/null | tr "\"" " " | awk '{print $(NF-1)}')
-            qps=$(echo $qps / $duration | bc -l)
-            if [[ $qps == '0' || $qps == '0.0' ]]; then
-                qps=0.1 # avoid divided by zero
-            fi
+            getQPS ${startTimestamp} ${endTimestamp} ${tendisVersionShortFormat} ${cmd}
             decreaseLimit=''
             if [[ "$cmd" == "set" ]]; then
                 decreaseLimit=${decreaseLimitSet}
@@ -161,10 +156,10 @@ runTest() {
                 outputReport "测试命令(${predixyNum}个): ${benchmarkBinary} -c ${clientNum} -t ${threadNum} --test-time=${testTime} --pipeline=${pipelineNum} --distinct-client-seed --randomize --data-size=${valueSize} --random-data --key-minimum=1 --key-maximum=${keyMax} --command='sadd __key__ __data__' --key-prefix='set_'"
             elif [[ "$cmd" == "zadd" ]]; then
                 decreaseLimit=${decreaseLimitZadd}
-                outputReport "测试命令(${predixyNum}个): ${benchmarkBinary} -c ${clientNum} -t ${threadNum} --test-time=${testTime} --pipeline=${pipelineNum} --distinct-client-seed --randomize --data-size=${valueSize} --random-data --key-minimum=1 --key-maximum=${keyMax} --command='zadd __key__ __key__ __data__' --key-prefix=''"
+                outputReport "测试命令(${predixyNum}个): ${benchmarkBinary} -c ${clientNum} -t ${threadNum} --test-time=${testTime} --pipeline=${pipelineNum} --distinct-client-seed --randomize --data-size=${valueSize} --random-data --key-minimum=1 --key-maximum=${keyMax} --command='zadd __key__ __float__ __data__' --key-prefix='zset_'"
             elif [[ "$cmd" == "hset" ]]; then
                 decreaseLimit=${decreaseLimitHset}
-                outputReport "测试命令(${predixyNum}个): ${benchmarkBinary} -c ${clientNum} -t ${threadNum} --test-time=${testTime} --pipeline=${pipelineNum} --distinct-client-seed --randomize --data-size=${valueSize} --random-data --key-minimum=1 --key-maximum=${keyMax} --command='hset __key__ __data__ __data__' --key-prefix='hash_'"
+                outputReport "测试命令(${predixyNum}个): ${benchmarkBinary} -c ${clientNum} -t ${threadNum} --test-time=${testTime} --pipeline=${pipelineNum} --distinct-client-seed --randomize --data-size=${valueSize} --random-data --key-minimum=1 --key-maximum=${keyMax} --command='hset __key__ __field__ __data__' --key-prefix='hash_'"
             fi
             outputReport "${cmd}测试曲线：<a href=\"${grafanaURL}${tendisVersionShortFormat}&from=${startTimestamp}000&to=${endTimestamp}000\">${grafanaURL}${tendisVersionShortFormat}&from=${startTimestamp}000&to=${endTimestamp}000</a>"
             if [[ ${qps} == "0.1" ||
@@ -180,7 +175,7 @@ runTest() {
                 compareToHistory=0
                 shouldSave=0
             fi
-            python writeTag.py ${cmd} ${tendisVersionShortFormat} $(date +%Y%m%d) ${qps} ${P50} ${P99} ${P100} ${AVG} ${mailfile} ${decreaseLimit} ${decreaseLimitP50} ${decreaseLimitP99} ${decreaseLimitP100} ${decreaseLimitPavg} ${shouldSave} ${compareToHistory} ${baselineVersion}
+            python3 writeTag.py ${cmd} ${tendisVersionShortFormat} $(date +%Y%m%d) ${qps} ${P50} ${P99} ${P100} ${AVG} ${mailfile} ${decreaseLimit} ${decreaseLimitP50} ${decreaseLimitP99} ${decreaseLimitP100} ${decreaseLimitPavg} ${shouldSave} ${compareToHistory} ${baselineVersion}
             sleep $interTime
         done
     done
@@ -218,7 +213,7 @@ runTest() {
     elif [[ $testType == ${LOWLOADTEST} ]]; then
         emailTitleSubfix="-低负载延迟"
     fi
-    /data/Anaconda2/bin/python sendmail.py ${tendisVersionLongFormat}${emailTitleSubfix} ${mailfile} ${passid} ${token} ${mailURL} ${mailSender} ${sendmailgroup}
+    python3 sendmail.py ${tendisVersionLongFormat}${emailTitleSubfix} ${mailfile} ${passid} ${token} ${mailURL} ${mailSender} ${sendmailgroup}
     mkdir -p mail
     mv ${mailfile} mail/
 }
@@ -267,15 +262,8 @@ main() {
     source ./conf.sh
     baselineVersion=$1
     shift
-    sendGroup="sendmailgroup"$1
-    eval "sendmailgroup=\$$sendGroup"
-    logInfo "send mail group:"$sendmailgroup
-    shift
 
-    # kill long time benchmark started last time.
-    ps aux | grep ./memtier_benchmark | grep -v grep | grep ${user} | grep test-time=8640000 | awk '{print $2}' | xargs kill -9
-    sleep 10
-
+    predixyNum=3
     # get direct ip of all 3 predixy
     ipArray=()
     while [[ "1" == "1" ]]
@@ -283,7 +271,7 @@ main() {
         tIP=$(getent hosts ${targetHost} | awk '{print $1}')
         ipArray+=(${tIP})
         ipArray=($(awk -v RS=' ' '!a[$1]++' <<< ${ipArray[@]}))
-        if [[ "${#ipArray[@]}" == "3" ]]; then
+        if [[ "${#ipArray[@]}" == "${predixyNum}" ]]; then
             break
         fi
         sleep 1
@@ -291,7 +279,6 @@ main() {
 
     # define default settings
     benchmarkBinary=./memtier_benchmark
-    predixyNum=3
     interTime=300
 
     decreaseLimitSet=10
