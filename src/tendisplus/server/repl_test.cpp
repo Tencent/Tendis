@@ -1452,7 +1452,7 @@ TEST(Repl, autoRemoveDumpFile) {
     work.slaveof("127.0.0.1", master_port);
   }
 
-  bool isRunning = true;
+  std::atomic<bool> isRunning{true};
 
   std::thread dateThread([&]() {
     auto ctx = std::make_shared<asio::io_context>();
@@ -1469,7 +1469,7 @@ TEST(Repl, autoRemoveDumpFile) {
     session->setArgs({"set", "aaaaaaaa", "bbbbbbbb"});
 #endif  // !WITH_TSAN
 
-    while (isRunning) {
+    while (isRunning.load()) {
       auto ret = Command::runSessionCmd(session.get());
       EXPECT_TRUE(ret.ok());
     }
@@ -1519,7 +1519,7 @@ TEST(Repl, autoRemoveDumpFile) {
   EXPECT_GE(getFileNum(masterDumpPath), 5);
   EXPECT_LE(getFileNum(masterDumpPath), 6);
 
-  isRunning = false;
+  isRunning.store(false);
   dateThread.join();
 
   master->stop();

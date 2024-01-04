@@ -4,3 +4,5 @@ build
 .idea
 .vs
 .vscode
+home*
+pgo

@@ -440,7 +440,8 @@ TEST(NetSession, SocketShutdownRead) {
   conn.connect(end_point);
   std::this_thread::sleep_for(std::chrono::seconds(2));
 
-  std::shared_ptr<session2> sess(svr.getSession());
+  std::shared_ptr<session2> sess = svr.getSession().lock();
+  EXPECT_TRUE(sess != nullptr);
   // session have two ref count.one is held by sess,
   // another is held by asio async_read_some.
   EXPECT_EQ(sess.use_count(), 2);
