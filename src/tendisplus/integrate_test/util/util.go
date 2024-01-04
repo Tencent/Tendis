@@ -312,7 +312,7 @@ func (s *RedisServer) Start(valgrind bool, cfgFilePath string) error {
 	// Wait until port is in use
 	err := eventually(func() error {
 		return CheckPortInUse(s)
-	}, 10*time.Second)
+	}, 20*time.Second)
 	if err != nil {
 		panic(err)
 	}

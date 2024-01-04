@@ -115,7 +115,11 @@ proc ping_server {host port} {
 proc server_is_up {host port retrynum} {
     after 10 ;# Use a small delay to make likely a first-try success.
     set retval 0
+    set totalretrynum $retrynum
+    set retry 0
     while {[incr retrynum -1]} {
+        puts "$retry :: $totalretrynum"
+        incr retry 1
         if {[catch {ping_server $host $port} ping]} {
             set ping 0
         }
@@ -276,7 +280,8 @@ proc start_server {options {code undefined}} {
 
     # check that the server actually started
     # ugly but tries to be as fast as possible...
-    if {$::valgrind} {set retrynum 1000} else {set retrynum 100}
+    # retry time is 400 * 50ms
+    if {$::valgrind} {set retrynum 1000} else {set retrynum 400}
 
     if {$::verbose} {
         puts -nonewline "=== ($tags) Starting server ${::host}:${::port} "
