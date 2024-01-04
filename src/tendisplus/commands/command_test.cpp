@@ -2345,6 +2345,26 @@ void testRocksOptionCommand(std::shared_ptr<ServerEntry> svr) {
   Command::fmtBulk(ss, "-1");
   EXPECT_EQ(ss.str(), expect.value());
 
+  sess.setArgs({"CONFIG", "SET", "rocks.periodic_compaction_seconds", "3"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  for (uint32_t i = 0; i < svr->getKVStoreCount(); i++) {
+    auto exptDb = svr->getSegmentMgr()->getDb(&sess, 0, mgl::LockMode::LOCK_IS);
+    EXPECT_TRUE(exptDb.ok());
+
+    auto store = exptDb.value().store;
+    EXPECT_EQ(store->getOption("rocks.periodic_compaction_seconds"), 3);
+  }
+
+  sess.setArgs({"CONFIG", "GET", "rocks.periodic_compaction_seconds"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  ss.str("");
+  Command::fmtMultiBulkLen(ss, 2);
+  Command::fmtBulk(ss, "rocks.periodic_compaction_seconds");
+  Command::fmtBulk(ss, "3");
+  EXPECT_EQ(ss.str(), expect.value());
+
   // we will adjust these tests when we use rocksdb(version > 6.11)
   std::string err;
   sess.setArgs({"CONFIG", "SET", "rocks.compaction_deletes_window", "100"});

@@ -1073,6 +1073,8 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
     options.paranoid_checks = static_cast<bool>(value);
   } else if (key == "max_open_files") {
     options.max_open_files = static_cast<int>(value);
+  } else if (key == "periodic_compaction_seconds") {
+    options.periodic_compaction_seconds = static_cast<uint64_t>(value);
   } else if (key == "max_file_opening_threads") {
     options.max_file_opening_threads = static_cast<int>(value);
   } else if (key == "max_total_wal_size") {
@@ -3260,6 +3262,7 @@ Status RocksKVStore::setOptionDynamic(const std::string& option,
     "rocks.enable_blob_garbage_collection",
     "rocks.blob_compression_type",
     "rocks.disable_auto_compactions",
+    "rocks.periodic_compaction_seconds",
   };
   // option, example: "rocks.binlogcf.enable_blob_files"
   // new_option, example: "rocks.enable_blob_files"
@@ -3401,6 +3404,8 @@ int64_t RocksKVStore::getOption(const std::string& option) {
     return getBaseDB()->GetDBOptions().max_background_jobs;
   } else if (option == "rocks.max_open_files") {
     return getBaseDB()->GetDBOptions().max_open_files;
+  } else if (option == "rocks.periodic_compaction_seconds") {
+    return getBaseDB()->GetOptions().periodic_compaction_seconds;
   } else {
     return -2;
   }
