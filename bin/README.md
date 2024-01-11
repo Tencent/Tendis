@@ -15,7 +15,11 @@ with customized optimizations for test
 
 # redis-cli
 source code: https://github.com/redis/redis.git
-tag: 6.2.6
+tag: 7.2.3
 
 # redis-server
 source code: https://github.com/redis/redis.git
+
+# memtier_benchmark
+source code: https://github.com/RedisLabs/memtier_benchmark
+with customized optimizations for test
