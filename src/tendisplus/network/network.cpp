@@ -1108,7 +1108,8 @@ void NetSession::endSession() {
         _sock.shutdown(asio::ip::tcp::socket::shutdown_receive);
       }
     } catch (const std::exception& ex) {
-      LOG(ERROR) << "shutdown socket failed." << ex.what() << " id:" << id();
+      // NOTE(takenliu): it may be normal, change LOG level to INFO
+      LOG(INFO) << "shutdown socket failed." << ex.what() << " id:" << id();
     }
   }
   _server->endSession(id());
