@@ -18,12 +18,18 @@ import (
 	"github.com/ngaut/log"
 )
 
+const (
+	Standalone int = 0
+	Cluster    int = 1
+)
+
 type RedisServer struct {
-	Port    int
-	Path    string
-	Ip      string
-	Pwd     string
-	binPath string
+	Port       int
+	Path       string
+	Ip         string
+	Pwd        string
+	ClientType int
+	binPath    string
 }
 
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -231,12 +237,13 @@ func eventually(fn func() error, timeout time.Duration) error {
 	}
 }
 
-func (s *RedisServer) Init(ip string, port int, pwd string, path string) {
+func (s *RedisServer) Init(ip string, port int, pwd string, path string, clientType int) {
 	s.Ip = ip
 	s.Port = port
 	name := path + RandStrAlpha(6)
 	s.Path = pwd + "/" + name
 	s.Pwd = pwd + "/running/" + name
+	s.ClientType = clientType
 }
 
 func (s *RedisServer) Destroy() {
@@ -288,6 +295,7 @@ func (s *RedisServer) Start(valgrind bool, cfgFilePath string) error {
 	if s.binPath != "" {
 		binPath = s.binPath
 	}
+	log.Infof("binpath : %v", binPath)
 	if valgrind {
 		log.Infof("start by valgrind %d", s.Port)
 		// NOTE(takenliu) cmd cant be multi line.
@@ -436,7 +444,13 @@ func StartSingleServer(dir string, port int, cfg *map[string]string) *RedisServe
 	log.Infof("FindAvailablePort:%d", node_port)
 	pwd := GetCurrentDirectory()
 
-	m.Init("127.0.0.1", node_port, pwd, dir)
+	clusterConfig := strings.ToLower((*cfg)["cluster-enabled"])
+	cliType := Standalone
+	if clusterConfig == "on" || clusterConfig == "1" || clusterConfig == "true" || clusterConfig == "yes" {
+		cliType = Cluster
+	}
+
+	m.Init("127.0.0.1", node_port, pwd, dir, cliType)
 
 	if err := m.Setup(false, cfg); err != nil {
 		log.Fatalf("setup master failed:%v", err)
@@ -509,165 +523,6 @@ func ConfigSet(s *RedisServer, k string, v string) {
 	}
 }
 
-func SetData(m *RedisServer) {
-	cli := CreateClient(m)
-
-	defer cli.Close()
-
-	for i := 0; i < 100; i++ {
-		if err := cli.Cmd("set", "mystr:"+RandStrAlpha(30), RandStrAlpha(30)).Err; err != nil {
-			log.Fatalf("set failed. %v", err)
-		}
-	}
-}
-
-func ZaddData(m *RedisServer) {
-	cli := CreateClient(m)
-
-	defer cli.Close()
-
-	for i := 0; i < 100; i++ {
-		if err := cli.Cmd("zadd", "mysortedset:"+RandStrAlpha(30),
-			float64(rand.Int()), RandStrAlpha(30),
-			float64(rand.Int()), RandStrAlpha(30),
-			float64(rand.Int()), RandStrAlpha(30)).Err; err != nil {
-			log.Fatalf("zadd failed. %v", err)
-		}
-	}
-}
-
-func SaddData(m *RedisServer) {
-	cli := CreateClient(m)
-
-	defer cli.Close()
-
-	for i := 0; i < 100; i++ {
-		if err := cli.Cmd("sadd", "myset:"+RandStrAlpha(30),
-			RandStrAlpha(30),
-			RandStrAlpha(30),
-			RandStrAlpha(30)).Err; err != nil {
-			log.Fatalf("zadd failed. %v", err)
-		}
-	}
-}
-
-func LpushData(m *RedisServer) {
-	cli := CreateClient(m)
-
-	defer cli.Close()
-
-	for i := 0; i < 100; i++ {
-		if err := cli.Cmd("lpush", "mylist:"+strconv.Itoa(i),
-			RandStrAlpha(30),
-			RandStrAlpha(30),
-			RandStrAlpha(30)).Err; err != nil {
-			log.Fatalf("lpush failed. %v", err)
-		}
-	}
-}
-
-func RpushData(m *RedisServer) {
-	cli := CreateClient(m)
-
-	defer cli.Close()
-
-	for i := 0; i < 100; i++ {
-		if err := cli.Cmd("rpush", "mylist:"+strconv.Itoa(i),
-			RandStrAlpha(30),
-			RandStrAlpha(30),
-			RandStrAlpha(30)).Err; err != nil {
-			log.Fatalf("lpush failed. %v", err)
-		}
-	}
-}
-
-func HmsetData(m *RedisServer) {
-	cli := CreateClient(m)
-
-	defer cli.Close()
-
-	for i := 0; i < 100; i++ {
-		if err := cli.Cmd("hmset", "myhash:"+RandStrAlpha(30),
-			RandStrAlpha(30), RandStrAlpha(30),
-			RandStrAlpha(30), RandStrAlpha(30),
-			RandStrAlpha(30), RandStrAlpha(30),
-			RandStrAlpha(30), RandStrAlpha(30)).Err; err != nil {
-			log.Fatalf("mset failed. %v", err)
-		}
-	}
-}
-
-func OtherData(m *RedisServer) {
-	cli := CreateClient(m)
-
-	defer cli.Close()
-
-	for i := 0; i < 10000; i++ {
-		if err := cli.Cmd("hset", "", RandStrAlpha(30), RandStrAlpha(30)).Err; err != nil {
-			log.Fatalf("insert data failed. %v", err)
-		}
-	}
-
-	for i := 0; i < 10000; i++ {
-		if err := cli.Cmd("set", RandStrAlpha(30), RandStrAlpha(30), "PX", rand.Int31n(1000)+1).Err; err != nil {
-			log.Fatalf("insert data failed. %v", err)
-		}
-	}
-
-}
-
-func SpecifHashData(m *RedisServer) {
-	cli := CreateClient(m)
-
-	defer cli.Close()
-
-	f := func(keyCount int, expiredTime int) {
-		key := "myhash" + strconv.Itoa(keyCount) + "Expired" + strconv.Itoa(expiredTime) + RandStrAlpha(30)
-		for i := 0; i < keyCount; i++ {
-			if err := cli.Cmd("hset", key, RandStrAlpha(30), RandStrAlpha(30)).Err; err != nil {
-				log.Fatalf("insert data failed. %v", err)
-			}
-		}
-
-		if err := cli.Cmd("pexpire", key, expiredTime+1).Err; err != nil {
-			log.Fatalf("insert data failed. %v", err)
-		}
-
-		if rand.Intn(10) < 7 {
-			if err := cli.Cmd("del", key).Err; err != nil {
-				log.Fatalf("del specific hash failed: %v", err)
-			}
-		}
-	}
-
-	f(1000, 1)
-	f(1000, 120*1000)
-	f(1000, int(rand.Int31n(1000)))
-
-	f(999, 1)
-	f(999, 120*1000)
-	f(999, int(rand.Int31n(1000)))
-
-	f(1001, 1)
-	f(1001, 60*1000*1000)
-	f(1001, int(rand.Int31n(1000)))
-
-	f(3000, 1)
-	f(3000, 120*1000)
-	f(3000, 400000)
-}
-
-func WriteData(m *RedisServer) {
-	SetData(m)
-	ZaddData(m)
-	SaddData(m)
-	LpushData(m)
-	RpushData(m)
-	HmsetData(m)
-	SpecifHashData(m)
-	OtherData(m)
-}
-
 func GetCurrentDirectory() string {
 	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
 	if err != nil {
@@ -707,197 +562,4 @@ func CompareClusterDataWithAuth(addr1 string, passwd1 string, addr2 string, pass
 	if strings.Contains(stdoutComp.String(), "error") {
 		log.Fatal(stdoutComp.String())
 	}
-}
-
-func WriteSingleData(cli *redis.Client, expireMs int, keyPrefix string) {
-	maxError := 3
-	key := keyPrefix + "_kv_" + RandStrAlpha(20)
-	value := "kv_" + RandStrAlpha(20)
-	for maxError > 0 {
-		if r, err := cli.Cmd("set", key, value).Str(); err != nil || r != "OK" {
-			maxError--
-			message := fmt.Sprintf("set %v %v failed. ret:%v err:%v", key, value, r, err)
-			if maxError == 0 {
-				log.Fatal(message)
-			}
-			log.Warning(message)
-			time.Sleep(1 * time.Second)
-		} else {
-			break
-		}
-	}
-	if expireMs != 0 {
-		for maxError > 0 {
-			if r, err := cli.Cmd("pexpire", key, strconv.Itoa(expireMs)).Int(); err != nil || r != 1 {
-				maxError--
-				message := fmt.Sprintf("pexire %v %v failed. ret:%v err:%v", key, expireMs, r, err)
-				if maxError == 0 {
-					log.Fatal(message)
-				}
-				log.Warning(message)
-				time.Sleep(1 * time.Second)
-			} else {
-				break
-			}
-		}
-	}
-
-	key = keyPrefix + "_hash_" + RandStrAlpha(20)
-	value1 := "field_" + RandStrAlpha(20)
-	value2 := "hash_" + RandStrAlpha(20)
-	for maxError > 0 {
-		if r, err := cli.Cmd("hset", key, value1, value2).Int(); err != nil || r != 1 {
-			maxError--
-			message := fmt.Sprintf("hash %v %v %v failed. ret:%v err:%v", key, value1, value2, r, err)
-			if maxError == 0 {
-				log.Fatal(message)
-			}
-			log.Warning(message)
-			time.Sleep(1 * time.Second)
-		} else {
-			break
-		}
-	}
-	if expireMs != 0 {
-		for maxError > 0 {
-			if r, err := cli.Cmd("pexpire", key, strconv.Itoa(expireMs)).Int(); err != nil || r != 1 {
-				maxError--
-				message := fmt.Sprintf("pexire %v %v failed. ret:%v err:%v", key, expireMs, r, err)
-				if maxError == 0 {
-					log.Fatal(message)
-				}
-				log.Warning(message)
-				time.Sleep(1 * time.Second)
-			} else {
-				break
-			}
-		}
-	}
-
-	key = keyPrefix + "_list_" + RandStrAlpha(20)
-	value = "list_" + RandStrAlpha(20)
-	for maxError > 0 {
-		if r, err := cli.Cmd("lpush", key, value).Int(); err != nil {
-			maxError--
-			message := fmt.Sprintf("lpush %v %v failed. ret:%v err:%v", key, value, r, err)
-			if maxError == 0 {
-				log.Fatal(message)
-			}
-			log.Warning(message)
-			time.Sleep(1 * time.Second)
-		} else {
-			break
-		}
-	}
-	if expireMs != 0 {
-		for maxError > 0 {
-			if r, err := cli.Cmd("pexpire", key, strconv.Itoa(expireMs)).Int(); err != nil || r != 1 {
-				maxError--
-				message := fmt.Sprintf("pexire %v %v failed. ret:%v err:%v", key, expireMs, r, err)
-				if maxError == 0 {
-					log.Fatal(message)
-				}
-				log.Warning(message)
-				time.Sleep(1 * time.Second)
-			} else {
-				break
-			}
-		}
-	}
-
-	key = keyPrefix + "_set_" + RandStrAlpha(20)
-	value = "set_" + RandStrAlpha(20)
-	for maxError > 0 {
-		if r, err := cli.Cmd("sadd", key, value).Int(); err != nil {
-			maxError--
-			message := fmt.Sprintf("sadd %v %v failed. ret:%v err:%v", key, value, r, err)
-			if maxError == 0 {
-				log.Fatal(message)
-			}
-			log.Warning(message)
-			time.Sleep(1 * time.Second)
-		} else {
-			break
-		}
-	}
-	if expireMs != 0 {
-		for maxError > 0 {
-			if r, err := cli.Cmd("pexpire", key, strconv.Itoa(expireMs)).Int(); err != nil || r != 1 {
-				maxError--
-				message := fmt.Sprintf("pexire %v %v failed. ret:%v err:%v", key, expireMs, r, err)
-				if maxError == 0 {
-					log.Fatal(message)
-				}
-				log.Warning(message)
-				time.Sleep(1 * time.Second)
-			} else {
-				break
-			}
-		}
-	}
-
-	key = keyPrefix + "_zset_" + RandStrAlpha(20)
-	score := rand.Float64()
-	value = "zset_" + RandStrAlpha(20)
-	for maxError > 0 {
-		if r, err := cli.Cmd("zadd", key, fmt.Sprintf("%f", score), value).Int(); err != nil {
-			maxError--
-			message := fmt.Sprintf("zadd %v %v %v failed. ret:%v err:%v", key, score, value, r, err)
-			if maxError == 0 {
-				log.Fatal(message)
-			}
-			log.Warning(message)
-			time.Sleep(1 * time.Second)
-		} else {
-			break
-		}
-	}
-	if expireMs != 0 {
-		for maxError > 0 {
-			if r, err := cli.Cmd("pexpire", key, strconv.Itoa(expireMs)).Int(); err != nil || r != 1 {
-				maxError--
-				message := fmt.Sprintf("pexire %v %v failed. ret:%v err:%v", key, expireMs, r, err)
-				if maxError == 0 {
-					log.Fatal(message)
-				}
-				log.Warning(message)
-				time.Sleep(1 * time.Second)
-			} else {
-				break
-			}
-		}
-	}
-}
-
-func AddData(m *RedisServer, keyNumber int, expireMs int, keyPrefix string, ch chan int) {
-	log.Infof("m.ip:%v, m.port:%v", m.Ip, m.Port)
-	go func() {
-		cli := CreateClientWithAuth(m, 10, "tendis+test")
-		for i := 0; i < keyNumber; i++ {
-			WriteSingleData(cli, expireMs, keyPrefix)
-		}
-		ch <- keyNumber * 5
-	}()
-}
-
-// about 8,000 - 10,000 qps
-func AddDataWithTime(m *RedisServer, second int, expireMs int, keyPrefix string, ch chan int) {
-	log.Infof("m.ip:%v, m.port:%v", m.Ip, m.Port)
-	localChan := make(chan int)
-	isRunning := true
-	go func() {
-		cli := CreateClientWithAuth(m, 10, "tendis+test")
-		num := 0
-		for isRunning {
-			WriteSingleData(cli, expireMs, keyPrefix)
-			num++
-			time.Sleep(500 * time.Microsecond)
-		}
-		localChan <- num * 5
-	}()
-	go func() {
-		time.Sleep(time.Duration(second) * time.Second)
-		isRunning = false
-		ch <- <-localChan
-	}()
 }

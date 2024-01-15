@@ -6,10 +6,11 @@ package main
 
 import (
 	"flag"
-	"github.com/ngaut/log"
+	"integrate_test/util"
 	"strconv"
-	"tendisplus/integrate_test/util"
 	"time"
+
+	"github.com/ngaut/log"
 )
 
 func waitFullsyncAndCatchup(m *util.RedisServer, s *util.RedisServer, kvstorecount int, channel chan int) {
@@ -36,13 +37,13 @@ func testRepl(m1_ip string, m1_port int, s1_ip string, s1_port int, kvstorecount
 
 		m1_port = util.FindAvailablePort(m1_port)
 		log.Infof("FindAvailablePort:%d", m1_port)
-		m1.Init(m1_ip, m1_port, pwd, "m1_")
+		m1.Init(m1_ip, m1_port, pwd, "m1_", util.Standalone)
 		if err := m1.Setup(false, &cfgArgs); err != nil {
 			log.Fatalf("setup master1 failed:%v", err)
 		}
 		s1_port = util.FindAvailablePort(s1_port)
 		log.Infof("FindAvailablePort:%d", s1_port)
-		s1.Init(s1_ip, s1_port, pwd, "s1_")
+		s1.Init(s1_ip, s1_port, pwd, "s1_", util.Standalone)
 		cfgArgs["masterauth"] = "tendis+test"
 		if err := s1.Setup(false, &cfgArgs); err != nil {
 			log.Fatalf("setup slave1 failed:%v", err)
@@ -50,7 +51,7 @@ func testRepl(m1_ip string, m1_port int, s1_ip string, s1_port int, kvstorecount
 	}
 	time.Sleep(15 * time.Second)
 
-	addData(&m1, num1, *keyprefix1)
+	util.AddDataWithBenchmark(&m1, *auth, num1, *keyprefix1, "set")
 	time.Sleep(1 * time.Second)
 	slaveof(&m1, &s1)
 	//waitFullsync(&s1, kvstorecount)
@@ -58,7 +59,7 @@ func testRepl(m1_ip string, m1_port int, s1_ip string, s1_port int, kvstorecount
 
 	var channel chan int = make(chan int)
 	go waitFullsyncAndCatchup(&m1, &s1, kvstorecount, channel)
-	util.AddData(&m1, num2, 0, *keyprefix2, channel)
+	util.AddData(&m1, *auth, num2, 0, 0, *keyprefix2, channel)
 	<-channel
 	<-channel
 

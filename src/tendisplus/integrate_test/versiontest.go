@@ -7,11 +7,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"integrate_test/util"
 	"math/rand"
 	"os"
 	"os/exec"
 	"strconv"
-	"tendisplus/integrate_test/util"
 	"time"
 
 	"github.com/ngaut/log"
@@ -36,9 +36,9 @@ func testVersion(versions []string) {
 		log.Infof("cluster add data begin")
 		channel := make(chan int)
 		for i := 0; i < 10; i++ {
-			util.AddData(&predixy.RedisServer, int(rand.Int31n(20))+100, 0, strconv.Itoa(i), channel)
+			util.AddData(&predixy.RedisServer, *auth, int(rand.Int31n(20))+100, 0, 0, strconv.Itoa(i), channel)
 		}
-		util.AddDataWithTime(&predixy.RedisServer, 60, 0, "longterm", channel)
+		util.AddDataWithTime(&predixy.RedisServer, *auth, 60, 0, "longterm", 20, channel)
 
 		time.Sleep(1 * time.Second)
 
@@ -46,7 +46,7 @@ func testVersion(versions []string) {
 			if !isMaster(&(*servers)[i]) {
 				log.Fatalf("node should be master")
 			}
-			if !cluster_check_state(&(*servers)[i]) {
+			if !cluster_check_state_continuous(&(*servers)[i]) {
 				log.Fatal("cluster state error, online failed")
 			}
 		}
@@ -55,7 +55,7 @@ func testVersion(versions []string) {
 			if isMaster(&(*servers)[i]) {
 				log.Fatalf("node should be slave")
 			}
-			if !cluster_check_state(&(*servers)[i]) {
+			if !cluster_check_state_continuous(&(*servers)[i]) {
 				log.Fatal("cluster state error, online failed")
 			}
 		}
@@ -78,6 +78,11 @@ func testVersion(versions []string) {
 		}
 
 		time.Sleep(5 * time.Second)
+		for i := clusterNodeNum; i < clusterNodeNum*2; i++ {
+			if !cluster_check_state_continuous(&(*servers)[i]) {
+				log.Fatal("cluster state error, online failed")
+			}
+		}
 
 		for i := clusterNodeNum; i < clusterNodeNum*2; i++ {
 			cluster_manual_failover(&(*servers)[i])
@@ -91,7 +96,7 @@ func testVersion(versions []string) {
 			if isMaster(&(*servers)[i]) {
 				log.Fatalf("node should be slave")
 			}
-			if !cluster_check_state(&(*servers)[i]) {
+			if !cluster_check_state_continuous(&(*servers)[i]) {
 				log.Fatal("cluster state error, online failed")
 			}
 		}
@@ -100,7 +105,7 @@ func testVersion(versions []string) {
 			if !isMaster(&(*servers)[i]) {
 				log.Fatalf("node should be master")
 			}
-			if !cluster_check_state(&(*servers)[i]) {
+			if !cluster_check_state_continuous(&(*servers)[i]) {
 				log.Fatal("cluster state error, online failed")
 			}
 		}
@@ -118,6 +123,13 @@ func testVersion(versions []string) {
 		}
 
 		totalKeyNumber += <-channel
+
+		time.Sleep(5 * time.Second)
+		for i := 0; i < clusterNodeNum; i++ {
+			if !cluster_check_state_continuous(&(*servers)[i]) {
+				log.Fatal("cluster state error, online failed")
+			}
+		}
 
 		for i := 0; i < clusterNodeNum; i++ {
 			for {

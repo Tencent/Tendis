@@ -7,9 +7,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"integrate_test/util"
 	"strconv"
 	"strings"
-	"tendisplus/integrate_test/util"
 	"time"
 
 	"github.com/ngaut/log"
@@ -37,7 +37,7 @@ func getDataCFLevel6FileNum(m *util.RedisServer, storeid int) int {
 }
 
 func testDeleteFilesInRange() {
-	*benchtype = "set"
+	*util.Optype = "set"
 	ip := "127.0.0.1"
 	kvStoreCount := 2
 	portStart := 41000
@@ -59,7 +59,7 @@ func testDeleteFilesInRange() {
 	cfgArgs["rocks.target_file_size_base"] = "1048576"
 
 	portStart = util.FindAvailablePort(portStart)
-	m1.Init(ip, portStart, pwd, "m1_")
+	m1.Init(ip, portStart, pwd, "m1_", util.Cluster)
 	if err := m1.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
@@ -92,10 +92,10 @@ func testDeleteFilesInRange() {
 	// add data
 	log.Infof("cluster adddata begin")
 	channel := make(chan int)
-	util.AddData(&m1, keynum, 0, "{23}", channel)
-	util.AddData(&m1, keynum, 0, "{13}", channel)
-	util.AddData(&m1, keynum, 0, "{14}", channel)
-	util.AddData(&m1, keynum, 0, "{15}", channel)
+	util.AddData(&m1, *auth, keynum, 0, 100, "{23}", channel)
+	util.AddData(&m1, *auth, keynum, 0, 100, "{13}", channel)
+	util.AddData(&m1, *auth, keynum, 0, 100, "{14}", channel)
+	util.AddData(&m1, *auth, keynum, 0, 100, "{15}", channel)
 
 	cli1 := createClient(&m1)
 	r, err := cli1.Cmd("set", "a{12}", "b").Str()
@@ -165,7 +165,7 @@ func testDeleteFilesInRange() {
 	afterStep3AllL6FileNum := afterStep3Store0L6FileNum + afterStep3Store1L6FileNum
 
 	// after step1,2,3 it should remove at least 16-20 sst files.
-	if beforeStep1AllL6FileNum-afterStep3AllL6FileNum != 122 {
+	if beforeStep1AllL6FileNum-afterStep3AllL6FileNum != 170 {
 		log.Fatalf("Wrong result! "+
 			"every step: (num on store0) (num on store1) (num on two stores) "+
 			"before step1(delete on store0): %v %v %v "+
@@ -246,7 +246,7 @@ func testDeleteFilesInRange() {
 		log.Fatalf("deletefilesinrange on binlog deleted wrong binlog on store 1")
 	}
 
-	log.Infof("deletefilesinrange.go passed. command : %s", *benchtype)
+	log.Infof("deletefilesinrange.go passed. command : %s", *util.Optype)
 
 	shutdownServer(&m1, *shutdown, *clear)
 }

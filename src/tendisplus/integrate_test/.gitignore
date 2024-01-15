@@ -25,3 +25,6 @@ dst_*
 redis-sync-*
 sync-*
 _version_test_
+
+gopath/
+go.sum

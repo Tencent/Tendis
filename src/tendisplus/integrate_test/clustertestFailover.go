@@ -7,11 +7,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/ngaut/log"
+	"integrate_test/util"
 	"os/exec"
 	"strings"
-	"tendisplus/integrate_test/util"
 	"time"
+
+	"github.com/ngaut/log"
 )
 
 func checkBinlog(servers *[]util.RedisServer, index int, num int) {
@@ -53,7 +54,7 @@ func testClusterManualFailoverIncrSync(mport int) {
 	cluster_slaveof(&master, slave2)
 
 	// check cluster online state
-	if !cluster_check_state(&master) {
+	if !cluster_check_state_continuous(&master) {
 		log.Fatal("cluster state error, online failed")
 	}
 	log.Debug("cluster state ok, online now!")
@@ -62,7 +63,7 @@ func testClusterManualFailoverIncrSync(mport int) {
 	// add data in goroutine for a while
 	log.Info("start add data in coroutine")
 	var channel chan int = make(chan int)
-	go addDataInCoroutine(&predixy.RedisServer, 500000, "tag", channel, *benchtype)
+	go util.AddDataWithBenchmarkInCo(&predixy.RedisServer, *auth, 500000, "tag", "set", channel)
 
 	// check master sync_full and partial_sync times
 	if !cluster_check_sync_full(&master, 4) {
@@ -146,7 +147,7 @@ func testClusterShutdownFailoverIncrSync(mport int) {
 	cluster_slaveof(&master, slave2)
 
 	time.Sleep(5 * time.Second)
-	if !cluster_check_state(&master) {
+	if !cluster_check_state_continuous(&master) {
 		log.Fatal("cluster state error, online failed")
 	}
 	log.Debug("cluster state ok, online now!")
@@ -154,7 +155,7 @@ func testClusterShutdownFailoverIncrSync(mport int) {
 	// add data in goroutine for a while
 	log.Info("start add data in coroutine")
 	var channel chan int = make(chan int)
-	go addDataInCoroutine(&predixy.RedisServer, 500000, "tag", channel, *benchtype)
+	go util.AddDataWithBenchmarkInCo(&predixy.RedisServer, *auth, 500000, "tag", "set", channel)
 
 	time.Sleep(5 * time.Second)
 
@@ -172,12 +173,12 @@ func testClusterShutdownFailoverIncrSync(mport int) {
 	log.Debugf("shutdown master node[%s]", master.Addr())
 	shutdownServer(&master, *shutdown, *clear)
 
-	for cluster_check_state(&slave1) {
+	for cluster_check_state_once(&slave1) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	log.Debug("cluster get master failed, offline")
 
-	for !cluster_check_state(&slave1) {
+	for !cluster_check_state_once(&slave1) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	log.Debug("cluster vote new master, online again!")
@@ -249,7 +250,7 @@ func testClusterFailover(clusterIp string, clusterPortStart int, clusterNodeNum 
 	}
 	log.Infof("failoverQuickly:%t num:%d sleepInter:%d", failoverQuickly, num, sleepInter)
 	var channel chan int = make(chan int)
-	go addDataInCoroutine(&predixy.RedisServer, num, "abcd", channel, *benchtype)
+	go util.AddDataWithBenchmarkInCo(&predixy.RedisServer, *auth, num, "abcd", "set", channel)
 
 	time.Sleep(1 * time.Second)
 	checkFullsyncSuccTimes(&(*servers)[clusterNodeNum], 1)

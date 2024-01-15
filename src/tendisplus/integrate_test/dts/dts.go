@@ -3,9 +3,9 @@ package main
 import (
 	"bytes"
 	"flag"
+	"integrate_test/util"
 	"math/rand"
 	"os/exec"
-	"tendisplus/integrate_test/util"
 	"time"
 
 	"github.com/ngaut/log"
@@ -35,7 +35,7 @@ func main() {
 	masterPort := util.FindAvailablePort(*mport)
 	log.Infof("FindAvailablePort:%d", masterPort)
 
-	m.Init("127.0.0.1", masterPort, pwd, "m_")
+	m.Init("127.0.0.1", masterPort, pwd, "m_", util.Standalone)
 
 	if err := m.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup master failed:%v", err)
@@ -48,7 +48,7 @@ func main() {
 	slavePort := util.FindAvailablePort(*sport)
 	log.Infof("FindAvailablePort:%d", slavePort)
 
-	s.Init("127.0.0.1", slavePort, pwd, "s_")
+	s.Init("127.0.0.1", slavePort, pwd, "s_", util.Standalone)
 
 	if err := s.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup slave failed:%v", err)
@@ -63,7 +63,7 @@ func main() {
 	targetPort := util.FindAvailablePort(*tport)
 	log.Infof("FindAvailablePort:%d", targetPort)
 
-	t.Init("127.0.0.1", targetPort, pwd, "t_")
+	t.Init("127.0.0.1", targetPort, pwd, "t_", util.Standalone)
 
 	cfgArgs["aof-enabled"] = "false"
 	cfgArgs["noexpire"] = "yes"
@@ -74,7 +74,8 @@ func main() {
 
 	time.Sleep(15 * time.Second)
 
-	util.WriteData(m)
+	util.AddSomeData(m, "", 0)
+	SpecifHashData(m, "", "first")
 
 	var stdoutDTS bytes.Buffer
 	var stderrDTS bytes.Buffer
@@ -87,7 +88,8 @@ func main() {
 	}
 	//defer cmdDTS.Process.Kill()
 
-	util.WriteData(m)
+	util.AddSomeData(m, "", 20000)
+	SpecifHashData(m, "", "second")
 
 	log.Info(stdoutDTS.String())
 	log.Info(stderrDTS.String())
@@ -103,7 +105,7 @@ func main() {
 	util.CompareData(t.Addr(), s.Addr(), 1)
 
 	// wait for expire
-	// see SpecifHashData for more info.
+	// see specifHashData for more info.
 	time.Sleep(120 * time.Second)
 	// after expire, m s t should have same data.
 	util.CompareData(m.Addr(), t.Addr(), 1)

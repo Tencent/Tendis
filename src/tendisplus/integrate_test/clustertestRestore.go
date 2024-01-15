@@ -6,11 +6,12 @@ package main
 
 import (
 	"flag"
-	"github.com/ngaut/log"
+	"integrate_test/util"
 	"math"
 	"strconv"
-	"tendisplus/integrate_test/util"
 	"time"
+
+	"github.com/ngaut/log"
 )
 
 func checkSlotKeyNum(servers *util.RedisServer, slot int, expKeynum int) {
@@ -58,7 +59,7 @@ func checkDbsize(servers *util.RedisServer, expKeynum int, predixy *util.Predixy
 		log.Infof("checkDbsize failed, server:%d num:%d expKeynum:%d, begin checkData...",
 			servers.Port, r, expKeynum)
 		var channel chan int = make(chan int)
-		go checkDataInCoroutine(&predixy.RedisServer, expKeynum, "{12}", "redis-benchmark", channel)
+		go util.CheckDataInCoroutine(&predixy.RedisServer, *auth, "redis-benchmark", 1, expKeynum, 1, "{12}", channel)
 		<-channel
 		log.Fatalf("checkDbsize failed")
 	}
@@ -75,7 +76,7 @@ func testFun1(src_master *util.RedisServer, src_slave *util.RedisServer,
 	log.Infof("cluster adddata begin")
 	var channel chan int = make(chan int)
 	migSlot := 8373
-	go addDataInCoroutine(&predixy.RedisServer, num, "{12}", channel, *benchtype)
+	go util.AddDataWithBenchmarkInCo(&predixy.RedisServer, *auth, num, "{12}", "set", channel)
 
 	log.Infof("cluster backup begin")
 	time.Sleep(1 * time.Second)
@@ -92,7 +93,7 @@ func testFun1(src_master *util.RedisServer, src_slave *util.RedisServer,
 	log.Infof("cluster adddata end")
 
 	//expire key
-	expireKey(src_master, 100, "{12}")
+	util.ExpireKey(src_master, *auth, 100, "{12}", "benchmark")
 
 	// meet new cluster
 	log.Infof("cluster meet begin")
@@ -157,7 +158,7 @@ func testFun2(src_master *util.RedisServer, src_slave *util.RedisServer,
 	log.Infof("cluster adddata begin")
 	var channel chan int = make(chan int)
 	migSlot := 8373
-	go addDataInCoroutine(&predixy.RedisServer, num, "{12}", channel, *benchtype)
+	go util.AddDataWithBenchmarkInCo(&predixy.RedisServer, *auth, num, "{12}", "set", channel)
 
 	// migrate
 	log.Infof("cluster migrate begin")
@@ -239,7 +240,7 @@ func testFun2(src_master *util.RedisServer, src_slave *util.RedisServer,
 }
 
 func testClusterRestore(portStart int, num int, testFun int, commandType string) {
-	*benchtype = commandType
+	*util.Optype = commandType
 	ip := "127.0.0.1"
 	kvstorecount := 2
 	backup_mode := "copy"
@@ -266,33 +267,33 @@ func testClusterRestore(portStart int, num int, testFun int, commandType string)
 	cfgArgs["generalLog"] = "true"
 
 	portStart0 := util.FindAvailablePort(portStart)
-	src_master.Init(ip, portStart0, pwd, "src_master_")
+	src_master.Init(ip, portStart0, pwd, "src_master_", util.Cluster)
 	if err := src_master.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
 	portStart1 := util.FindAvailablePort(portStart + 1)
-	src_slave.Init(ip, portStart1, pwd, "src_slave_")
+	src_slave.Init(ip, portStart1, pwd, "src_slave_", util.Cluster)
 	if err := src_slave.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
 	portStart2 := util.FindAvailablePort(portStart + 2)
-	dst_master.Init(ip, portStart2, pwd, "dst_master_")
+	dst_master.Init(ip, portStart2, pwd, "dst_master_", util.Cluster)
 	if err := dst_master.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
 	portStart3 := util.FindAvailablePort(portStart + 3)
-	dst_slave.Init(ip, portStart3, pwd, "dst_slave_")
+	dst_slave.Init(ip, portStart3, pwd, "dst_slave_", util.Cluster)
 	if err := dst_slave.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
 
 	portStart4 := util.FindAvailablePort(portStart + 4)
-	src_restore.Init(ip, portStart4, pwd, "src_restore_")
+	src_restore.Init(ip, portStart4, pwd, "src_restore_", util.Cluster)
 	if err := src_restore.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
 	portStart5 := util.FindAvailablePort(portStart + 5)
-	dst_restore.Init(ip, portStart5, pwd, "dst_restore_")
+	dst_restore.Init(ip, portStart5, pwd, "dst_restore_", util.Cluster)
 	if err := dst_restore.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
@@ -385,5 +386,5 @@ func main() {
 	// testClusterRestore(30800, 100000, 1, "zadd")
 	// testClusterRestore(30900, 100000, 2, "zadd")
 	// log.Infof("clustertestClusterRestore.go passed.")
-	log.Infof("clustertestClusterRestore.go passed. command : %s", *benchtype)
+	log.Infof("clustertestClusterRestore.go passed. command : %s", *util.Optype)
 }

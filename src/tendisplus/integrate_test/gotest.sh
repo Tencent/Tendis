@@ -11,13 +11,15 @@ fi
 
 rm -f $logfile
 
-go env -w GO111MODULE=off
-export PATH=$PATH:`pwd`/../../../build/bin:`pwd`/../../../bin
+export GO111MODULE=on
+export GOPATH=`pwd`/gopath
 
-srcroot=`pwd`/../../../
-govendor=`pwd`/../../thirdparty/govendor/
-export GOPATH=$srcroot:$govendor
+go get integrate_test/util
+go mod download 
+
 echo $GOPATH
+
+export PATH=$PATH:`pwd`/../../../build/bin:`pwd`/../../../bin
 function lm_traverse_dir(){
     for file in `ls $1`
     do
@@ -74,8 +76,8 @@ else
     go build clustertestRestore.go common.go common_cluster.go
     go build clustertestFailover.go common.go common_cluster.go
     go build deletefilesinrange.go common.go common_cluster.go
-    go build -o dts/dts dts/dts.go
-    go build -o dts/dts_sync dts/dts_sync.go
+    go build -o dts/dts dts/dts.go dts/dts_common.go
+    go build -o dts/dts_sync dts/dts_sync.go dts/dts_common.go
     go build memorylimit.go common.go
 
     testNum=12
@@ -85,16 +87,16 @@ else
     runOne ./repltest
     runOne ./restore
     runOne ./restoretest
-    runOne './clustertest -benchtype=set -clusterNodeNum=5 -num1=10000'
-    #runOne './clustertest -benchtype=sadd -clusterNodeNum=5 -num1=10000'
-    #runOne './clustertest -benchtype=hmset -clusterNodeNum=5 -num1=10000'
-    #runOne './clustertest -benchtype=rpush -clusterNodeNum=5 -num1=10000'
-    #runOne './clustertest -benchtype=zadd -clusterNodeNum=5 -num1=10000'
-    runOne './clustertestRestore -benchtype=set'
-    runOne './clustertestFailover -benchtype=set'
+    runOne './clustertest -optype=set -clusterNodeNum=5 -num1=10000'
+    #runOne './clustertest -optype=sadd -clusterNodeNum=5 -num1=10000'
+    #runOne './clustertest -optype=hset -clusterNodeNum=5 -num1=10000'
+    #runOne './clustertest -optype=lpush -clusterNodeNum=5 -num1=10000'
+    #runOne './clustertest -optype=zadd -clusterNodeNum=5 -num1=10000'
+    runOne './clustertestRestore'
+    runOne './clustertestFailover'
     runOne './dts/dts'
     runOne './dts/dts_sync'
-    runOne './deletefilesinrange -benchtype=set'
+    runOne './deletefilesinrange -optype=set'
     runOne ./memorylimit
 fi
 
