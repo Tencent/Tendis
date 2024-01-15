@@ -407,6 +407,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   void resizeDecrExecutorThreadNum(uint64_t newThreadNum);
   Status generateHeartbeatBinlogRoutine();
   void bgCompactCron();
+  void updateRateLimiter(uint64_t bytesPerSecond);
 
   // NOTE(deyukong): _isRunning = true -> running
   // _isRunning = false && _isStopped = false -> stopping in progress

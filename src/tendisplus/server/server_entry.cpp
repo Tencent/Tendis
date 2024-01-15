@@ -299,6 +299,9 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     jemallocBgThreadConf();
   });
 #endif
+  _cfg->serverParamsVar("rocks.rate_limiter_rate_bytes_per_sec")
+    ->setUpdate(
+      [this]() { updateRateLimiter(_cfg->rocksRateLimiterRateBytesPerSec); });
 }
 
 ServerEntry::~ServerEntry() {
@@ -458,6 +461,19 @@ Status ServerEntry::adaptSomeThreadNumByCpuNum(
               << cfg->netIoThreadNum;
   }
   return {ErrorCodes::ERR_OK, ""};
+}
+
+void ServerEntry::updateRateLimiter(uint64_t bytesPerSecond) {
+  if (bytesPerSecond == 0) {
+    LOG(WARNING) << "updateRateLimiter ignore, bytesPerSecond is 0.";
+    return;
+  }
+  if (_rateLimiter != NULL) {
+    _rateLimiter->SetBytesPerSecond(bytesPerSecond);
+  } else {
+    LOG(WARNING) << "updateRateLimiter ignore, _rateLimiter is null.";
+    return;
+  }
 }
 
 extern std::string gRenameCmdList;
