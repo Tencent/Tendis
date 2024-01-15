@@ -68,15 +68,15 @@ runTest() {
     mailfile=Report-$(date +"%Y%m%d%H%M%S").txt
     initTimeStamp=$(date +%s)
     if [[ $testType == ${LONGTIMETEST} ]]; then
-        clientNum=50
-        threadNum=20
-        pipelineNum=1
+        clientNum=10
+        threadNum=10
+        pipelineNum=50
         # enough for 100 days & 500k qps
         keyMax=5000000000000
     elif [[ $testType == ${MULTICMDTEST} ]]; then
-        clientNum=50
-        threadNum=20
-        pipelineNum=1
+        clientNum=10
+        threadNum=10
+        pipelineNum=50
         keyMax=5000000000
     elif [[ $testType == ${PIPELINETEST} ]]; then
         clientNum=2
@@ -84,9 +84,9 @@ runTest() {
         pipelineNum=50
         keyMax=5000000000
     elif [[ $testType == ${VALUESIZETEST} ]]; then
-        clientNum=50
-        threadNum=20
-        pipelineNum=1
+        clientNum=10
+        threadNum=10
+        pipelineNum=50
         keyMax=5000000000
     elif [[ $testType == ${LOWLOADTEST} ]]; then
         clientNum=15
