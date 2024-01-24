@@ -542,6 +542,12 @@ ServerParams::ServerParams() {
   REGISTER_VARS_NOUSE("migrate-gc-enabled");
   REGISTER_VARS_DIFF_NAME_DYNAMIC("replicate-fix-enabled", replicateFixEnable);
   REGISTER_VARS_DIFF_NAME("cluster-single-node", clusterSingleNode);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-check-disk-before-pong",
+                                  clusterCheckDiskBeforePong);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-check-disk-write",
+                                  clusterCheckDiskWrite);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-check-disk-read",
+                                  clusterCheckDiskRead);
 
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-require-full-coverage",
                                   clusterRequireFullCoverage);

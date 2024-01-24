@@ -848,7 +848,9 @@ ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
     _lastLogTime(0),
     _updateStateCallTime(0),
     _amongMinorityTime(0),
-    _todoBeforeSleep(0) {
+    _todoBeforeSleep(0),
+    _diskCheckSucess(true),
+    _diskCheckTime(msSinceEpoch()) {
   _nodesBlackList.clear();
   _slotsKeysCount.fill(0);
   _statsMessagesReceived.fill(0);
@@ -2101,6 +2103,9 @@ std::string ClusterState::clusterGenStateDescription() {
   }
   clusterInfo << "cluster_stats_messages_received:" << totMsgSent << "\r\n";
 
+  clusterInfo << "cluster_disk_check_sucess:" << _diskCheckSucess << "\r\n";
+  clusterInfo << "cluster_disk_check_time_ms_ago:"
+              << msSinceEpoch() - _diskCheckTime << "\r\n";
   return Command::fmtBulk(clusterInfo.str());
 }
 
@@ -3113,8 +3118,11 @@ Status ClusterState::clusterHandleSlaveFailover() {
 
   /* Set data_age to the number of seconds we are disconnected from
    * the master. */
+
   data_age = msToNow(_server->getReplManager()->getLastBinlogTs());
-  INVARIANT_D(data_age > 0);
+  // NOTE(takenliu): when disk is blocked, dont send pong for ping, will hapen
+  //     failover, but the heartbeat send every second, so data_age maybe 0.
+  // INVARIANT_D(data_age > 0);
 
   /* Remove the node timeout from the data age as it is fine that we are
    * disconnected from our master at least for the time it was down to be
@@ -4172,6 +4180,7 @@ void ClusterManager::stop() {
   LOG(WARNING) << "cluster manager begins stops...";
   _isRunning.store(false, std::memory_order_relaxed);
   _controller->join();
+  _diskChecker->join();
 
   _clusterNetwork->stop();
 
@@ -4386,7 +4395,23 @@ Status ClusterManager::startup() {
   _isRunning.store(true, std::memory_order_relaxed);
   _controller =
     std::make_unique<std::thread>(std::move([this]() { controlRoutine(); }));
+  _diskChecker = std::make_unique<std::thread>(std::move([this]() {
+    uint64_t iteration = 0;
+    while (_isRunning.load(std::memory_order_relaxed)) {
+      // NOTE(takenliu) we should wait serverEntry startup finished.
+      //     for example: cluster create session for one node,
+      //     we call addSessionInSvr, and the session will be ignored.
+      if (!_svr->isRunning()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        continue;
+      }
+      if (!(iteration++ % 10)) {
+        _clusterState->cronCheckDisk();
+      }
 
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+  }));
   return {ErrorCodes::ERR_OK, "init cluster finish"};
 }
 
@@ -4604,6 +4629,78 @@ void ClusterState::cronPingSomeNodes() {
       LL_DEBUG, "Pinging node %.40s", minPongNode->getNodeName().c_str());
     clusterSendPing(minPongNode->getSession(), ClusterMsg::Type::PING, offset);
   }
+}
+
+void ClusterState::cronCheckDisk() {
+  auto diskCheck = [this]() {
+    if (!_server->getParams()->clusterCheckDiskBeforePong) {
+      return true;
+    }
+    int fd;
+    size_t length;
+    char* buf = nullptr;
+    size_t pagesize = getpagesize();
+    length = pagesize;
+    std::string file_name = _server->getParams()->dbPath + "/disk_check.txt";
+
+    const auto guard = MakeGuard([&] {
+      if (fd >= 0) {
+        close(fd);
+      }
+      if (buf != nullptr) {
+        free(buf);
+      }
+    });
+
+    fd = open(file_name.c_str(), O_CREAT | O_RDWR | O_DIRECT, 0600);
+    if (fd == -1) {
+      LOG(INFO) << file_name << " open err:" << strerror(errno);
+      return false;
+    }
+
+    size_t cur_size = 0;
+    struct stat st;
+    if (stat(file_name.c_str(), &st) == 0) {
+      cur_size = st.st_size;
+    } else {
+      LOG(INFO) << file_name << " stat err:" << strerror(errno);
+      return false;
+    }
+
+    buf = static_cast<char*>(valloc(length));
+    if (buf == nullptr) {
+      LOG(INFO) << strerror(errno);
+      return false;
+    }
+    if (_server->getParams()->clusterCheckDiskWrite || cur_size != length) {
+      for (size_t i = 0; i < length; i++) {
+        buf[i] = 'a';
+      }
+      int ret = write(fd, static_cast<void*>(buf), length);
+      if (ret == -1) {
+        LOG(INFO) << file_name << " write err:" << strerror(errno);
+        return false;
+      }
+    }
+    if (_server->getParams()->clusterCheckDiskRead) {
+      int ret = read(fd, static_cast<void*>(buf), length);
+      if (ret == -1) {
+        LOG(INFO) << file_name << " read err:" << strerror(errno);
+        return false;
+      }
+    }
+    return true;
+  };
+  _diskCheckSucess = diskCheck();
+  _diskCheckTime = msSinceEpoch();
+}
+
+bool ClusterState::diskCheckSucess() {
+  mstime_t now = msSinceEpoch();
+  if (now - _diskCheckTime < 5000 && _diskCheckSucess) {
+    return true;
+  }
+  return false;
 }
 
 void ClusterState::cronCheckFailState() {
@@ -5422,6 +5519,18 @@ bool ClusterState::clusterProcessGossipSection(
   return save;
 }
 
+/* Check for role switch: slave -> master or master -> slave. */
+bool ClusterState::checkOriginMasterNodeName(CNodePtr srcNode, CNodePtr node) {
+  if (srcNode->getMaster() && node->getMaster()) {
+    auto srcMasterName = srcNode->getMaster()->getNodeName();
+    auto nodeMasterName = node->getMaster()->getNodeName();
+    LOG(INFO) << "src origin master name:" << srcMasterName
+              << ", node origin master name:" << nodeMasterName;
+    return srcMasterName == nodeMasterName;
+  }
+  return false;
+}
+
 Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
                                           const ClusterMsg& msg) {
   bool update = false;
@@ -5539,7 +5648,9 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
 
     /* Anyway reply with a PONG */
     uint64_t offset = _server->getReplManager()->replicationGetOffset();
-    clusterSendPing(sess, ClusterMsg::Type::PONG, offset);
+    if (diskCheckSucess()) {
+      clusterSendPing(sess, ClusterMsg::Type::PONG, offset);
+    }
   }
 
   if (type == ClusterMsg::Type::PING || type == ClusterMsg::Type::PONG ||
@@ -5680,19 +5791,6 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
         }
       }
     }
-
-    /* Check for role switch: slave -> master or master -> slave. */
-    auto checkOriginMasterNodeName = [](const CNodePtr& sender,
-                                        const CNodePtr& node) -> bool {
-      if (sender->getMaster() && node->getMaster()) {
-        auto senderMasterName = sender->getMaster()->getNodeName();
-        auto nodeMasterName = node->getMaster()->getNodeName();
-        LOG(INFO) << "sender origin master name:" << senderMasterName
-                  << ", node origin master name:" << nodeMasterName;
-        return senderMasterName == nodeMasterName;
-      }
-      return false;
-    };
 
     bool isReplGroup = false;
     uint64_t sender_offset{0};
@@ -5919,6 +6017,16 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
     if (n->getConfigEpoch() >= reportedConfigEpoch)
       return {ErrorCodes::ERR_OK, ""};
 
+    bool isReplGroup = false;
+    uint64_t sender_offset{0};
+    if (n) {
+      /* Node is a master. */
+      if (checkOriginMasterNodeName(n, _myself)) {
+        isReplGroup = true;
+      }
+      sender_offset = n->getReplOffset();
+    }
+
     /* If in our current config the node is a slave, set it as a master. */
     if (n->nodeIsSlave()) {
       if (clusterSetNodeAsMaster(n))
@@ -5930,7 +6038,11 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
 
     /* Check the bitmap of served slots and update our
      * config accordingly. */
-    clusterUpdateSlotsConfigWith(n, reportedConfigEpoch, updateMsg->getSlots());
+    clusterUpdateSlotsConfigWith(n,
+                                 reportedConfigEpoch,
+                                 updateMsg->getSlots(),
+                                 isReplGroup,
+                                 sender_offset);
 
     setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
   } else {
