@@ -1372,4 +1372,94 @@ TEST(RocksKVStore, CompactionWithNoexpire) {
   testMaxBinlogId(kvstore);
 }
 
+TEST(RocksKVStore, CompressAndDecompress) {
+  // write data with TypeA and read data with TypeB
+  std::vector<std::string> types{"none", "lz4", "snappy"};
+  std::map<std::string, std::string> type_map{
+    {"none", "NoCompression"}, {"lz4", "LZ4"}, {"snappy", "Snappy"}};
+  for (const auto& compress_type : types) {
+    for (const auto& decompress_type : types) {
+      if (!filesystem::exists("db")) {
+        EXPECT_TRUE(filesystem::create_directory("db"));
+      }
+      if (!filesystem::exists("log")) {
+        EXPECT_TRUE(filesystem::create_directory("log"));
+      }
+      const auto guard = MakeGuard([] {
+        filesystem::remove_all("./log");
+        filesystem::remove_all("./db");
+      });
+
+      auto cfg = genParamsRocks();
+      cfg->rocksCompressType = compress_type;
+      cfg->level0Compress = true;
+      cfg->level1Compress = true;
+      cfg->binlogUsingDefaultCF = true;
+
+      auto blockCache =
+        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+      std::string key_prefix{}, value_prefix{};
+      key_prefix.resize(1024);
+      value_prefix.resize(1024);
+      {
+        auto kvstore = std::make_unique<RocksKVStore>("0", cfg, blockCache);
+        for (int i = 0; i < 100; i++) {
+          auto ptxn = kvstore->createTransaction(nullptr);
+          EXPECT_TRUE(ptxn.ok());
+          auto txn = ptxn.value().get();
+          auto s = kvstore->setKV(
+            RecordKey{ADMINCMD_CHUNKID,
+                      ADMINCMD_DBID,
+                      RecordType::RT_KV,
+                      key_prefix + std::to_string(i),
+                      ""},
+            RecordValue{value_prefix + std::to_string(i), RecordType::RT_KV, 0},
+            txn);
+          EXPECT_TRUE(s.ok());
+          auto ret = txn->commit();
+          EXPECT_TRUE(ret.ok());
+        }
+        kvstore->compactRange(
+          ColumnFamilyNumber::ColumnFamily_Default, nullptr, nullptr);
+
+        rocksdb::TablePropertiesCollection props;
+        auto rs = kvstore->getBaseDB()->GetPropertiesOfAllTables(&props);
+        if (!rs.ok())
+          continue;
+        for (const auto& it : props) {
+          EXPECT_EQ(it.second->compression_name, type_map[compress_type]);
+        }
+      }
+
+      cfg->rocksCompressType = decompress_type;
+      {
+        auto kvstore = std::make_unique<RocksKVStore>("0", cfg, blockCache);
+        for (int i = 0; i < 100; i++) {
+          auto ptxn = kvstore->createTransaction(nullptr);
+          EXPECT_TRUE(ptxn.ok());
+          auto txn = ptxn.value().get();
+          auto eVal = kvstore->getKV(RecordKey{ADMINCMD_CHUNKID,
+                                               ADMINCMD_DBID,
+                                               RecordType::RT_KV,
+                                               key_prefix + std::to_string(i),
+                                               ""},
+                                     txn);
+          EXPECT_TRUE(eVal.ok());
+          EXPECT_EQ(eVal.value().getValue(), value_prefix + std::to_string(i));
+        }
+        kvstore->compactRange(
+          ColumnFamilyNumber::ColumnFamily_Default, nullptr, nullptr);
+
+        rocksdb::TablePropertiesCollection props;
+        auto rs = kvstore->getBaseDB()->GetPropertiesOfAllTables(&props);
+        if (!rs.ok())
+          continue;
+        for (const auto& it : props) {
+          EXPECT_EQ(it.second->compression_name, type_map[decompress_type]);
+        }
+      }
+    }
+  }
+}
+
 }  // namespace tendisplus
