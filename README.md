@@ -63,7 +63,7 @@ Similar to Redis clusters, Tendis uses a decentralized distributed solution. The
 ```
 $ git clone https://github.com/Tencent/tendis.git --recursive
 $ git submodule update --init --recursive
-$ mkdir bulid
+$ mkdir build
 $ cd build & cmake ..
 $ make -j12
 ```
