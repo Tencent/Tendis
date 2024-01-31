@@ -9,7 +9,7 @@ if(TENDIS_DEBUG)
     add_definitions(-DTENDIS_DEBUG)
 endif()
 
-option(COM_OPT_LTO "compile optimize with lto" ON)
+option(COM_OPT_LTO "compile optimize with lto" OFF)
 option(COM_OPT_PGO_GEN "compile optimize with pgo, profile-generate" OFF)
 option(COM_OPT_PGO_USE "compile optimize with pgo, profile-use" OFF)
 
@@ -177,10 +177,12 @@ endif()
 # TODO(vinchen): in the future it should disable sync_ponit in production
 add_definitions(-DWITH_SYNC_POINT)
 add_subdirectory(src/thirdparty/gflag)
+set(SNAPPY_BUILD_TESTS OFF)
 add_subdirectory(src/thirdparty/snappy)
 target_compile_options(snappy PRIVATE -fPIC)
 add_subdirectory(src/thirdparty/lz4/contrib/cmake_unofficial)
 add_subdirectory(src/thirdparty/googletest)
+set(WITH_GFLAGS OFF)
 add_subdirectory(src/thirdparty/glog glog EXCLUDE_FROM_ALL)
 
 list(APPEND SYS_LIBS sync_point)
@@ -206,6 +208,10 @@ list(APPEND THIRDPARTY_LIBS ${LZ4_LIBRARIES})
 
 add_definitions(-DENABLE_CJSON_GLOBAL)
 option(RAPIDJSON_BUILD_TESTS "" OFF)
+set(RAPIDJSON_BUILD_DOC OFF)
+set(RAPIDJSON_BUILD_EXAMPLES OFF)
+set(RAPIDJSON_BUILD_TESTS OFF)
+set(RAPIDJSON_HAS_STDSTRING ON)
 add_subdirectory(src/thirdparty/rapidjson)
 add_subdirectory(src/thirdparty/lua)
 
