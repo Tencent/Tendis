@@ -135,13 +135,9 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		set(JEMALLOC_ROOT_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc")
 		add_definitions(-DTENDIS_JEMALLOC)
 
-		if(COM_OPT_LTO)
-			message("COM_OPT_LTO is ON, we need jemalloc prof be false, otherwise the process will be hanged")
-		else()
-			set(patchCommand "cd ${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc\; git apply ../patch/jemalloc_patch.diff")
-			message("jemalloc git patch, we force set jemalloc  prof:true")
-			execute_process(COMMAND bash "-c" ${patchCommand} OUTPUT_VARIABLE FOO)
-		endif()
+		set(patchCommand "cd ${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc\; git apply ../patch/jemalloc_patch.diff")
+		message("jemalloc git patch, we force set jemalloc  prof:true")
+		execute_process(COMMAND bash "-c" ${patchCommand} OUTPUT_VARIABLE FOO)
 
 		set(WITH_JEMALLOC ON)
 
