@@ -498,9 +498,9 @@ class KVStore {
   virtual void appendJSONStat(
     rapidjson::PrettyWriter<rapidjson::StringBuffer>&) const = 0;
 
-  uint64_t getBinlogTime();
+  uint64_t getBinlogTime() const;
   void setBinlogTime(uint64_t timestamp);
-  uint64_t getCurrentTime();
+  uint64_t getCurrentTime() const;
   virtual Status setOptionDynamic(const std::string& option,
                                   const std::string& value) = 0;
   virtual Status setCompactOnDeletionCollectorFactory(

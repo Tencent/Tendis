@@ -666,6 +666,7 @@ Status ReplManager::applyRepllogV2(Session* sess,
        * tendisplus version before 2.0.6 */
       binlogTs = msSinceEpoch();
     }
+    sess->getServerEntry()->getStores()[storeId]->setBinlogTime(binlogTs);
   } else {
     auto binlog = applySingleTxnV2(
       sess, storeId, logKey, logValue, BinlogApplyMode::KEEP_BINLOG_ID);
