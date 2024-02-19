@@ -976,7 +976,6 @@ void NetSession::drainReqNet() {
   // it's convinent for c-style string search
   if (wantLen + _queryBufPos >= _queryBuf.size()) {
     // the fill should be as fast as memset in 02 mode, refer to here
-    // NOLINT(whitespace/line_length)
     // https://stackoverflow.com/questions/8848575/fastest-way-to-reset-every-value-of-stdvectorint-to-0)
     _queryBuf.resize((wantLen + _queryBufPos) * 2, 0);
   }

@@ -3489,7 +3489,7 @@ void ClusterMsg::setTotlen(uint32_t totlen) {
   _totlen = totlen;
 }
 
-std::string ClusterMsg::msgEncode() {  // NOLINT
+std::string ClusterMsg::msgEncode() {
   std::vector<uint8_t> key;
 
   std::string data = "";
@@ -5335,7 +5335,6 @@ void ClusterSession::drainReqNet() {
   // it's convinent for c-style string search
   if (readlen + static_cast<size_t>(_queryBufPos) >= _queryBuf.size()) {
     // the fill should be as fast as memset in 02 mode, refer to here
-    // NOLINT(whitespace/line_length)
     // https://stackoverflow.com/questions/8848575/fastest-way-to-reset-every-value-of-stdvectorint-to-0)
     _queryBuf.resize((readlen + _queryBufPos) * 2, 0);
   }
@@ -6085,7 +6084,7 @@ Status ClusterSession::clusterReadHandler() {
   return {ErrorCodes::ERR_OK, ""};
 }
 
-Status ClusterSession::clusterSendMessage(ClusterMsg& msg) {  // NOLINT
+Status ClusterSession::clusterSendMessage(ClusterMsg& msg) {
   setResponse(msg.msgEncode());
 
   //  NOTE(takenliu): we need call drainRsp to trigger write.

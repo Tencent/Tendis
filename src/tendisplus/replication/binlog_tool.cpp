@@ -72,7 +72,7 @@ class BinlogScanner {
   }
 
   std::string scanLogEntries(const Expected<ReplLogKeyV2>& logkey,
-                             Expected<ReplLogValueV2>& logValue,
+                             const Expected<ReplLogValueV2>& logValue,
                              uint32_t storeId) {
     std::stringstream binlogInfo;
     binlogInfo << "ts:" << logValue.value().getTimestamp() << " tsv:"

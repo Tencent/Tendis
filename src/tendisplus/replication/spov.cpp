@@ -96,7 +96,6 @@ Status ReplManager::receiveFile(const std::string& fullFileName,
   if (!myfile.is_open()) {
     LOG(ERROR) << "open file:" << fullFileName << " for write failed";
     return {ErrorCodes::ERR_INTERNAL, "open file failed"};
-    ;
   }
   size_t fileBatch = (_cfg->binlogRateLimitMB * 1024 * 1024) / 10;
   while (remain) {
@@ -114,14 +113,12 @@ Status ReplManager::receiveFile(const std::string& fullFileName,
       LOG(ERROR) << "write file:" << fullFileName
                  << " failed:" << strerror(errno);
       return {ErrorCodes::ERR_INTERNAL, "write file failed"};
-      ;
     }
     Status s = client->writeLine("+OK");
     if (!s.ok()) {
       LOG(ERROR) << "write file:" << fullFileName
                  << " reply failed:" << s.toString();
       return {ErrorCodes::ERR_INTERNAL, "write client failed"};
-      ;
     }
   }
   return {ErrorCodes::ERR_OK, ""};
@@ -142,7 +139,6 @@ Status ReplManager::receiveFileDirectio(
   if (writable_file == nullptr) {
     LOG(ERROR) << "openWritableFile failed:" << fullFileName;
     return {ErrorCodes::ERR_INTERNAL, "openWritableFile failed."};
-    ;
   }
   while (remain) {
     size_t curSize = std::min(remain, alignedBuf->bufSize);
@@ -169,7 +165,6 @@ Status ReplManager::receiveFileDirectio(
       if (writable_file == nullptr) {
         LOG(ERROR) << "openWritableFile failed:" << fullFileName;
         return {ErrorCodes::ERR_INTERNAL, "openWritableFile failed."};
-        ;
       }
 
       auto rS = writable_file->Append(slice);
@@ -746,7 +741,8 @@ using Tsys_time_point =
   std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds>;
 static Tsys_time_point to_sys(const filesystem::file_time_type& tp) noexcept {
   static constexpr std::chrono::seconds epochDiff{6437664000};
-  return Tsys_time_point{tp.time_since_epoch()} + epochDiff;  // NOLINT
+  return Tsys_time_point{tp.time_since_epoch()} +  // NOLINT(whitespace/braces)
+    epochDiff;
 }
 
 void ReplManager::recycDumpFile(uint32_t storeid) {

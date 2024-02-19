@@ -149,12 +149,12 @@ int stringmatchlen(const char* pattern,
 }
 
 int64_t bitPos(const void* s, size_t count, uint32_t bit) {
-  unsigned long* l;  // NOLINT:runtime/int
+  unsigned long* l;  // NOLINT(runtime/int)
   unsigned char* c;
-  unsigned long skipval, word = 0, one;  // NOLINT:runtime/int
+  unsigned long skipval, word = 0, one;  // NOLINT(runtime/int)
   /* Position of bit, to return to the caller. */
-  long pos = 0;     // NOLINT:runtime/int
-  unsigned long j;  // NOLINT:runtime/int
+  long pos = 0;     // NOLINT(runtime/int)
+  unsigned long j;  // NOLINT(runtime/int)
 
   /* Process whole words first, seeking for first word that is not
    * all ones or all zeros respectively if we are lookig for zeros
@@ -168,7 +168,7 @@ int64_t bitPos(const void* s, size_t count, uint32_t bit) {
   /* Skip initial bits not aligned to sizeof(unsigned long) byte by byte. */
   skipval = bit ? 0 : UCHAR_MAX;
   c = (unsigned char*)s;
-  while ((unsigned long)c & (sizeof(*l) - 1) && count) {  // NOLINT:runtime/int
+  while ((unsigned long)c & (sizeof(*l) - 1) && count) {  // NOLINT(runtime/int)
     if (*c != skipval)
       break;
     c++;
@@ -178,7 +178,7 @@ int64_t bitPos(const void* s, size_t count, uint32_t bit) {
 
   /* Skip bits with full word step. */
   skipval = bit ? 0 : ULONG_MAX;
-  l = (unsigned long*)c;  // NOLINT:runtime/int
+  l = (unsigned long*)c;  // NOLINT(runtime/int)
   while (count >= sizeof(*l)) {
     if (*l != skipval)
       break;
@@ -233,7 +233,7 @@ int64_t bitPos(const void* s, size_t count, uint32_t bit) {
   return 0; /* Just to avoid warnings. */
 }
 
-size_t popCount(const void* s, long count) {  // (NOLINT)
+size_t popCount(const void* s, long count) {  // NOLINT(runtime/int)
   size_t bits = 0;
   const unsigned char* p = static_cast<const unsigned char*>(s);
   uint32_t* p4;
@@ -248,17 +248,17 @@ size_t popCount(const void* s, long count) {  // (NOLINT)
     3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
     2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 3, 4, 4, 5, 4, 5, 5, 6,
     4, 5, 5, 6, 5, 6, 6, 7, 3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-    4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8};  // (NOLINT)
+    4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8};
 
   /* Count initial bytes not aligned to 32 bit. */
-  while ((unsigned long)p & 3 && count) {  // (NOLINT)
+  while ((unsigned long)p & 3 && count) {  // NOLINT(runtime/int)
     bits += bitsinbyte[*p++];
     count--;
   }
 
   /* Count bits 16 bytes at a time */
-  p4 = (uint32_t*)p;     // (NOLINT)
-  while (count >= 16) {  // (NOLINT)
+  p4 = (uint32_t*)p;  // NOLINT(readability/casting)
+  while (count >= 16) {
     uint32_t aux1, aux2, aux3, aux4;
 
     aux1 = *p4++;
@@ -283,7 +283,7 @@ size_t popCount(const void* s, long count) {  // (NOLINT)
   /* Count the remaining bytes. */
   p = (unsigned char*)p4;
   while (count--)
-    bits += bitsinbyte[*p++];  // (NOLINT)
+    bits += bitsinbyte[*p++];
   return bits;
 }
 
@@ -380,11 +380,13 @@ int ld2string(char* buf, size_t len, long double value, int humanfriendly) {
 /* Convert a string into a long long. Returns 1 if the string could be parsed
  * into a (non-overflowing) long long, 0 otherwise. The value will be set to
  * the parsed value when appropriate. */
-int string2ll(const char* s, size_t slen, long long* value) {  // (NOLINT/int)
+int string2ll(const char* s,
+              size_t slen,
+              long long* value) {  // NOLINT(runtime/int)
   const char* p = s;
   size_t plen = 0;
   int negative = 0;
-  unsigned long long v;  //(NOLINT/int)
+  unsigned long long v;  // NOLINT(runtime/int)
 
   if (plen == slen)
     return 0;
@@ -436,7 +438,7 @@ int string2ll(const char* s, size_t slen, long long* value) {  // (NOLINT/int)
     return 0;
 
   if (negative) {
-    if (v > ((uint64_t)(-(LLONG_MIN + 1)) + 1)) /* Overflow. (NOLINT/int)*/
+    if (v > ((uint64_t)(-(LLONG_MIN + 1)) + 1))
       return 0;
     if (value != NULL)
       *value = -v;
@@ -592,8 +594,9 @@ int zslParseRange(const char* min, const char* max, Zrangespec* spec) {
   return 0;
 }
 
-std::vector<std::string>* splitargs(std::vector<std::string>& result,  // NOLINT
-                                    const std::string& lineStr) {
+std::vector<std::string>* splitargs(
+  std::vector<std::string>& result,  // NOLINT(runtime/references)
+  const std::string& lineStr) {
   const char* line = lineStr.c_str();
   const char* p = line;
 
@@ -1299,7 +1302,7 @@ struct redisCommand redisCommandTable[] = {
    0,
    0,
    0,
-   0},  // NOLINT
+   0},
   {"zinterstore",
    zinterstoreCommand,
    -4,
@@ -1310,7 +1313,7 @@ struct redisCommand redisCommandTable[] = {
    0,
    0,
    0,
-   0},  // NOLINT
+   0},
   {"zrange", zrangeCommand, -4, "r", 0, NULL, 1, 1, 1, 0, 0},
   {"zrangebyscore", zrangebyscoreCommand, -4, "r", 0, NULL, 1, 1, 1, 0, 0},
   {"zrevrangebyscore",
@@ -1323,7 +1326,7 @@ struct redisCommand redisCommandTable[] = {
    1,
    1,
    0,
-   0},  // NOLINT
+   0},
   {"zrangebylex", zrangebylexCommand, -4, "r", 0, NULL, 1, 1, 1, 0, 0},
   {"zrevrangebylex", zrevrangebylexCommand, -4, "r", 0, NULL, 1, 1, 1, 0, 0},
   {"zcount", zcountCommand, 4, "rF", 0, NULL, 1, 1, 1, 0, 0},
@@ -1437,7 +1440,7 @@ struct redisCommand redisCommandTable[] = {
    1,
    1,
    0,
-   0},  // NOLINT
+   0},
   {"georadiusbymember",
    georadiusbymemberCommand,
    -5,
@@ -1448,7 +1451,7 @@ struct redisCommand redisCommandTable[] = {
    1,
    1,
    0,
-   0},  // NOLINT
+   0},
   {"georadiusbymember_ro",
    georadiusbymemberroCommand,
    -5,
@@ -1459,7 +1462,7 @@ struct redisCommand redisCommandTable[] = {
    1,
    1,
    0,
-   0},  // NOLINT
+   0},
   {"geohash", geohashCommand, -2, "r", 0, NULL, 1, 1, 1, 0, 0},
   {"geopos", geoposCommand, -2, "r", 0, NULL, 1, 1, 1, 0, 0},
   {"geodist", geodistCommand, -4, "r", 0, NULL, 1, 1, 1, 0, 0},
@@ -1761,8 +1764,8 @@ void getRandomHexChars(char* p, size_t len) {
  *
  * The function returns the sds string pointer, that is always the same
  * as the input pointer since no resize is needed. */
-void strmapchars(std::string& s,
-                 const char* from,  // NOLINT
+void strmapchars(std::string& s,  // NOLINT(runtime/references)
+                 const char* from,
                  const char* to,
                  size_t setlen) {
   size_t j, i, l = s.length();

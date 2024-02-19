@@ -3,12 +3,13 @@
 // project for additional information.
 
 #ifdef _WIN32
-#include <stdlib.h>
+#include <WinBase.h>
 #include <assert.h>
+#include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
 #include <windows.h>
-#include <WinBase.h>
+
 #include "tendisplus/utils/invariant.h"
 
 int gettimeofday(struct timeval* tp, void* tzp) {
@@ -26,7 +27,6 @@ void sleep(uint64_t seconds) {
 
 int rand_r(unsigned int* seedp) {
   srand(*seedp ? *seedp : (unsigned)time(NULL));
-
   return rand();
 }
 
@@ -52,9 +52,8 @@ void SetThreadName(DWORD dwThreadID, LPCSTR szThreadName) {
     RaiseException(0x406D1388,
                    0,
                    sizeof(info) / sizeof(DWORD),
-                   (ULONG_PTR*)&info);  // NOLINT
-  } __except(EXCEPTION_CONTINUE_EXECUTION) {
-  }
+                   (ULONG_PTR*)&info);          // NOLINT(readability/casting)
+  } __except (EXCEPTION_CONTINUE_EXECUTION) {}  // NOLINT(whitespace/parens)
 }
 
 int pthread_setname_np(uint32_t id, const char* name) {
@@ -62,11 +61,9 @@ int pthread_setname_np(uint32_t id, const char* name) {
   return 0;
 }
 
-
 struct tm* mylocaltime_r(const time_t* timep, struct tm* result) {
   localtime_s(result, timep);
   return result;
 }
 
 #endif  // _WIN32
-

@@ -175,7 +175,7 @@ makeCluster(uint32_t startPort,
     }
 
     char buf[128];
-    snprintf(buf, 128, "{%u..%u}", firstslot, lastslot);  // NOLINT
+    snprintf(buf, sizeof(buf), "{%u..%u}", firstslot, lastslot);
 
     std::string slotstr(buf);
     LOG(INFO) << "ADD SLOTS:" << slotstr;

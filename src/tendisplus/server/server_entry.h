@@ -165,7 +165,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   Status startup(const std::shared_ptr<ServerParams>& cfg);
   uint64_t getStartupTimeNs() const;
   template <typename fn>
-  void schedule(fn&& task, uint32_t& ctxId) {  // NOLINT
+  void schedule(fn&& task, uint32_t& ctxId) {  // NOLINT(runtime/references)
     if (UNLIKELY(_newExecutorThreadNum.load() != 0)) {
       std::unique_lock<std::shared_timed_mutex> lock(_exeThreadMutex);
       // NOTE(takenliu): need check again in write lock;

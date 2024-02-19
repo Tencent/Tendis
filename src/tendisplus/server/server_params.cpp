@@ -30,8 +30,8 @@
 namespace tendisplus {
 
 std::shared_ptr<tendisplus::ServerParams> gParams;
-std::string gRenameCmdList = "";   // NOLINT
-std::string gMappingCmdList = "";  // NOLINT
+std::string gRenameCmdList = "";   // NOLINT(runtime/string)
+std::string gMappingCmdList = "";  // NOLINT(runtime/string)
 
 #define REGISTER_VARS_FULL(                                                   \
   str, var, checkfun, prefun, minval, maxval, allowDynamicSet)                \

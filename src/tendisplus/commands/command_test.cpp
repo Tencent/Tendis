@@ -2727,7 +2727,7 @@ TEST(Command, tbitmap) {
         "tsrckey1",
         "tsrckey2",
         "tsrckey3",
-        "tsrckey4"},  // NOLINT
+        "tsrckey4"},
        {"bitop", "or", "destkey", "srckey1", "srckey2", "srckey3", "srckey4"}},
       {{"dump", "tdestkey"}, {"dump", "destkey"}},
 

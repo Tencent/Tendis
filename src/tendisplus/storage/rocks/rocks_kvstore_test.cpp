@@ -494,7 +494,7 @@ TEST(RocksKVStore, RepllogCursorV2) {
       EXPECT_EQ(log.getReplLogKey().getBinlogId(), 2);
       EXPECT_EQ((uint16_t)log.getReplLogValue().getReplFlag(),
                 (uint16_t)ReplFlag::REPL_GROUP_START |
-                  (uint16_t)ReplFlag::REPL_GROUP_END);  // NOLINT
+                  (uint16_t)ReplFlag::REPL_GROUP_END);
       EXPECT_EQ(log.getReplLogValue().getTxnId(), 3);
       EXPECT_EQ(log.getReplLogValue().getVersionEp(), versionep);
       uint64_t multi = Transaction::CHUNKID_MULTI;

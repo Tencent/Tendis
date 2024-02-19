@@ -1958,8 +1958,7 @@ void testPf(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(),
-              Command::fmtBulk(
-                "Z:7292 v:1,1 Z:1143 v:1,1 Z:7343 v:1,1 Z:603"));  // NOLINT
+              Command::fmtBulk("Z:7292 v:1,1 Z:1143 v:1,1 Z:7343 v:1,1 Z:603"));
 
     sess.setArgs({"pfdebug", "todense", "pfxxx"});
     expect = Command::runSessionCmd(&sess);

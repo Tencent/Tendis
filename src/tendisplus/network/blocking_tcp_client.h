@@ -9,7 +9,7 @@
 #include <memory>
 #include <string>
 
-#include "asio.hpp"
+#include "asio.hpp"  // NOLINT(build/include_subdir)
 #include "glog/logging.h"
 
 #include "tendisplus/utils/rate_limiter.h"

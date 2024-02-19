@@ -297,8 +297,8 @@ Expected<uint64_t> RocksTxn::commit() {
     INVARIANT_D(!isReplOnly());
 
     if (_replLogValues.size() >= std::numeric_limits<uint16_t>::max()) {
-      LOG(WARNING) << "too big binlog size:",
-        std::to_string(_replLogValues.size());
+      LOG(WARNING) << "too big binlog size:"
+                   << std::to_string(_replLogValues.size());
     }
 
     _store->assignBinlogIdIfNeeded(this);
@@ -979,9 +979,10 @@ rocksdb::CompressionType rocksGetCompressType(const std::string& typeStr) {
   }
 }
 
-Status rocksdbOptionsSet(rocksdb::Options& options,
-                         const std::string& key,
-                         const std::string& rawValue) {
+Status rocksdbOptionsSet(
+  rocksdb::Options& options,  // NOLINT(runtime/references)
+  const std::string& key,
+  const std::string& rawValue) {
   // TODO(takenliu): not int params need change two place, resolve it
   static std::set<std::string> notIntParams = {
     "blob_compression_type",
@@ -1221,9 +1222,10 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
   return {ErrorCodes::ERR_OK, ""};
 }
 
-Status rocksdbTableOptionsSet(rocksdb::BlockBasedTableOptions& options,
-                              const std::string& key,
-                              const std::string& rawValue) {
+Status rocksdbTableOptionsSet(
+  rocksdb::BlockBasedTableOptions& options,  // NOLINT(runtime/references)
+  const std::string& key,
+  const std::string& rawValue) {
   // TODO(takenliu): not int params need change two place, resolve it
   static std::set<std::string> notIntParams = {};
 

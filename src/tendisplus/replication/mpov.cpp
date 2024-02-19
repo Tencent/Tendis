@@ -572,8 +572,7 @@ void ReplManager::supplyFullSyncRoutine(
         LOG(ERROR) << "send client:" << client->getRemoteRepr()
                    << "file:" << fileInfo.first << ",size:" << fileInfo.second
                    << " failed:"
-                   << (rpl.ok() ? rpl.value()
-                                : rpl.status().toString());  // NOLINT
+                   << (rpl.ok() ? rpl.value() : rpl.status().toString());
         return;
       }
     }

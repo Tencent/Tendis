@@ -174,7 +174,7 @@ void testScanIndex(std::shared_ptr<ServerEntry> server,
 }
 
 void testChangeThreadNum(std::shared_ptr<ServerEntry> server,
-                         NetSession& sess,
+                         NetSession& sess,  // NOLINT(runtime/references)
                          uint32_t threadnum) {
   sess.setArgs(
     {"config", "set", "executorthreadnum", std::to_string(threadnum)});

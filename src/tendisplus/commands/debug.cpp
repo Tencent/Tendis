@@ -167,11 +167,11 @@ class KeysCommand : public Command {
         }
         RET_IF_MEMORY_REQUEST_FAILED(sess, key.size());
         result.emplace_back(std::move(key));
-        if (result.size() >= (size_t)limit) {
+        if (result.size() >= static_cast<size_t>(limit)) {
           break;
         }
       }
-      if (result.size() >= (size_t)limit) {
+      if (result.size() >= static_cast<size_t>(limit)) {
         break;
       }
     }
@@ -1295,8 +1295,7 @@ class CommandListCommand : public Command {
     if (checkCompatible) {
       for (const auto& cmd : cmdmap) {
         if (cmd.second->getFlags() & flag) {
-          auto rcmd =
-            redis_port::getCommandFromTable(cmd.first.c_str());  // NOLINT
+          auto rcmd = redis_port::getCommandFromTable(cmd.first.c_str());
           if (!rcmd) {
             continue;
           }
@@ -1311,7 +1310,7 @@ class CommandListCommand : public Command {
                      sizeof(buf),
                      "%s flags(%d,%d), arity(%d,%d), "
                      "firstkey(%d,%d), lastkey(%d,%d), "
-                     "keystep(%d,%d) sameWithRedis(%s)",  // NOLINT
+                     "keystep(%d,%d) sameWithRedis(%s)",
                      cmd.first.c_str(),
                      rcmd->flags,
                      tcmd->getFlags(),
@@ -1334,8 +1333,7 @@ class CommandListCommand : public Command {
       int numcommands = redis_port::getCommandCount();
 
       for (j = 0; j < numcommands; j++) {
-        struct redis_port::redisCommand* c =
-          redis_port::getCommandFromTable(j);  // NOLINT
+        struct redis_port::redisCommand* c = redis_port::getCommandFromTable(j);
 
         if (c->flags & flag) {
           if (!cmdmap.count(c->name)) {
@@ -1976,7 +1974,7 @@ class ClientCommand : public Command {
           LOG(INFO) << "word:" << args[2] << ' ' << v << " illegal";
           return {ErrorCodes::ERR_PARSEOPT,
                   "Client names cannot contain spaces, newlines or "
-                  "special characters."};  // NOLINT
+                  "special characters."};
         }
       }
       sess->setName(args[2]);
@@ -1986,7 +1984,7 @@ class ClientCommand : public Command {
     } else {
       return {ErrorCodes::ERR_PARSEOPT,
               "Syntax error, try CLIENT (LIST | KILL ip:port | GETNAME | "
-              "SETNAME connection-name)"};  // NOLINT
+              "SETNAME connection-name)"};
     }
   }
 } clientCmd;
@@ -2090,13 +2088,13 @@ class InfoCommand : public Command {
 #endif
 #ifndef _WIN32
          << "os:" << name.sysname << " " << name.release << " " << name.machine
-         << "\r\n"  // NOLINT
+         << "\r\n"
 #endif
          << "arch_bits:" << ((sizeof(size_t) == 8) ? 64 : 32) << "\r\n"
          << "multiplexing_api:asio\r\n"
 #ifdef __GNUC__
          << "gcc_version:" << __GNUC__ << ":" << __GNUC_MINOR__ << ":"
-         << __GNUC_PATCHLEVEL__ << "\r\n"  // NOLINT
+         << __GNUC_PATCHLEVEL__ << "\r\n"
 #else
          << "gcc_version:0.0.0\r\n"
 #endif
@@ -2132,7 +2130,6 @@ class InfoCommand : public Command {
          << "\r\n"
          << "cluster_clients:"
          << server->getSessionCount(Session::Type::CLUSTER) << "\r\n";
-      ;
       ss << "\r\n";
       result << ss.str();
     }
@@ -2771,7 +2768,7 @@ class ObjectCommand : public Command {
         ss,
         "freq -- Return the access frequency index of the key. The "
         "returned integer is proportional to the logarithm of the "
-        "recent access frequency of the key. Always 0");  // NOLINT
+        "recent access frequency of the key. Always 0");
       return ss.str();
     } else if (args.size() == 3) {
       const std::string& key = sess->getArgs()[2];

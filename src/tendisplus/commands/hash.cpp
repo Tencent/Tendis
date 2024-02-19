@@ -783,7 +783,7 @@ class HIncrByCommand : public Command {
     const std::string& key = args[1];
     const std::string& subkey = args[2];
     const std::string& val = args[3];
-    long long inc{0};  // NOLINT
+    long long inc{0};  // NOLINT(runtime/int)
     if (!redis_port::string2ll(val.c_str(), val.size(), &inc)) {
       return {ErrorCodes::ERR_INTERGER, ""};
     }

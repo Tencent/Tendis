@@ -171,7 +171,8 @@ class session : public std::enable_shared_from_this<session> {
 
 class server {
  public:
-  server(asio::io_context& io_context, uint16_t port) {
+  server(asio::io_context& io_context,  // NOLINT(runtime/references)
+         uint16_t port) {
     try {
       _acceptor = new asio::ip::tcp::acceptor(
         io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port));
@@ -324,7 +325,8 @@ class session2 : public std::enable_shared_from_this<session2> {
 
 class server2 {
  public:
-  server2(asio::io_context& io_context, uint16_t port) {
+  server2(asio::io_context& io_context,  // NOLINT(runtime/references)
+          uint16_t port) {
     try {
       _acceptor = new asio::ip::tcp::acceptor(
         io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port));

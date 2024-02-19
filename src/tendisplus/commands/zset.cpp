@@ -475,8 +475,7 @@ class ZRemByRangeGenericCommand : public Command {
         return {ErrorCodes::ERR_ZSLPARSERANGE, ""};
       }
     } else if (_type == Type::LEX) {
-      if (zslParseLexRange(args[2].c_str(), args[3].c_str(), &lexrange) !=
-          0) {  // NOLINT:whitespace/line_length
+      if (zslParseLexRange(args[2].c_str(), args[3].c_str(), &lexrange)) {
         return {ErrorCodes::ERR_ZSLPARSELEXRANGE, ""};
       }
     }
@@ -1072,8 +1071,7 @@ class ZRangeByScoreGenericCommand : public Command {
       minidx = 2;
       maxidx = 3;
     }
-    if (zslParseRange(args[minidx].c_str(), args[maxidx].c_str(), &range) !=
-        0) {  // NOLINT:whitespace/line_length
+    if (zslParseRange(args[minidx].c_str(), args[maxidx].c_str(), &range)) {
       return {ErrorCodes::ERR_ZSLPARSERANGE, ""};
     }
 
@@ -1210,9 +1208,7 @@ class ZRangeByLexGenericCommand : public Command {
     }
 
     Zlexrangespec range;
-    if (zslParseLexRange(args[minidx].c_str(),
-                         args[maxidx].c_str(),
-                         &range) != 0) {  // NOLINT:whitespace/line_length
+    if (zslParseLexRange(args[minidx].c_str(), args[maxidx].c_str(), &range)) {
       return {ErrorCodes::ERR_ZSLPARSELEXRANGE, ""};
     }
 

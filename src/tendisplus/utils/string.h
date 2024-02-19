@@ -38,9 +38,9 @@ std::string ultos(uint64_t d);
 std::string hexlify(const std::string&);
 Expected<std::string> unhexlify(const std::string&);
 bool isOptionOn(const std::string& s);
-void sdstrim(std::string& s, const char* cset);
+void sdstrim(std::string& s, const char* cset);  // NOLINT(runtime/references)
 
-std::string& replaceAll(std::string& str,
+std::string& replaceAll(std::string& str,  // NOLINT(runtime/references)
                         const std::string& old_value,
                         const std::string& new_value);
 
@@ -303,8 +303,8 @@ using std::string_view;
 #define mystring_view string_view
 
 #elif __has_include(<experimental/string_view>)
-#include <experimental/string_view>  // NOLINT
-using std::experimental::string_view;  // NOLINT
+#include <experimental/string_view>
+using std::experimental::string_view;
 #define mystring_view string_view
 
 #else

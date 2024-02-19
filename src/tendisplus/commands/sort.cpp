@@ -553,7 +553,7 @@ class SortCommand : public Command {
 
       // ops has a minimum size 1.
       result.reserve(ops.size() > 1 ? (ops.size() - 1) * records.size()
-                                    : records.size());  // NOLINT
+                                    : records.size());
       if (ops.size() == 1) {
         ops.emplace_back(SortOp{"", ""});
       }
