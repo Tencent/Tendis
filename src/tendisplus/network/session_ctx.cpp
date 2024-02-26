@@ -368,4 +368,45 @@ void SessionCtx::resetStatisticInfo() {
   }
 }
 
+void SessionCtx::subscribeChannel(const std::string& channel) {
+  _subscribeChannels.emplace(channel);
+}
+
+int SessionCtx::getSubChannelCount() {
+  return _subscribeChannels.size();
+}
+
+void SessionCtx::unsubscribeChannel(const std::string& channel) {
+  _subscribeChannels.erase(channel);
+}
+
+void SessionCtx::unsubscribePattern(const std::string& pattern) {
+  _subscribePatterns.erase(pattern);
+}
+
+const std::unordered_set<std::string> SessionCtx::getSubscribeChannels() const {
+  return _subscribeChannels;
+}
+
+const std::unordered_set<std::string> SessionCtx::getSubscribePatterns() const {
+  return _subscribePatterns;
+}
+
+void SessionCtx::clearSubscribeChannel() {
+  _subscribeChannels.clear();
+}
+
+void SessionCtx::clearSubscribePattern() {
+  _subscribePatterns.clear();
+}
+
+void SessionCtx::subscribePattern(const std::string& pattern) {
+  _subscribePatterns.emplace(pattern);
+}
+
+
+int SessionCtx::getSubPatternCount() {
+  return _subscribePatterns.size();
+}
+
 }  // namespace tendisplus

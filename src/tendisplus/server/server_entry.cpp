@@ -898,34 +898,37 @@ Status ServerEntry::cancelSession(uint64_t connId) {
 }
 //
 void ServerEntry::endSession(uint64_t connId) {
-  std::lock_guard<std::mutex> lk(_mutex_session);
-  if (!_isRunning.load(std::memory_order_relaxed)) {
-    return;
-  }
-  auto it = _sessions.find(connId);
-  if (it == _sessions.end()) {
-    // NOTE(vinchen): ServerEntry::endSession() is called by
-    // NetSession::endSession(), but it is not holding NetSession::_mutex
-    // So here is possible now.
-    LOG(ERROR) << "destroy conn:" << connId << ",not exists";
-    return;
-  }
+  {
+    std::lock_guard<std::mutex> lk(_mutex_session);
+    if (!_isRunning.load(std::memory_order_relaxed)) {
+      return;
+    }
+    auto it = _sessions.find(connId);
+    if (it == _sessions.end()) {
+      // NOTE(vinchen): ServerEntry::endSession() is called by
+      // NetSession::endSession(), but it is not holding NetSession::_mutex
+      // So here is possible now.
+      LOG(ERROR) << "destroy conn:" << connId << ",not exists";
+      return;
+    }
 
-  INVARIANT_D(it->second->getType() != Session::Type::LOCAL);
+    INVARIANT_D(it->second->getType() != Session::Type::LOCAL);
 
-  SessionCtx* pCtx = it->second->getCtx();
-  INVARIANT(pCtx != nullptr);
-  if (pCtx->getIsMonitor()) {
-    DelMonitorNoLock(connId);
-  }
+    SessionCtx* pCtx = it->second->getCtx();
+    INVARIANT(pCtx != nullptr);
+    if (pCtx->getIsMonitor()) {
+      DelMonitorNoLock(connId);
+    }
 #ifdef TENDIS_DEBUG
-  if (it->second->getType() != Session::Type::LOCAL) {
-    DLOG(INFO) << "ServerEntry endSession id:" << connId
-               << " addr:" << it->second->getRemote()
-               << " type:" << it->second->getTypeStr();
-  }
+    if (it->second->getType() != Session::Type::LOCAL) {
+      DLOG(INFO) << "ServerEntry endSession id:" << connId
+                 << " addr:" << it->second->getRemote()
+                 << " type:" << it->second->getTypeStr();
+    }
 #endif
-  _sessions.erase(it);
+    _sessions.erase(it);
+  }
+  DelSubSession(connId);
 }
 
 std::list<std::shared_ptr<Session>> ServerEntry::getAllSessions() const {
@@ -964,6 +967,26 @@ void ServerEntry::DelMonitorNoLock(uint64_t connId) {
     if (it->get()->id() == connId) {
       _monitors.erase(it);
       break;
+    }
+  }
+}
+
+void ServerEntry::DelSubSession(uint64_t connId) {
+  std::lock_guard<std::mutex> pubsublk(_mutex_pubsubChannels);
+  for (auto it = _pubsubChannels.begin(); it != _pubsubChannels.end();) {
+    it->second.erase(connId);
+    if (it->second.empty()) {
+      it = _pubsubChannels.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  for (auto it = _pubsubPatterns.begin(); it != _pubsubPatterns.end();) {
+    it->second.erase(connId);
+    if (it->second.empty()) {
+      it = _pubsubPatterns.erase(it);
+    } else {
+      ++it;
     }
   }
 }
@@ -1081,6 +1104,157 @@ void ServerEntry::replyMonitors(Session* sess) {
     } else {
       (*iter)->drainRsp();
       ++iter;
+    }
+  }
+}
+
+int ServerEntry::PublishMessage(Session* sess) {
+  SessionCtx* pCtx = sess->getCtx();
+  INVARIANT(pCtx != nullptr);
+
+  const auto& args = sess->getArgs();
+
+  const std::string& channel = args[1];
+  const std::string& message = args[2];
+
+  std::vector<std::shared_ptr<Session>> to_publish_session;
+  std::vector<std::shared_ptr<Session>> to_publish_pattern_session;
+  std::vector<std::string> to_publish_pattern;
+  {
+    std::lock_guard<std::mutex> lk(_mutex_pubsubChannels);
+    if (auto iter = _pubsubChannels.find(channel);
+        iter != _pubsubChannels.end()) {
+      for (const auto& [_, sess] : iter->second) {
+        to_publish_session.emplace_back(sess);
+      }
+    }
+
+    for (const auto& [curPattern, curSessionList] : _pubsubPatterns) {
+      if (redis_port::stringmatchlen(curPattern.c_str(),
+                                     curPattern.size(),
+                                     channel.c_str(),
+                                     channel.size(),
+                                     0)) {
+        for (const auto& [_, curSession] : curSessionList) {
+          to_publish_pattern_session.emplace_back(curSession);
+          to_publish_pattern.emplace_back(curPattern);
+        }
+      }
+    }
+  }
+
+  std::stringstream channel_reply;
+  Command::fmtMultiBulkLen(channel_reply, 3);
+  Command::fmtBulk(channel_reply, "message");
+  Command::fmtBulk(channel_reply, channel);
+  Command::fmtBulk(channel_reply, message);
+
+  int cnt = 0;
+  for (auto& pubSess : to_publish_session) {
+    auto s = pubSess->setResponse(channel_reply.str());
+    if (!s.ok()) {
+      LOG(WARNING) << "Failed to publish message. channel:" << channel
+                   << " err: " << s.toString();
+    } else {
+      pubSess->drainRsp();
+      ++cnt;
+    }
+  }
+
+  int index = 0;
+  for (const auto& pubSess : to_publish_pattern_session) {
+    std::stringstream pattern_reply;
+    Command::fmtMultiBulkLen(pattern_reply, 4);
+    Command::fmtBulk(pattern_reply, "pmessage");
+    Command::fmtBulk(pattern_reply, to_publish_pattern[index++]);
+    Command::fmtBulk(pattern_reply, channel);
+    Command::fmtBulk(pattern_reply, message);
+    auto s = pubSess->setResponse(pattern_reply.str());
+    if (!s.ok()) {
+      LOG(WARNING) << "Failed to publish pattern message. channel:" << channel
+                   << "err: " << s.toString();
+    } else {
+      pubSess->drainRsp();
+      ++cnt;
+    }
+  }
+
+  return cnt;
+}
+
+void ServerEntry::SubscribeChannel(uint64_t sessId,
+                                   const std::string& channel) {
+  auto sess = getSession(sessId);
+  INVARIANT(sess != nullptr);
+
+  std::lock_guard<std::mutex> lk(_mutex_pubsubChannels);
+  _pubsubChannels[channel].emplace(sessId, sess);
+}
+
+void ServerEntry::UnsubscribeChannel(Session* sess,
+                                     const std::string& channel) {
+  auto sessId = sess->id();
+  std::lock_guard<std::mutex> lk(_mutex_pubsubChannels);
+
+  auto iter = _pubsubChannels.find(channel);
+  if (iter == _pubsubChannels.end()) {
+    return;
+  }
+
+  iter->second.erase(sessId);
+  if (iter->second.empty()) {
+    _pubsubChannels.erase(iter);
+  }
+}
+
+void ServerEntry::SubscribePattern(uint64_t sessId,
+                                   const std::string& pattern) {
+  auto sess = getSession(sessId);
+  INVARIANT(sess != nullptr);
+
+  std::lock_guard<std::mutex> lk(_mutex_pubsubChannels);
+  _pubsubPatterns[pattern].emplace(sessId, sess);
+}
+
+void ServerEntry::UnsubscribePattern(Session* sess,
+                                     const std::string& pattern) {
+  auto sessId = sess->id();
+  std::lock_guard<std::mutex> lk(_mutex_pubsubChannels);
+
+  auto iter = _pubsubPatterns.find(pattern);
+  if (iter == _pubsubPatterns.end()) {
+    return;
+  }
+
+  iter->second.erase(sessId);
+  if (iter->second.empty()) {
+    _pubsubPatterns.erase(iter);
+  }
+}
+
+void ServerEntry::ListChannelSubscribeNum(
+  std::vector<std::pair<std::string, int>>* channelSubNum) {
+  std::lock_guard<std::mutex> lk(_mutex_pubsubChannels);
+  for (auto& [channel, num] : *channelSubNum) {
+    auto iter = _pubsubChannels.find(channel);
+    if (iter != _pubsubChannels.end()) {
+      num = iter->second.size();
+    }
+  }
+}
+
+void ServerEntry::ListChannelByPattern(const std::string& pattern,
+                                       std::vector<std::string>* channels) {
+  std::lock_guard<std::mutex> lk(_mutex_pubsubChannels);
+  bool isPatternEmpty = pattern.empty();
+  for (const auto& [curChannel, _] : _pubsubChannels) {
+    if (isPatternEmpty ||
+        redis_port::stringmatchlen(pattern.c_str(),
+                                   pattern.size(),
+                                   curChannel.c_str(),
+                                   curChannel.size(),
+                                   0)) {
+      (*channels).emplace_back(curChannel);
     }
   }
 }

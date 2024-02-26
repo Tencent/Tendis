@@ -13,6 +13,8 @@
 #include <shared_mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -32,6 +34,7 @@
 #include "tendisplus/storage/pessimistic.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/utils/cursor_map.h"
+#include "tendisplus/utils/redis_port.h"
 
 #define SLOWLOG_ENTRY_MAX_ARGC 32;
 #define SLOWLOG_ENTRY_MAX_STRING 128;
@@ -381,6 +384,15 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
                                                                     cursor);
   }
 
+  int PublishMessage(Session* sess);
+  void SubscribeChannel(uint64_t sessId, const std::string& channel);
+  void UnsubscribeChannel(Session* sess, const std::string& channel);
+  void SubscribePattern(uint64_t sessId, const std::string& pattern);
+  void UnsubscribePattern(Session* sess, const std::string& pattern);
+  void ListChannelSubscribeNum(std::vector<std::pair<std::string, int>>*);
+  void ListChannelByPattern(const std::string& pattern,
+                            std::vector<std::string>* channels);
+
  private:
   ServerEntry();
   Status adaptSomeThreadNumByCpuNum(const std::shared_ptr<ServerParams>& cfg);
@@ -389,6 +401,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   void jemallocBgThreadConf();
   void replyMonitors(Session* sess);
   void DelMonitorNoLock(uint64_t connId);
+  void DelSubSession(uint64_t connId);
   void resizeExecutorThreadNum(uint64_t newThreadNum);
   void resizeIncrExecutorThreadNum(uint64_t newThreadNum);
   void resizeDecrExecutorThreadNum(uint64_t newThreadNum);
@@ -412,6 +425,16 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   mutable std::mutex _mutex_session;
   std::map<uint64_t, std::shared_ptr<Session>> _sessions;
   std::list<std::shared_ptr<Session>> _monitors;
+
+  // NOTE(barneyxiao) _mutex_pubsubChannels is used only for
+  // _pubsubChannels and _pubsubPatterns
+  mutable std::mutex _mutex_pubsubChannels;
+  std::unordered_map<std::string,
+                     std::unordered_map<uint64_t, std::shared_ptr<Session>>>
+    _pubsubChannels;
+  std::unordered_map<std::string,
+                     std::unordered_map<uint64_t, std::shared_ptr<Session>>>
+    _pubsubPatterns;
 
   std::atomic<uint64_t> _newExecutorThreadNum = 0;
   mutable std::shared_timed_mutex _exeThreadMutex;

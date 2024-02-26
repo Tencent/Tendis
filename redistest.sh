@@ -65,6 +65,7 @@ runOne "tclsh tests/test_helper.tcl --single rr_unit/sort"
 runOne "tclsh tests/test_helper.tcl --single rr_unit/bitmap2"
 runOne "tclsh tests/test_helper.tcl --single rr_unit/bitops2"
 runOne "tclsh tests/test_helper.tcl --single rr_unit/bitfield2"
+runOne "tclsh tests/test_helper.tcl --single rr_unit/pubsub"
 
 runOne "tclsh tests/test_helper.tcl --single tendis_ssd_test/bitfield"
 runOne "tclsh tests/test_helper.tcl --single tendis_ssd_test/cas"
