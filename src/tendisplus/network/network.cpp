@@ -234,6 +234,10 @@ Status NetworkAsio::prepareAccept(
     }
     std::error_code ec;
     acceptor = std::make_shared<tcp::acceptor>(*acceptCtx, ep);
+    // tcp::acceptor constructor has called listen(SOMAXCONN) with default.
+    if (_cfg->tcpBacklog > 0) {
+      acceptor->listen(_cfg->tcpBacklog);
+    }
     acceptor->set_option(tcp::acceptor::reuse_address(true));
     acceptor->non_blocking(true, ec);
     if (ec.value()) {

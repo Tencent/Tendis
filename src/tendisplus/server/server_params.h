@@ -444,6 +444,7 @@ class ServerParams {
   std::string bindIp = "127.0.0.1";
   std::string bindIp2 = "";
   uint32_t port = 8903;
+  uint32_t tcpBacklog = 0;
   std::string logLevel = "";
   std::string logDir = "./";
   uint32_t logSizeMb = 128;
