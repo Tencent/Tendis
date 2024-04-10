@@ -3274,6 +3274,41 @@ TEST(Command, renameCommand) {
 #endif
 }
 
+TEST(Command, getSessionCmd) {
+  auto guard = MakeGuard([] { destroyEnv(); });
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  cfg->aofEnabled = true;
+  auto server = makeServerEntry(cfg);
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext);
+  NetSession sess(server, std::move(socket), 1, false, nullptr, nullptr);
+
+  sess.setArgs({"zincrby", "z1", "10", "ex"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(Command::fmtBulk("10"), expect.value());
+  sess.setArgs({"zincrby", "z1", "10", "px"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(Command::fmtBulk("10"), expect.value());
+
+  sess.setArgs({"set", "k1", "v1", "px", "10000000"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(Command::fmtOK(), expect.value());
+  sess.setArgs({"set", "k1", "v1", "xx", "px", "10000000"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(Command::fmtOK(), expect.value());
+  sess.setArgs({"set", "k1", "v1", "px", "10000000", "xx"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(Command::fmtOK(), expect.value());
+  sess.setArgs({"set", "k1", "v1", "px", "10000000", "ex", "100"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(Command::fmtOK(), expect.value());
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
 // NOTE(takenliu): don't add test here, and it before Command.renameCommand
 
 }  // namespace tendisplus

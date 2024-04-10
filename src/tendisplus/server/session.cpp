@@ -118,7 +118,6 @@ std::string Session::getSessionCmd() {
   std::vector<std::string> expxList;
   std::vector<std::string> args(_args);
   int64_t expireTime;
-  size_t i = 0;
   std::string arg1 = toLower(args[0]);
 
   if (args.size() == 0) {
@@ -144,7 +143,8 @@ std::string Session::getSessionCmd() {
       Command::fmtBulk(ss, arg);
     }
     return ss.str();
-  } else if ((arg1 == "setex" || arg1 == "psetex") && args.size() == 4) {
+  }
+  if ((arg1 == "setex" || arg1 == "psetex") && args.size() == 4) {
     // SETex PSETEX KV -> SET KV& &pexpireat
     auto expt = ::tendisplus::stoul(args[2]);
     if (!expt.ok()) {
@@ -165,31 +165,33 @@ std::string Session::getSessionCmd() {
     args.erase(args.begin() + 2);
   }
 
-  for (auto it = args.begin(); it != args.end();) {
-    const std::string arg = toLower(*it);
-    // SET KV PX|EX  -> SET KV& &pexpireat
-    i++;
-    /* NOTE(wayenchen) set kv px| ex should be on 4th or 6th arg*/
-    if ((arg == "ex" || arg == "px") && (i == 4 || i == 5)) {
-      auto expt = ::tendisplus::stoul(*(it + 1));
-      if (!expt.ok()) {
-        LOG(ERROR) << "get EX|PX command time fail" << expt.status().toString();
-        return "\"\"";
-      }
+  if (arg1 == "set") {
+    for (auto it = args.begin(); it != args.end();) {
+      const std::string arg = toLower(*it);
+      // SET KV PX|EX  -> SET KV& &pexpireat
+      /* NOTE(wayenchen) set kv px| ex should be on 4th or 6th arg*/
+      if ((arg == "ex" || arg == "px") && it + 1 != args.end()) {
+        auto expt = ::tendisplus::stoul(*(it + 1));
+        if (!expt.ok()) {
+          LOG(ERROR) << "get EX|PX command time fail"
+                     << expt.status().toString();
+          return "\"\"";
+        }
 
-      if (arg == "ex") {
-        expireTime = msSinceEpoch() + expt.value() * 1000;
+        if (arg == "ex") {
+          expireTime = msSinceEpoch() + expt.value() * 1000;
+        } else {
+          expireTime = msSinceEpoch() + expt.value();
+        }
+        std::string key = args[1];
+        std::string expireStr =
+          "pexpireat " + key + " " + std::to_string(expireTime);
+        expxList.emplace_back(std::move(expireStr));
+        // delete ex from origin command
+        args.erase(it, it + 2);
       } else {
-        expireTime = msSinceEpoch() + expt.value();
+        it++;
       }
-      std::string key = args[1];
-      std::string expireStr =
-        "pexpireat " + key + " " + std::to_string(expireTime);
-      expxList.emplace_back(std::move(expireStr));
-      // delete ex from origin command
-      args.erase(it, it + 2);
-    } else {
-      it++;
     }
   }
 
