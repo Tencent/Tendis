@@ -538,6 +538,15 @@ start_server {tags {"zset"}} {
             assert_equal {b 2 c 3} [r zrange zsetc 0 -1 withscores]
         }
 
+        test "ZINTERSTORE with empty zset" {
+            r zadd z1 10 a 20 b
+            r zadd z2 15 a 25 c
+            assert_equal 1 [r zinterstore z3 2 z1 z2]
+            assert_equal "a" [r zrange z3 0 -1]
+            assert_equal 0 [r zinterstore z4 3 z1 z2 z5]
+            assert_equal {} [r zrange z4 0 -1]
+        }
+
         foreach cmd {ZUNIONSTORE ZINTERSTORE} {
             test "$cmd with +inf/-inf scores - $encoding" {
                 r del zsetinf1 zsetinf2

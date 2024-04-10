@@ -1796,8 +1796,9 @@ class ZUnionInterGenericCommand : public Command {
         sess, args[keyindex[i]], RecordType::RT_DATA_META);
       if (exprv.status().code() == ErrorCodes::ERR_EXPIRED ||
           exprv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-        if (_op == ZsetOp::SET_OP_INTER)
-          Command::fmtZero();
+        if (_op == ZsetOp::SET_OP_INTER) {
+          return Command::fmtZero();
+        }
         continue;
       } else if (!exprv.ok()) {
         return exprv.status();
