@@ -1009,10 +1009,12 @@ void ClusterState::clusterUpdateSlotsConfigWith(
   bool needReconfigure;
   bool masterNotFail;
   bool slaveFullSyncDone;
+  bool isMaster;
   {
     std::lock_guard<myMutex> lk(_mutex);
     CNodePtr myself = getMyselfNode();
     auto curmaster = myself->nodeIsMaster() ? myself : myself->getMaster();
+    isMaster = myself->nodeIsMaster();
     if (sender == myself) {
       LOG(INFO) << "Discarding UPDATE message about myself.";
       return;
@@ -1060,7 +1062,8 @@ void ClusterState::clusterUpdateSlotsConfigWith(
    *    master.
    * 2) We are a slave and our master is left without slots. We need
    *    to replicate to the new slots owner. */
-  if (needReconfigure && _server->getParams()->slaveReconfEnabled) {
+  if (needReconfigure &&
+      (isMaster || _server->getParams()->slaveReconfEnabled)) {
     serverLog(LL_WARNING,
               "Configuration change detected "
               "Reconfiguring myself as a replica of %.40s",
