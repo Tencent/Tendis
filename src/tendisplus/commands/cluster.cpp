@@ -793,6 +793,10 @@ class ClusterCommand : public Command {
       LOG(ERROR) << "preparemigrate error:" << expRsp.status().toString();
       return expRsp.status();
     }
+    if (expRsp.value()[0] == '-') {
+      LOG(ERROR) << "preparemigrate error response:" << expRsp.value();
+      return {ErrorCodes::ERR_INTERNAL, expRsp.value()};
+    }
 
     const std::string& json = expRsp.value();
     rapidjson::Document doc;
