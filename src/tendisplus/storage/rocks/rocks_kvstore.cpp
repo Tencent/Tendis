@@ -960,10 +960,8 @@ const rocksdb::Snapshot* RocksWBTxn::getSnapshot() {
 
 rocksdb::Iterator* RocksWBTxn::getIterator(
   rocksdb::ReadOptions readOpts, rocksdb::ColumnFamilyHandle* columnFamily) {
-  // rocksdb::Iterator* dbIter = _store->newIterator(readOpts, columnFamily);
-  // TODO(jingjunli): ReadUncommited or ReadCommited ?
-  // return _writeBatch->NewIteratorWithBase(columnFamily, dbIter);
-  return _store->newIterator(readOpts, columnFamily);
+  rocksdb::Iterator* dbIter = _store->newIterator(readOpts, columnFamily);
+  return _writeBatch->NewIteratorWithBase(columnFamily, dbIter);
 }
 
 rocksdb::CompressionType rocksGetCompressType(const std::string& typeStr) {

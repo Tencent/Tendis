@@ -595,6 +595,20 @@ TEST(RocksKVStore, PesCursorVisible) {
   cursorVisibleRoutine(kvstore.get());
 }
 
+TEST(RocksKVStore, WBCursorVisible) {
+  auto cfg = genParams();
+  EXPECT_TRUE(filesystem::create_directory("db"));
+  EXPECT_TRUE(filesystem::create_directory("log"));
+  const auto guard = MakeGuard([] {
+    filesystem::remove_all("./log");
+    filesystem::remove_all("./db");
+  });
+  auto blockCache =
+    rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+  auto kvstore = genRocksKVStore(cfg, blockCache, TxnMode::TXN_WB);
+  cursorVisibleRoutine(kvstore.get());
+}
+
 void setKV(RocksKVStore* kvstore,
            uint32_t chunkid,
            const std::string& prefix,
