@@ -2071,7 +2071,7 @@ std::string ClusterState::clusterGenStateDescription() {
   uint8_t x = (_state == ClusterHealth::CLUSTER_OK) ? 0 : 1;
 
   clusterInfo << "cluster_state:" << states[x] << "\r\n"
-              << "cluster_slots_assigend:" << slots_assigned << "\r\n"
+              << "cluster_slots_assigned:" << slots_assigned << "\r\n"
               << "cluster_slots_ok:" << slots_ok << "\r\n"
               << "cluster_slots_pfail:" << slots_pfail << "\r\n"
               << "cluster_slots_fail:" << slots_fail << "\r\n"
