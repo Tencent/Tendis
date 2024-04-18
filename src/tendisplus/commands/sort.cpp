@@ -196,7 +196,7 @@ class SortCommand : public Command {
           return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
         }
         count = eCount.value();
-      } else if (!::strcasecmp(args[i].c_str(), "store")) {
+      } else if (!::strcasecmp(args[i].c_str(), "store") && leftargs >= 1) {
         store = true;
         storeKeyIndex = i + 1;
         i++;

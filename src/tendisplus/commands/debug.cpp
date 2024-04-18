@@ -1884,9 +1884,11 @@ class ClientCommand : public Command {
   Expected<std::string> killClients(Session* sess) {
     const std::vector<std::string>& args = sess->getArgs();
 
-    int skipme = 0;
+    int skipme = 1;
     std::string remote = "";
     uint64_t id = 0;
+    size_t killed = 0;
+    int closeThisClient = 0;
 
     if (args.size() == 3) {
       remote = args[2];
@@ -1894,34 +1896,35 @@ class ClientCommand : public Command {
     } else if (args.size() > 3) {
       size_t i = 2;
       while (i < args.size()) {
-        int moreargs = args.size() > i + 1;
-        if (args[i] == "id" && moreargs) {
+        bool moreargs = args.size() > i + 1;
+        if (!::strcasecmp(args[i].c_str(), "id") && moreargs) {
           Expected<uint64_t> eid = ::tendisplus::stoul(args[i + 1]);
           if (!eid.ok()) {
             return eid.status();
           }
           id = eid.value();
-        } else if (args[i] == "addr" && moreargs) {
+        } else if (!::strcasecmp(args[i].c_str(), "addr") && moreargs) {
           remote = args[i + 1];
-        } else if (args[i] == "skipme" && moreargs) {
-          if (args[i + 1] == "yes") {
+        } else if (!::strcasecmp(args[i].c_str(), "skipme") && moreargs) {
+          if (!::strcasecmp(args[i + 1].c_str(), "yes")) {
             skipme = 1;
-          } else if (args[i + 1] == "no") {
+          } else if (!::strcasecmp(args[i + 1].c_str(), "no")) {
             skipme = 0;
           } else {
-            return {ErrorCodes::ERR_PARSEOPT, "skipme yes|no"};
+            return {ErrorCodes::ERR_PARSEOPT, ""};
           }
         } else {
-          return {ErrorCodes::ERR_PARSEOPT, "invalid syntax"};
+          return {ErrorCodes::ERR_PARSEOPT, ""};
         }
         i += 2;
       }
+    } else {
+      return {ErrorCodes::ERR_PARSEOPT, ""};
     }
 
     auto svr = sess->getServerEntry();
     INVARIANT(svr != nullptr);
     auto sesses = svr->getAllSessions();
-    int closeThisClient = 0;
     for (auto& v : sesses) {
       if (v->getFd() == -1) {
         continue;
@@ -1940,28 +1943,36 @@ class ClientCommand : public Command {
         }
       } else {
         v->cancel();
-        return Command::fmtOK();
       }
+      killed++;
     }
     if (closeThisClient) {
       auto vv = dynamic_cast<NetSession*>(sess);
       INVARIANT(vv != nullptr);
       vv->setCloseAfterRsp();
-      return Command::fmtOK();
     }
-    return {ErrorCodes::ERR_NOTFOUND, "No such client"};
+    if (args.size() == 3) {
+      if (killed == 0) {
+        return {ErrorCodes::ERR_NOTFOUND, "No such client"};
+      } else {
+        return {ErrorCodes::ERR_OK, ""};
+      }
+    } else {
+      return fmtLongLong(killed);
+    }
   }
 
   Expected<std::string> run(Session* sess) final {
     const std::vector<std::string>& args = sess->getArgs();
 
     auto arg1 = tendisplus::toLower(args[1]);
+    auto argSize = args.size();
 
-    if (arg1 == "id") {
+    if (arg1 == "id" && argSize == 2) {
       return Command::fmtLongLong(sess->id());
-    } else if (arg1 == "list") {
+    } else if (arg1 == "list" && argSize == 2) {
       return listClients(sess);
-    } else if (arg1 == "getname") {
+    } else if (arg1 == "getname" && argSize == 2) {
       std::string name = sess->getName();
       if (name == "") {
         return Command::fmtNull();

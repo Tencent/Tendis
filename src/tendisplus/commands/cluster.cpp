@@ -320,7 +320,7 @@ class ClusterCommand : public Command {
       myself->setFlag(CLUSTER_NODE_ARBITER);
       LOG(INFO) << "set myself as arbiter";
       return Command::fmtOK();
-    } else if (arg1 == "nodes" && argSize <= 3) {
+    } else if (arg1 == "nodes" && (argSize == 2 || argSize == 3)) {
       bool showall = false;
       if (argSize == 3 && args[2] == "showall") {
         showall = true;
@@ -570,9 +570,10 @@ class ClusterCommand : public Command {
     } else if (arg1 == "reset" && (argSize == 2 || argSize == 3)) {
       uint16_t hard = 0;
       if (argSize == 3) {
-        if (args[2] == "hard") {
+        std::string arg2 = toLower(args[2]);
+        if (arg2 == "hard") {
           hard = 1;
-        } else if (args[2] == "soft") {
+        } else if (arg2 == "soft") {
           hard = 0;
         } else {
           return {ErrorCodes::ERR_CLUSTER, "error reset flag"};
