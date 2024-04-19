@@ -1045,7 +1045,7 @@ Expected<std::string> LuaState::evalGenericCommand(Session* sess, int evalsha) {
 
   lua_random_dirty = 0;
   lua_write_dirty = 0;
-  int lua_always_replicate_commands = 0;  // TODO(takenliu)
+  int lua_always_replicate_commands = 1;  // TODO(takenliu)
   lua_replicate_commands = lua_always_replicate_commands;
   // has_command_error = false;
 
