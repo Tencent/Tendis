@@ -449,9 +449,25 @@ class SrandMemberCommand : public Command {
       // TODO(vinchen):  should be configable
       return {ErrorCodes::ERR_INTERNAL, "bulk too big"};
     }
-    RecordKey fake = {
-      expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
-    cursor->seek(fake.prefixPk());
+    // NOTE(zakzheng) get index of last scan.
+    std::string skIndex;
+    if (exptSm.value().getSKIndex().size() > 0) {
+      RecordKey indexKey(expdb.value().chunkId,
+                         pCtx->getDbId(),
+                         RecordType::RT_SET_ELE,
+                         key,
+                         exptSm.value().getSKIndex());
+      skIndex = indexKey.encode();
+    } else {
+      RecordKey fake = {expdb.value().chunkId,
+                        pCtx->getDbId(),
+                        RecordType::RT_SET_ELE,
+                        key,
+                        ""};
+      skIndex = fake.prefixPk();
+    }
+
+    cursor->seek(skIndex);
     while (true) {
       Expected<Record> exptRcd = cursor->next();
       if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
