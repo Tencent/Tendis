@@ -537,4 +537,37 @@ start_server {
             }
         }
     }
+    test "save the min subkey" {
+        # the key length is 100
+        # subkey "a" < "ab", but {a + encode(100)} > {ab + encode(100)}, so subkey "a" is behind "ab" in rocksdb
+        set keyname "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij"
+        r del $keyname
+        assert_equal 2 [r sadd $keyname a ab]
+        # del subkey "ab", and save the min subkey "a"
+        assert_equal "ab" [r spop $keyname]
+        assert_equal "a" [r smembers $keyname]
+        # sadd need reset the skindex
+        assert_equal 1 [r sadd $keyname ab]
+        assert_equal "ab" [r spop $keyname]
+        assert_equal 1 [r sadd $keyname ab]
+        # reset the skindex
+        assert_equal "1" [r srem $keyname ab]
+        assert_equal "a" [r smembers $keyname]
+    }
+    test "save the min subkey" {
+        # subkey "a" is before "ab" in rocksdb
+        set keyname "setkey"
+        r del $keyname
+        assert_equal 2 [r sadd $keyname a ab]
+        # del subkey "a", and save the min subkey "ab"
+        assert_equal "a" [r spop $keyname]
+        assert_equal "ab" [r smembers $keyname]
+        # sadd need reset the skindex
+        assert_equal 1 [r sadd $keyname a]
+        assert_equal "a" [r spop $keyname]
+        assert_equal 1 [r sadd $keyname a]
+        # reset the skindex
+        assert_equal "1" [r srem $keyname a]
+        assert_equal "ab" [r smembers $keyname]
+    }
 }

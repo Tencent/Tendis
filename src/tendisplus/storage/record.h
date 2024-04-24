@@ -135,6 +135,7 @@ class RecordKey {
 
   std::string prefixSlotType() const;
   std::string prefixChunkid() const;
+  std::string suffixSubKey() const;
 
   /*
   // an encoded prefix with db & type, with no padding zero.
@@ -651,7 +652,7 @@ class SetMetaValue {
   void setCount(uint64_t count);
   uint64_t getCount() const;
   void setSKIndex(const std::string&);
-  std::string getSKIndex();
+  std::string getSKIndex() const;
 
  private:
   uint64_t _count;

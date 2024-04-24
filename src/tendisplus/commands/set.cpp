@@ -19,6 +19,24 @@
 
 namespace tendisplus {
 
+// get the seek pos of set structure
+std::string getSeekPosOfSet(uint32_t chunkId,
+                            uint32_t dbId,
+                            const std::string& key,
+                            const SetMetaValue& setMeta) {
+  // NOTE(takenliu):
+  //   if SetMetaValue has min field we seek to the min field.
+  //   then cursor.seek() can skip the deleted tombstones,
+  //   which may cause poor performance.
+  RecordKey fake = {
+    chunkId, dbId, RecordType::RT_SET_ELE, key, setMeta.getSKIndex()};
+  if (setMeta.getSKIndex().size() == 0) {
+    return fake.prefixPk();
+  } else {
+    return fake.encode();
+  }
+}
+
 Expected<bool> delGeneric(Session* sess,
                           const std::string& key,
                           Transaction* txn);
@@ -67,8 +85,15 @@ Expected<std::string> genericSRem(Session* sess,
     if (!s.ok()) {
       return s;
     }
-    if (sm.getSKIndex().size() > 0 && 0 == sm.getSKIndex().compare(args[i])) {
-      resetSKIndex = true;
+    if (!resetSKIndex && sm.getSKIndex().size() > 0) {
+      RecordKey indexSubRk(metaRk.getChunkId(),
+                           metaRk.getDbId(),
+                           RecordType::RT_SET_ELE,
+                           metaRk.getPrimaryKey(),
+                           sm.getSKIndex());
+      if (subRk.suffixSubKey().compare(indexSubRk.suffixSubKey()) <= 0) {
+        resetSKIndex = true;
+      }
     }
   }
   INVARIANT_D(sm.getCount() >= cnt);
@@ -127,8 +152,10 @@ Expected<std::string> genericSAdd(Session* sess,
     return rv.status();
   }
 
-  bool resetSKIndex(false);
   uint64_t cnt = 0;
+  bool needCheckSKIndex = sm.getSKIndex().size() > 0;
+  std::string minSuffixSubKey = "";
+  std::string skIndex = "";
   for (size_t i = 2; i < args.size(); ++i) {
     RecordKey subRk(metaRk.getChunkId(),
                     metaRk.getDbId(),
@@ -150,14 +177,32 @@ Expected<std::string> genericSAdd(Session* sess,
     if (!s.ok()) {
       return s;
     }
-    if (sm.getSKIndex().size() > 0 && sm.getSKIndex().compare(args[i]) > 0) {
-      resetSKIndex = true;
+
+    if (needCheckSKIndex) {
+      if (minSuffixSubKey == "") {
+        minSuffixSubKey = subRk.suffixSubKey();
+        skIndex = args[i];
+      } else {
+        std::string suffix = subRk.suffixSubKey();
+        if (minSuffixSubKey.compare(suffix) > 0) {
+          minSuffixSubKey = std::move(suffix);
+          skIndex = args[i];
+        }
+      }
+    }
+  }
+  if (needCheckSKIndex) {
+    RecordKey indexSubRk(metaRk.getChunkId(),
+                         metaRk.getDbId(),
+                         RecordType::RT_SET_ELE,
+                         metaRk.getPrimaryKey(),
+                         sm.getSKIndex());
+    if (minSuffixSubKey.compare(indexSubRk.suffixSubKey()) < 0) {
+      // reset skIndex
+      sm.setSKIndex(skIndex);
     }
   }
   sm.setCount(sm.getCount() + cnt);
-  if (resetSKIndex) {
-    sm.setSKIndex("");
-  }
   Status s = kvstore->setKV(metaRk,
                             RecordValue(sm.encode(),
                                         RecordType::RT_SET_META,
@@ -235,9 +280,12 @@ class SMembersCommand : public Command {
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, ssize);
     auto cursor = ptxn.value()->createDataCursor();
+    std::string seekPos = getSeekPosOfSet(
+      expdb.value().chunkId, pCtx->getDbId(), key, exptSm.value());
+    cursor->seek(seekPos);
     RecordKey fake = {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
-    cursor->seek(fake.prefixPk());
+    std::string prefix = fake.prefixPk();
     while (true) {
       Expected<Record> exptRcd = cursor->next();
       if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -248,7 +296,7 @@ class SMembersCommand : public Command {
       }
       Record& rcd = exptRcd.value();
       const RecordKey& rcdkey = rcd.getRecordKey();
-      if (rcdkey.prefixPk() != fake.prefixPk()) {
+      if (rcdkey.prefixPk() != prefix) {
         break;
       }
       cnt += 1;
@@ -449,25 +497,10 @@ class SrandMemberCommand : public Command {
       // TODO(vinchen):  should be configable
       return {ErrorCodes::ERR_INTERNAL, "bulk too big"};
     }
-    // NOTE(zakzheng) get index of last scan.
-    std::string skIndex;
-    if (exptSm.value().getSKIndex().size() > 0) {
-      RecordKey indexKey(expdb.value().chunkId,
-                         pCtx->getDbId(),
-                         RecordType::RT_SET_ELE,
-                         key,
-                         exptSm.value().getSKIndex());
-      skIndex = indexKey.encode();
-    } else {
-      RecordKey fake = {expdb.value().chunkId,
-                        pCtx->getDbId(),
-                        RecordType::RT_SET_ELE,
-                        key,
-                        ""};
-      skIndex = fake.prefixPk();
-    }
 
-    cursor->seek(skIndex);
+    std::string seekPos = getSeekPosOfSet(
+      expdb.value().chunkId, pCtx->getDbId(), key, exptSm.value());
+    cursor->seek(seekPos);
     while (true) {
       Expected<Record> exptRcd = cursor->next();
       if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -586,26 +619,16 @@ class SpopCommand : public Command {
     if (!ptxn.ok()) {
       return ptxn.status();
     }
+
+    std::string seekPos =
+      getSeekPosOfSet(expdb.value().chunkId, pCtx->getDbId(), key, sm);
     RecordKey fake = {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
-    // NOTE(zakzheng) get index of last scan.
-    std::string spopFrom;
-    if (sm.getSKIndex().size() > 0) {
-      RecordKey indexKey(expdb.value().chunkId,
-                         pCtx->getDbId(),
-                         RecordType::RT_SET_ELE,
-                         key,
-                         sm.getSKIndex());
-      spopFrom = indexKey.encode();
-    } else {
-      spopFrom = "0";
-    }
-
     // NOTE(zakzheng) scan one more, the last one is cached
     // for the index of the next scan.
     uint32_t countAddNext = count + 1;
     auto batch = Command::scanSimple(
-      sess, fake.prefixPk(), spopFrom, countAddNext, ptxn.value());
+      sess, fake.prefixPk(), seekPos, countAddNext, ptxn.value());
     if (!batch.ok()) {
       return batch.status();
     }
@@ -938,12 +961,21 @@ class SdiffgenericCommand : public Command {
         return ptxn.status();
       }
       auto cursor = ptxn.value()->createDataCursor();
+      Expected<SetMetaValue> exptSm =
+        SetMetaValue::decode(rv.value().getValue());
+      INVARIANT_D(exptSm.ok());
+      if (!exptSm.ok()) {
+        return {ErrorCodes::ERR_DECODE, "invalid set meta" + args[i]};
+      }
+      std::string seekPos = getSeekPosOfSet(
+        expdb.value().chunkId, pCtx->getDbId(), args[i], exptSm.value());
+      cursor->seek(seekPos);
       RecordKey fake = {expdb.value().chunkId,
                         pCtx->getDbId(),
                         RecordType::RT_SET_ELE,
                         args[i],
                         ""};
-      cursor->seek(fake.prefixPk());
+      std::string frefix = fake.prefixPk();
       while (true) {
         Expected<Record> exptRcd = cursor->next();
         if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -954,7 +986,7 @@ class SdiffgenericCommand : public Command {
         }
         Record& rcd = exptRcd.value();
         const RecordKey& rcdkey = rcd.getRecordKey();
-        if (rcdkey.prefixPk() != fake.prefixPk()) {
+        if (rcdkey.prefixPk() != frefix) {
           break;
         }
         if (i == startkey) {
@@ -1145,13 +1177,33 @@ class SintergenericCommand : public Command {
         return ptxn.status();
       }
       if (i == 0) {
-        auto cursor = ptxn.value()->createDataCursor();
         RecordKey fakeRk(expdb.value().chunkId,
                          pCtx->getDbId(),
                          RecordType::RT_SET_ELE,
                          key,
                          "");
-        cursor->seek(fakeRk.prefixPk());
+        std::string prefix = fakeRk.prefixPk();
+
+        std::string seekPos = "";
+        Expected<RecordValue> rv =
+          Command::expireKeyIfNeeded(sess, args[i], RecordType::RT_SET_META);
+        if (rv.ok()) {
+          Expected<SetMetaValue> exptSm =
+            SetMetaValue::decode(rv.value().getValue());
+          INVARIANT_D(exptSm.ok());
+          if (!exptSm.ok()) {
+            return {ErrorCodes::ERR_DECODE, "invalid set meta" + args[i]};
+          }
+          seekPos = getSeekPosOfSet(
+            expdb.value().chunkId, pCtx->getDbId(), args[i], exptSm.value());
+        } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND &&
+                   rv.status().code() != ErrorCodes::ERR_EXPIRED) {
+          return rv.status();
+        } else {
+          seekPos = prefix;
+        }
+        auto cursor = ptxn.value()->createDataCursor();
+        cursor->seek(seekPos);
         while (true) {
           Expected<Record> expRcd = cursor->next();
           if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -1162,7 +1214,7 @@ class SintergenericCommand : public Command {
           }
           Record& rcd = expRcd.value();
           const RecordKey& rcdKey = rcd.getRecordKey();
-          if (rcdKey.prefixPk() != fakeRk.prefixPk()) {
+          if (rcdKey.prefixPk() != prefix) {
             break;
           }
           RET_IF_MEMORY_REQUEST_FAILED(sess, rcdKey.getSecondaryKey().size());
@@ -1484,12 +1536,21 @@ class SuniongenericCommand : public Command {
         return ptxn.status();
       }
       auto cursor = ptxn.value()->createDataCursor();
+      Expected<SetMetaValue> exptSm =
+        SetMetaValue::decode(rv.value().getValue());
+      INVARIANT_D(exptSm.ok());
+      if (!exptSm.ok()) {
+        return {ErrorCodes::ERR_DECODE, "invalid set meta" + args[i]};
+      }
+      std::string seekPos = getSeekPosOfSet(
+        expdb.value().chunkId, pCtx->getDbId(), args[i], exptSm.value());
+      cursor->seek(seekPos);
       RecordKey fakeRk(expdb.value().chunkId,
                        pCtx->getDbId(),
                        RecordType::RT_SET_ELE,
                        args[i],
                        "");
-      cursor->seek(fakeRk.prefixPk());
+      std::string frefix = fakeRk.prefixPk();
       while (true) {
         Expected<Record> exptRcd = cursor->next();
         if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -1501,7 +1562,7 @@ class SuniongenericCommand : public Command {
 
         Record& rcd = exptRcd.value();
         const RecordKey& rcdkey = rcd.getRecordKey();
-        if (rcdkey.prefixPk() != fakeRk.prefixPk()) {
+        if (rcdkey.prefixPk() != frefix) {
           break;
         }
         auto size0 = result.size();
