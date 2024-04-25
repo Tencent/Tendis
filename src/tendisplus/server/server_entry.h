@@ -137,7 +137,9 @@ class SlowlogStat {
     uint64_t execTime,
     Session* sess);
   std::list<SlowlogEntry> getSlowlogData(uint64_t count);
-  Status initSlowlogFile(std::string logPath);
+  Status initSlowlogFile(const std::shared_ptr<ServerParams>&);
+  Status newSlowlogFile(const std::shared_ptr<ServerParams>&);
+  Status recycleSlowlogFile(const std::shared_ptr<ServerParams>&);
   void closeSlowlogFile();
 
  private:
@@ -146,6 +148,8 @@ class SlowlogStat {
   std::atomic<uint64_t> _slowlogId;
   mutable std::mutex _dataMutex;
   mutable std::mutex _fileMutex;
+  bool _waitingFlush;
+  uint64_t _filesize;
 };
 
 #define THREAD_SLEEP(n_secs)                                \

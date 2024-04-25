@@ -67,6 +67,7 @@ TSAN_SUPPRESSION std::shared_ptr<ServerEntry> makeClusterNode(
   cfg1->pauseTimeIndexMgr = 1;
   cfg1->rocksBlockcacheMB = 24;
   cfg1->clusterSingleNode = singleNode;
+  cfg1->slowlogPath = "./" + dir + "/log/slowlog";
   // if need migrate back from dstNode to srcNode, set needMigrateBack true
   if (needMigrateBack) {
     cfg1->migrateReceiveThreadnum = 3;
@@ -878,6 +879,8 @@ TEST(ClusterState, clusterReplyMultiBulkSlotsV2) {
   LOG(INFO) << "clusterReplyMultiBulkSlots time cost: " << (t1 - start)
             << " clusterReplyMultiBulkSlotsV2 time cost: " << (t2 - t1)
             << std::endl;
+  server->stop();
+  server.reset();
 }
 
 // check meet

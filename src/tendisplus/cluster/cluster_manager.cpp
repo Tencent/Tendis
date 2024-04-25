@@ -4178,6 +4178,11 @@ Status ClusterManager::clusterReset(uint16_t hard) {
 
 void ClusterManager::stop() {
   LOG(WARNING) << "cluster manager begins stops...";
+#ifdef TENDIS_DEBUG
+  if (!_isRunning.load()) {
+    return;
+  }
+#endif
   _isRunning.store(false, std::memory_order_relaxed);
   _controller->join();
   _diskChecker->join();

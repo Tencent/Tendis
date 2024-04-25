@@ -494,6 +494,9 @@ class ServerParams {
   uint64_t tendisLatencyLimit = 0;   // us
   uint64_t rocksdbLatencyLimit = 0;  // us
   bool slowlogFileEnabled = true;
+  bool slowlogFileSplitEnabled = true;
+  uint64_t slowlogFileMaxSizeMb = 128;
+  uint64_t slowlogFileKeepNum = 8;
   bool binlogUsingDefaultCF = false;
 
   // If false, Tendis don't save binlog when write data. Without Binlog, Tendis

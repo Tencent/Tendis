@@ -734,18 +734,6 @@ std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
   return fs;
 }
 
-// ref https://en.cppreference.com/w/cpp/chrono/file_clock/to_from_sys
-// NOTE(raffertyyu) std::chrono::file_clock::to_sys/from_sys is not available
-// until c++20. There is no choice but copying these codes from std library.
-// Remove to_sys function when using c++20
-using Tsys_time_point =
-  std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds>;
-static Tsys_time_point to_sys(const filesystem::file_time_type& tp) noexcept {
-  static constexpr std::chrono::seconds epochDiff{6437664000};
-  return Tsys_time_point{tp.time_since_epoch()} +  // NOLINT(whitespace/braces)
-    epochDiff;
-}
-
 void ReplManager::recycDumpFile(uint32_t storeid) {
   if (!_cfg->dumpFileKeepNum && !_cfg->dumpFileKeepHour) {
     return;

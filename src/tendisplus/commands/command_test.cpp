@@ -884,12 +884,23 @@ void testGlobStylePattern(std::shared_ptr<ServerEntry> svr) {
   sess.setArgs({"config", "get", "*slow*"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(
-    "*10\r\n$7\r\nslowlog\r\n$11\r\n\"./"
-    "slowlog\"\r\n$20\r\nslowlog-file-enabled\r\n$3\r\nyes\r\n$"
-    "22\r\nslowlog-"
-    "flush-interval\r\n$22\r\n not supported anymore\r\n$23\r\n"
-    "slowlog-log-slower-than\r\n$"
-    "6\r\n100000\r\n$15\r\nslowlog-max-len\r\n$4\r\n1024\r\n",
+    "*16\r\n"
+    "$7\r\nslowlog\r\n"
+    "$11\r\n\"./slowlog\"\r\n"
+    "$20\r\nslowlog-file-enabled\r\n"
+    "$3\r\nyes\r\n"
+    "$21\r\nslowlog-file-keep-num\r\n"
+    "$1\r\n8\r\n"
+    "$24\r\nslowlog-file-max-size-mb\r\n"
+    "$3\r\n128\r\n"
+    "$26\r\nslowlog-file-split-enabled\r\n"
+    "$3\r\nyes\r\n"
+    "$22\r\nslowlog-flush-interval\r\n"
+    "$22\r\n not supported anymore\r\n"
+    "$23\r\nslowlog-log-slower-than\r\n"
+    "$6\r\n100000\r\n"
+    "$15\r\nslowlog-max-len\r\n"
+    "$4\r\n1024\r\n",
     expect.value());
 
   sess.setArgs({"config", "get", "?lowlog"});

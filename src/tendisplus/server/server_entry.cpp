@@ -118,15 +118,89 @@ std::list<SlowlogEntry> SlowlogStat::getSlowlogData(uint64_t count) {
   return result;
 }
 
-Status SlowlogStat::initSlowlogFile(std::string logPath) {
-  _slowLog.open(logPath, std::ofstream::app);
+Status SlowlogStat::initSlowlogFile(const std::shared_ptr<ServerParams>& cfg) {
+  if (cfg->slowlogFileSplitEnabled) {
+    return newSlowlogFile(cfg);
+  }
+  _slowLog.open(cfg->slowlogPath, std::ofstream::app);
   if (!_slowLog.is_open()) {
     std::stringstream ss;
-    ss << "open:" << logPath << " failed";
+    ss << "open:" << cfg->slowlogPath << " failed";
     return {ErrorCodes::ERR_INTERNAL, ss.str()};
   }
+  _filesize = std::filesystem::file_size(cfg->slowlogPath);
+  _waitingFlush = false;
 
   return {ErrorCodes::ERR_OK, ""};
+}
+
+// must in lock
+Status SlowlogStat::newSlowlogFile(const std::shared_ptr<ServerParams>& cfg) {
+  std::filesystem::path fpath{cfg->slowlogPath};
+  std::error_code ec;
+  if (std::filesystem::exists(fpath, ec)) {
+    if (std::filesystem::is_symlink(fpath, ec)) {
+      // unlink slowlog
+      std::filesystem::remove(fpath, ec);
+    } else {
+      // mv slowlog slowlog.old
+      std::filesystem::rename(
+        fpath, std::filesystem::path{cfg->slowlogPath + ".old"}, ec);
+    }
+  }
+
+  // filename format: slowlog-timestamp
+  std::filesystem::path realpath = {
+    cfg->slowlogPath + "-" +
+    std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
+                     std::chrono::system_clock::now().time_since_epoch())
+                     .count())};
+  // touch file if not exist
+  _slowLog.open(realpath, std::ios_base::app);
+  _slowLog.close();
+  _filesize = std::filesystem::file_size(realpath, ec);
+  _waitingFlush = false;
+  // ln -s slowlog-timestamp slowlog
+  std::filesystem::create_symlink(realpath.filename(), fpath, ec);
+  _slowLog.open(realpath, std::ios_base::app);
+  if (_slowLog.is_open()) {
+    return {};
+  } else {
+    return {ErrorCodes::ERR_INTERNAL,
+            "open slowlog file failed. " + realpath.string()};
+  }
+}
+
+Status SlowlogStat::recycleSlowlogFile(
+  const std::shared_ptr<ServerParams>& cfg) {
+  std::lock_guard<std::mutex> lk(_fileMutex);
+  std::filesystem::path pathPrefix{cfg->slowlogPath + "-"};
+  std::string expectPrefix = pathPrefix.filename();
+  std::vector<std::pair<Tsys_time_point, std::filesystem::directory_entry>>
+    files{};
+  for (const auto& entry :
+       std::filesystem::directory_iterator{pathPrefix.parent_path()}) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    auto filename = entry.path().filename();
+    if (starts_with(filename.string(), expectPrefix)) {
+      files.emplace_back(to_sys(entry.last_write_time()), entry);
+    }
+  }
+
+  std::error_code ec;
+  if (files.size() > cfg->slowlogFileKeepNum) {
+    std::sort(files.begin(), files.end(), [](const auto& l, const auto& r) {
+      return l.first < r.first;
+    });
+    size_t deleted = files.size() - cfg->slowlogFileKeepNum;
+    for (size_t i = 0; i < deleted; ++i) {
+      std::filesystem::remove(files[i].second.path(), ec);
+    }
+  }
+
+  return {};
 }
 
 void SlowlogStat::closeSlowlogFile() {
@@ -134,10 +208,14 @@ void SlowlogStat::closeSlowlogFile() {
 }
 
 void SlowlogStat::slowlogFlush() {
+  if (!_waitingFlush) {
+    return;
+  }
   std::lock_guard<std::mutex> lk(_fileMutex);
   if (_slowLog.is_open()) {
     _slowLog.flush();
   }
+  _waitingFlush = false;
 }
 
 void SlowlogStat::slowlogDataPushEntryIfNeeded(
@@ -152,6 +230,17 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(
   size_t max_string = SLOWLOG_ENTRY_MAX_STRING;
 
   if (cfgs->slowlogFileEnabled) {
+    if (cfgs->slowlogFileSplitEnabled &&
+        (_filesize >> 20) >= cfgs->slowlogFileMaxSizeMb) {
+      std::lock_guard<std::mutex> lk(_fileMutex);
+      if (_slowLog.is_open())
+        _slowLog.flush();
+      _slowLog.close();
+      auto s = newSlowlogFile(cfgs);
+      if (!s.ok()) {
+        LOG(ERROR) << s.getErrmsg();
+      }
+    }
     std::stringstream slowLog;
     slowLog << "# Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";
     slowLog << "# Timestamp: " << time << "\n";
@@ -196,9 +285,12 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(
       }
     }
     slowLog << "\n\n";
-    {
-      std::lock_guard<std::mutex> lk(_fileMutex);
-      _slowLog << slowLog.str();
+    std::string slowlogstr = slowLog.str();
+    std::lock_guard<std::mutex> lk(_fileMutex);
+    if (_slowLog.is_open()) {
+      _slowLog << slowlogstr;
+      _filesize += slowlogstr.size();
+      _waitingFlush = true;
     }
   }
 
@@ -766,7 +858,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   });
 
   // init slowlog
-  _slowlogStat.initSlowlogFile(cfg->slowlogPath);
+  _slowlogStat.initSlowlogFile(cfg);
 
   _lastJeprofDumpMemoryGB = 0;
 
@@ -1916,6 +2008,11 @@ void ServerEntry::serverCron() {
     if (_cfg->slowlogFileEnabled) {
       run_with_period(1000) {
         _slowlogStat.slowlogFlush();
+      }
+      if (_cfg->slowlogFileSplitEnabled && _cfg->slowlogFileKeepNum != 0) {
+        run_with_period(1000) {
+          _slowlogStat.recycleSlowlogFile(_cfg);
+        }
       }
     }
     cronLoop++;
