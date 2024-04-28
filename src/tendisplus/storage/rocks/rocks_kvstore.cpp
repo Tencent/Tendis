@@ -1730,6 +1730,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
       }
       written += len;
       newDump = explog.value().getBinlogId() + 1;
+      ts = explog.value().getTimestamp();
     }
     if (_cfg->dumpFileFlush) {
       fs->flush();
@@ -1738,6 +1739,8 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     result.err = err;
     result.written = written;
     result.newDump = newDump;
+    // slave use timestamp from last dump binlog
+    result.timestamp = ts;
     newEnd = newDump - 1;
   }
 
@@ -1761,7 +1764,10 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     ts = explog.value().getTimestamp();
   }
   result.newStart = newStart;
-  result.timestamp = ts;
+  if (result.timestamp == 0) {
+    // master use timestamp from deleterange last binlog
+    result.timestamp = ts;
+  }
   if (fs == nullptr) {
     result.newDump = result.newStart;
   }
