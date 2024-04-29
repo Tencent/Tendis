@@ -1,0 +1,191 @@
+#!/bin/bash
+
+SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+# check if tendisplus exists
+if [ -f "$SCRIPT_DIR/../../build/bin/tendisplus" ]; then
+    TENDISPLUS_BIN="$SCRIPT_DIR/../../build/bin/tendisplus"
+elif [ -f "$SCRIPT_DIR/../../bin/tendisplus" ]; then
+    TENDISPLUS_BIN="$SCRIPT_DIR/../../bin/tendisplus"
+else
+    echo "Error: tendisplus not found in $SCRIPT_DIR/../../build/bin or $SCRIPT_DIR/../../bin"
+    exit 1
+fi
+
+# check if predixy exists
+if [ -f "$SCRIPT_DIR/../../build/bin/predixy" ]; then
+    PREDIXY_BIN="$SCRIPT_DIR/../../build/bin/predixy"
+    PREDIXY_FOUND=true
+elif [ -f "$SCRIPT_DIR/../../bin/predixy" ]; then
+    PREDIXY_BIN="$SCRIPT_DIR/../../bin/predixy"
+    PREDIXY_FOUND=true
+else
+    PREDIXY_FOUND=false
+fi
+
+# check if redis-cli exists
+if [ -f "$SCRIPT_DIR/../../build/bin/redis-cli" ]; then
+    REDIS_CLI_BIN="$SCRIPT_DIR/../../build/bin/redis-cli"
+    REDIS_CLI_FOUND=true
+elif [ -f "$SCRIPT_DIR/../../bin/redis-cli" ]; then
+    REDIS_CLI_BIN="$SCRIPT_DIR/../../bin/redis-cli"
+    REDIS_CLI_FOUND=true
+else
+    REDIS_CLI_FOUND=false
+fi
+
+CLUSTER_HOST=127.0.0.1
+PORT=30000
+NODES=6
+REPLICAS=1
+DATA_DIR_PREFIX="./home"
+MAX_RETRY_TIME=10
+
+# You may want to put the above config parameters into config.sh in order to
+# override the defaults without modifying this script.
+if [ -a config.sh ]
+then
+    source "config.sh"
+fi
+
+# Computed vars
+ENDPORT=$((PORT+NODES))
+
+if [ "$1" == "start" ]
+then
+    for ((port=PORT+1; port<=ENDPORT; port++)); do
+        CONFIG_FILE=tendisplus-${port}.conf
+        if [ ! -f "$CONFIG_FILE" ]; then
+            echo "Starting tendisplus ${port}"
+            echo "bind ${CLUSTER_HOST}" >> ${CONFIG_FILE}
+            echo "port ${port}" >> ${CONFIG_FILE}
+            echo "daemon on" >> ${CONFIG_FILE}
+            echo "loglevel notice" >> ${CONFIG_FILE}
+            echo "dir ${DATA_DIR_PREFIX}-${port}/db" >> ${CONFIG_FILE}
+            echo "dumpdir ${DATA_DIR_PREFIX}-${port}/dump" >> ${CONFIG_FILE}
+            echo "logdir ${DATA_DIR_PREFIX}-${port}/log" >> ${CONFIG_FILE}
+            echo "pidfile ${DATA_DIR_PREFIX}-${port}/tendisplus.pid" >> ${CONFIG_FILE}
+            echo "slowlog ${DATA_DIR_PREFIX}-${port}/log/slowlog" >> ${CONFIG_FILE}
+            echo "cluster-enabled on" >> ${CONFIG_FILE}
+            mkdir -p  ${DATA_DIR_PREFIX}-${port}/db
+        fi
+        ${TENDISPLUS_BIN} ${CONFIG_FILE}
+    done
+    if [ "${PREDIXY_FOUND}" == "true" ]; then
+        PPORT=$((ENDPORT+1))
+        echo "Starting predixy"
+        PREDIXY_CONFIG_FILE="predixy.conf"
+        if [ ! -f "$PREDIXY_CONFIG_FILE" ]; then
+            echo "Bind ${CLUSTER_HOST}:${PPORT}" >> ${PREDIXY_CONFIG_FILE}
+            echo "WorkerThreads 6"  >> ${PREDIXY_CONFIG_FILE}
+            echo "AllowMissLog false"  >> ${PREDIXY_CONFIG_FILE}
+            echo "ClusterServerPool {" >> ${PREDIXY_CONFIG_FILE}
+            echo "    Servers {" >> ${PREDIXY_CONFIG_FILE}
+            for ((port=PORT+1; port<=ENDPORT; port++)); do
+                echo "        + ${CLUSTER_HOST}:${port}" >> ${PREDIXY_CONFIG_FILE}
+            done
+            echo "    }" >> ${PREDIXY_CONFIG_FILE}
+            echo "}" >> ${PREDIXY_CONFIG_FILE}
+        fi
+        nohup ${PREDIXY_BIN} ${PREDIXY_CONFIG_FILE} > predixy.log 2>&1 &
+        predixy_pid=$!
+        echo -n ${predixy_pid} > predixy.pid
+    fi
+    exit 0
+fi
+
+if [ "$1" == "create" ]
+then
+    if [ "${REDIS_CLI_FOUND}" == "false" ]; then
+        echo "redis-cli is required to modify cluster"
+        exit 1
+    fi
+
+    PORT1=$((PORT+1))
+
+    RETRY_TIME=0
+    while [ "1" == "1" ]; do
+        ${REDIS_CLI_BIN} -h ${CLUSTER_HOST} -p ${PORT1} info > /dev/null 2>&1
+        if [ $? -ne 0 ]; then
+            echo "waiting for tendisplus startup..."
+            RETRY_TIME=$((RETRY_TIME+1))
+            if [ "${RETRY_TIME}" == "${MAX_RETRY_TIME}" ]; then
+                echo "retry too many times, exit"
+                exit 1
+            fi
+            sleep 1
+        else
+            break
+        fi
+    done
+
+    for ((port=PORT+2; port<=ENDPORT; port++)); do
+        ${REDIS_CLI_BIN} -h ${CLUSTER_HOST} -p ${PORT1} cluster meet ${CLUSTER_HOST} ${port}
+    done
+
+    sleep 5
+
+    MASTERS=$((NODES / (REPLICAS + 1)))
+    for ((i=0; i<MASTERS; i++)); do
+        MASTER_PORT=$((PORT1+i))
+        START_SLOT=$((i * 16384 / MASTERS))
+        END_SLOT=$(((i + 1) * 16384 / MASTERS - 1))
+        ${REDIS_CLI_BIN} -h ${CLUSTER_HOST} -p ${MASTER_PORT} cluster addslots {${START_SLOT}..${END_SLOT}}
+        MASTER_ID=$(${REDIS_CLI_BIN} -h ${CLUSTER_HOST} -p ${MASTER_PORT} cluster myid)
+        for ((j=1; j<=REPLICAS; j++)); do
+            SLAVE_PORT=$((PORT + MASTERS + i * REPLICAS + j))
+            ${REDIS_CLI_BIN} -h ${CLUSTER_HOST} -p ${SLAVE_PORT} cluster replicate ${MASTER_ID}
+        done
+    done
+    exit 0
+fi
+
+if [ "$1" == "stop" ]
+then
+    if [ "${REDIS_CLI_FOUND}" == "false" ]; then
+        echo "redis-cli is required to modify cluster"
+        exit 1
+    fi
+
+    for ((port=PORT+1; port<=ENDPORT; port++)); do
+        echo "Stopping $port"
+        ${REDIS_CLI_BIN} -h ${CLUSTER_HOST} -p ${port} shutdown
+    done
+    if [ -f "predixy.pid" ]; then
+        kill -9 $(cat predixy.pid)
+        rm -rf predixy.pid
+    fi
+    exit 0
+fi
+
+if [ "$1" == "call" ]
+then
+    if [ "${REDIS_CLI_FOUND}" == "false" ]; then
+        echo "redis-cli is required to modify cluster"
+        exit 1
+    fi
+
+    while [ $((PORT < ENDPORT)) != "0" ]; do
+        PORT=$((PORT+1))
+        ${REDIS_CLI_BIN} -h ${CLUSTER_HOST} -p $PORT $2 $3 $4 $5 $6 $7 $8 $9
+    done
+    exit 0
+fi
+
+if [ "$1" == "clean" ]
+then
+    echo "Cleaning ${DATA_DIR_PREFIX}*"
+    rm -rf ${DATA_DIR_PREFIX}*
+    echo "Cleaning *.conf"
+    rm -rf *.conf
+    echo "Cleaning *.log"
+    rm -rf *.log
+    exit 0
+fi
+
+echo "Usage: $0 [start|create|stop|clean|call]"
+echo "start       -- Launch Redis Cluster instances."
+echo "create      -- Create a cluster using redis-cli."
+echo "stop        -- Stop Redis Cluster instances."
+echo "clean       -- Remove all instances data, logs, configs."
+echo "call <cmd>  -- Call a command (up to 7 arguments) on all nodes."

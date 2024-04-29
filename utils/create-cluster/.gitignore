@@ -1,0 +1,4 @@
+home*
+*.conf
+predixy.log
+predixy.pid
