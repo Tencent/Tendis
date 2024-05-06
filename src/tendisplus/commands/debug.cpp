@@ -4514,7 +4514,7 @@ class TendisadminCommand : public Command {
       if (server->isClusterEnabled() && operation != "lockdb") {
         auto cstate = server->getClusterMgr()->getClusterState();
         if (cstate->getClusterState() == ClusterHealth::CLUSTER_FAIL) {
-          return {ErrorCodes::ERR_CLUSTER_ERR, "cluster is fail"};
+          return {ErrorCodes::ERR_CLUSTER, "cluster is fail"};
         }
         cstate->setGossipBlock(time.value() * 1000);
         std::this_thread::sleep_for(std::chrono::seconds(time.value()));

@@ -40,7 +40,6 @@ enum class ErrorCodes {
   ERR_STORE_NOT_OPEN,
   ERR_LOCK_TIMEOUT,
   ERR_UNKNOWN,
-  ERR_CLUSTER,
   ERR_CONNECT_TRY,
   ERR_MEMORY_LIMIT,
   // special error code for `ChunkMigrateReceiver::receiveSnapshot()`
@@ -62,7 +61,7 @@ enum class ErrorCodes {
   ERR_NO_KEY,
   ERR_OUT_OF_RANGE,
   ERR_WRONG_VERSION_EP,
-  ERR_CLUSTER_ERR,
+  ERR_CLUSTER,
   ERR_MOVED,
   ERR_CLUSTER_REDIR_CROSS_SLOT,
   ERR_CLUSTER_REDIR_DOWN_STATE,

@@ -285,7 +285,7 @@ class ClusterCommand : public Command {
       auto eport = ::tendisplus::stoul(args[3]);
       if (!eport.ok()) {
         return {ErrorCodes::ERR_CLUSTER,
-                "Invalid TCP base port specified " + args[3]};
+                "Invalid TCP base port specified: " + args[3]};
       }
       port = eport.value();
 
@@ -293,7 +293,7 @@ class ClusterCommand : public Command {
         auto ecport = ::tendisplus::stoul(args[4]);
         if (!ecport.ok()) {
           return {ErrorCodes::ERR_CLUSTER,
-                  "Invalid TCP bus port specified " + args[4]};
+                  "Invalid TCP bus port specified: " + args[4]};
         }
         cport = ecport.value();
       } else {
@@ -302,7 +302,7 @@ class ClusterCommand : public Command {
 
       if (!clusterState->clusterStartHandshake(host, port, cport)) {
         return {ErrorCodes::ERR_CLUSTER,
-                "Invalid node address specified:" + host +
+                "Invalid node address specified: " + host + ":" +
                   std::to_string(port)};
       }
       return Command::fmtOK();
@@ -473,7 +473,7 @@ class ClusterCommand : public Command {
     } else if (arg1 == "forget" && argSize == 3) {
       auto n = clusterState->clusterLookupNode(args[2]);
       if (n == nullptr) {
-        return {ErrorCodes::ERR_CLUSTER, "forget node unkown"};
+        return {ErrorCodes::ERR_CLUSTER, "Unknown node " + args[2]};
       } else if (n == myself) {
         return {ErrorCodes::ERR_CLUSTER,
                 "I tried hard but I can't forget myself..."};

@@ -2221,7 +2221,7 @@ TEST(Command, dexec) {
     {{"dexec", "-1", "set", "a", "c"},
      "*3\r\n$7\r\ndreturn\r\n$2\r\n-1\r\n$5\r\n+OK\r\n\r\n"},
     {{"dexec", "-1", "cluster", "nodes"},
-     "*3\r\n$7\r\ndreturn\r\n$2\r\n-1\r\n$56\r\n-ERR:18,msg:This instance "
+     "*3\r\n$7\r\ndreturn\r\n$2\r\n-1\r\n$49\r\n-ERR This instance "
      "has cluster support disabled\r\n\r\n"},
     {{"dexec", "1", "dexec", "2", "get", "a"},
      "*3\r\n$7\r\ndreturn\r\n$1\r\n1\r\n$37\r\n*3\r\n$7\r\ndreturn\r\n$"
