@@ -4,7 +4,7 @@
 
 #include <algorithm>
 #include <fstream>
-#include <utility>
+#include <random>
 
 #include "gtest/gtest.h"
 
@@ -12,7 +12,6 @@
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/storage/skiplist.h"
-#include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/status.h"
 
@@ -79,7 +78,9 @@ TEST(SkipList, BackWardTail) {
   }
 
   uint32_t currMax = 0;
-  std::random_shuffle(keys.begin(), keys.end());
+  std::random_device rd;
+  std::mt19937_64 g(rd());
+  std::shuffle(keys.begin(), keys.end(), g);
   // check tail always points to the max num
   for (auto& i : keys) {
     currMax = std::max(currMax, i);
@@ -105,7 +106,7 @@ TEST(SkipList, BackWardTail) {
   }
 
   // randomly erase 500 elements
-  std::random_shuffle(keys.begin(), keys.end());
+  std::shuffle(keys.begin(), keys.end(), g);
   for (uint32_t i = 0; i < CNT / 2; ++i) {
     auto eTxn = store->createTransaction(nullptr);
     EXPECT_TRUE(eTxn.ok());
@@ -199,7 +200,9 @@ TEST(SkipList, Mix) {
   for (uint32_t i = 1; i <= CNT; ++i) {
     keys.push_back(i);
   }
-  std::random_shuffle(keys.begin(), keys.end());
+  std::random_device rd;
+  std::mt19937_64 g(rd());
+  std::shuffle(keys.begin(), keys.end(), g);
   for (auto& i : keys) {
     auto eTxn = store->createTransaction(nullptr);
     EXPECT_TRUE(eTxn.ok());
@@ -363,7 +366,9 @@ TEST(SkipList, Common) {
   for (uint32_t i = 1; i <= CNT; ++i) {
     keys.push_back(i);
   }
-  std::random_shuffle(keys.begin(), keys.end());
+  std::random_device rd;
+  std::mt19937_64 g(rd());
+  std::shuffle(keys.begin(), keys.end(), g);
   auto eTxn2 = store->createTransaction(nullptr);
   EXPECT_TRUE(eTxn2.ok());
   for (auto& i : keys) {
@@ -383,7 +388,7 @@ TEST(SkipList, Common) {
   for (uint32_t i = 1; i <= CNT; ++i) {
     keys.push_back(i + tmp);
   }
-  std::random_shuffle(keys.begin(), keys.end());
+  std::shuffle(keys.begin(), keys.end(), g);
   for (auto& i : keys) {
     auto eTxn = store->createTransaction(nullptr);
     EXPECT_TRUE(eTxn.ok());

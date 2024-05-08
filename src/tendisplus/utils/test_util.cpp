@@ -1222,7 +1222,9 @@ void testZset2(std::shared_ptr<ServerEntry> svr) {
   for (uint32_t i = 0; i < 100; i++) {
     keys.push_back(i);
   }
-  std::random_shuffle(keys.begin(), keys.end());
+  std::random_device rd;
+  std::mt19937_64 g(rd());
+  std::shuffle(keys.begin(), keys.end(), g);
   for (uint32_t i = 0; i < 100; i++) {
     sess.setArgs(
       {"zadd", "tzk2", std::to_string(keys[i]), std::to_string(keys[i])});
@@ -1395,7 +1397,9 @@ void testZset3(std::shared_ptr<ServerEntry> svr) {
   for (uint32_t i = 0; i < 100; i++) {
     keys.push_back(i);
   }
-  std::random_shuffle(keys.begin(), keys.end());
+  std::random_device rd;
+  std::mt19937_64 g(rd());
+  std::shuffle(keys.begin(), keys.end(), g);
   for (uint32_t i = 0; i < 100; i++) {
     sess.setArgs(
       {"zadd", "tzk3.2", std::to_string(keys[i]), std::to_string(keys[i])});
