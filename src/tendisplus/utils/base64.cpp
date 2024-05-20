@@ -40,8 +40,8 @@ std::string Base64::Encode(const unsigned char* str, int bytes) {
   return _encode_result;
 }
 std::string Base64::Decode(const char* str, int length) {
-  static const char base64_pad = '=';
-  static const char DecodeTable[] = {
+  static const signed char base64_pad = '=';
+  static const signed char DecodeTable[] = {
     -2, -2, -2, -2, -2, -2, -2, -2, -2, -1, -1, -2, -2, -1, -2, -2, -2, -2, -2,
     -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -1, -2, -2, -2, -2, -2,
     -2, -2, -2, -2, -2, 62, -2, -2, -2, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60,
@@ -59,7 +59,7 @@ std::string Base64::Decode(const char* str, int length) {
   int bin = 0, i = 0;
   std::string _decode_result;
   const char* current = str;
-  char ch;
+  signed char ch;
   while ((ch = *current++) != '\0' && length-- > 0) {
     if (ch == base64_pad) {
       if (*current != '=' && (i % 4) == 1) {
