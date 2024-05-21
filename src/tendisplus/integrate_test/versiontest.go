@@ -77,7 +77,7 @@ func testVersion(versions []string) {
 			(*servers)[i].Start(false, fmt.Sprintf("%s/test.cfg", (*servers)[i].Path))
 		}
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(15 * time.Second)
 		for i := clusterNodeNum; i < clusterNodeNum*2; i++ {
 			if !cluster_check_state_continuous(&(*servers)[i]) {
 				log.Fatal("cluster state error, online failed")
