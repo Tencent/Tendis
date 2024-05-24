@@ -100,32 +100,45 @@ class BackupCommand : public Command {
       // TODO(wayenchen) find path to write to file
     }
 
-    // TODO(wayenchen): use make guard to unset backupruning when backup
-    // failed!
     svr->setBackupRunning();
+    std::thread t([svr, dir = dir, mode]() {
+      bool succ = true;
+      uint32_t storeid = 0;
+      std::string errormsg;
+      LocalSessionGuard g(svr);
+      for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
+        storeid = i;
+        // NOTE(deyukong): here we acquire IS lock
+        auto expdb = svr->getSegmentMgr()->getDb(
+          g.getSession(), i, mgl::LockMode::LOCK_IS, true);
+        if (!expdb.ok()) {
+          succ = false;
+          errormsg = expdb.status().toString();
+          break;
+        }
 
-    for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
-      // NOTE(deyukong): here we acquire IS lock
-      auto expdb =
-        svr->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS, true);
-      if (!expdb.ok()) {
-        return expdb.status();
+        auto store = std::move(expdb.value().store);
+        // if store is not open, skip it
+        if (!store->isOpen()) {
+          continue;
+        }
+        std::string dbdir = dir + "/" + std::to_string(i) + "/";
+        Expected<BackupInfo> bkInfo =
+          store->backup(dbdir, mode, svr->getCatalog()->getBinlogVersion());
+        if (!bkInfo.ok()) {
+          succ = false;
+          errormsg = bkInfo.status().toString();
+          break;
+        }
       }
+      if (succ) {
+        svr->onBackupEnd();
+      } else {
+        svr->onBackupEndFailed(storeid, errormsg);
+      }
+    });
+    t.detach();
 
-      auto store = std::move(expdb.value().store);
-      // if store is not open, skip it
-      if (!store->isOpen()) {
-        continue;
-      }
-      std::string dbdir = dir + "/" + std::to_string(i) + "/";
-      Expected<BackupInfo> bkInfo =
-        store->backup(dbdir, mode, svr->getCatalog()->getBinlogVersion());
-      if (!bkInfo.ok()) {
-        svr->onBackupEndFailed(i, bkInfo.status().toString());
-        return bkInfo.status();
-      }
-    }
-    svr->onBackupEnd();
     return Command::fmtOK();
   }
 } bkupCmd;

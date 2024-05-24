@@ -75,6 +75,17 @@ func backup(m *util.RedisServer, backup_mode string, dir string) {
 		log.Fatalf("do backup error:%s", r)
 		return
 	}
+	for {
+		if r, err := cli.Cmd("info", "backup").Str(); err != nil {
+			log.Fatalf("do backup failed:%v", err)
+		} else {
+			if strings.Contains(r, "current-backup-running:no") {
+				break
+			} else {
+				time.Sleep(time.Millisecond * 100)
+			}
+		}
+	}
 	log.Infof("backup sucess,port:%d dir:%v", m.Port, dir)
 }
 

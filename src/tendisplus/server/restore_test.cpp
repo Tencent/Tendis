@@ -68,6 +68,9 @@ void backup(const std::shared_ptr<ServerEntry>& server,
   sess->setArgs(args);
   auto expect = Command::runSessionCmd(sess.get());
   EXPECT_TRUE(expect.ok());
+  while (server->getBackupRunning() > 0) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+  }
 }
 
 void restoreBackup(const std::shared_ptr<ServerEntry>& server) {
