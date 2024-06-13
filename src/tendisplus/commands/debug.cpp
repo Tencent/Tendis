@@ -4501,7 +4501,17 @@ class TendisadminCommand : public Command {
 
     auto operation = toLower(args[1]);
 
-    if (operation == "sleep" || operation == "lockdb") {
+    if (operation == "sleepmyself") {
+      if (args.size() != 3) {
+        return {ErrorCodes::ERR_PARSEOPT, "args size incorrect!"};
+      }
+
+      auto time = tendisplus::stoull(args[2]);
+      if (!time.ok()) {
+        return time.status();
+      }
+      std::this_thread::sleep_for(std::chrono::seconds(time.value()));
+    } else if (operation == "sleep" || operation == "lockdb") {
       if (args.size() != 3) {
         return {ErrorCodes::ERR_PARSEOPT, "args size incorrect!"};
       }
