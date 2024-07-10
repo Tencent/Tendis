@@ -915,6 +915,7 @@ bool ClusterState::clusterStartHandshake(const std::string& host,
                                   port,
                                   cport);
   clusterAddNode(node);
+  LOG(INFO) << "Add new node " << name << " for handshake.";
 
   return true;
 }
@@ -2211,6 +2212,7 @@ void ClusterState::clusterRenameNode(CNodePtr node,
   clusterDelNodeNoLock(node);
   node->setNodeName(newname);
   clusterAddNodeNoLock(node);
+  LOG(WARNING) << "Node " << oldname << " renamed into " << newname;
 
   if (save) {
     setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
@@ -4252,6 +4254,7 @@ Status ClusterManager::initMetaData() {
                                              pongTime,
                                              nodeMeta->configEpoch);
         _clusterState->clusterAddNode(node);
+        LOG(INFO) << "Load node " << nodeMeta->nodeName << " from meta.";
 
         Expected<std::bitset<CLUSTER_SLOTS>> st =
           bitsetDecodeVec<CLUSTER_SLOTS>(nodeMeta->slots);
@@ -5508,14 +5511,26 @@ bool ClusterState::clusterProcessGossipSection(
       }
     } else {
       /* If it's not in NOADDR state and we don't have it, we
-       * start a handshake process against this IP/PORT pairs.
+       * add it to our trusted dict with exact nodeid and flag.
+       *
+       * Note that we cannot simply start a handshake against
+       * this IP/PORT pairs, since IP/PORT can be reused already,
+       * otherwise we risk joining another cluster.
        *
        * Note that we require that the sender of this gossip message
        * is a well known node in our cluster, otherwise we risk
        * joining another cluster. */
       if (sender && !(flags & CLUSTER_NODE_NOADDR) &&
           !clusterBlacklistExists(g._gossipName)) {
-        clusterStartHandshake(g._gossipIp, g._gossipPort, g._gossipCport);
+        auto node = std::make_shared<ClusterNode>(g._gossipName,
+                                                  flags,
+                                                  shared_from_this(),
+                                                  g._gossipIp,
+                                                  g._gossipPort,
+                                                  g._gossipCport);
+        clusterAddNode(node);
+        LOG(INFO) << "Add new node " << g._gossipName << " which reported "
+                  << "from " << sender->getNodeName() << ".";
       }
     }
   }
@@ -5639,6 +5654,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
                                                 hdr->_cport);
 
       clusterAddNode(node);
+      LOG(INFO) << "Add new node " << node->getNodeName() << " for a MEET msg.";
       setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
     }
 

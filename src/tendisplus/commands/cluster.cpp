@@ -489,6 +489,7 @@ class ClusterCommand : public Command {
                    << "fail when forget nodes";
         return {ErrorCodes::ERR_CLUSTER, "delete metadata fail"};
       }
+      LOG(INFO) << "Forget node " << args[2] << " success.";
       clusterState->clusterUpdateState();
 
       return Command::fmtOK();
