@@ -208,12 +208,26 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     _syncStatus[metaSnapshot.id]->lastSyncTime = SCLOCK::time_point::min();
     _syncStatus[metaSnapshot.id]->lastBinlogTs = 0;
   }
+
+
+  // 1) require a blocking-client and auth
+  std::shared_ptr<BlockingTcpClient> client;
+  client = std::move(createClient(
+      metaSnapshot, _connectMasterTimeoutMs.load(std::memory_order_relaxed),
+      CLIENT_MASTER));
+  if (client == nullptr) {
+    LOG(WARNING) << "startFullSync storeid:" << metaSnapshot.id
+                 << " with: " << metaSnapshot.syncFromHost << ":"
+                 << metaSnapshot.syncFromPort << " failed, no valid client";
+    return;
+  }
+
   LocalSessionGuard sg(_svr.get());
   // NOTE(deyukong): there is no need to setup a guard to clean the temp ctx
   // since it's on stack
   sg.getSession()->setArgs({"slavefullsync", std::to_string(metaSnapshot.id)});
 
-  // 1) stop store and clean it's directory
+  // 2) stop store and clean it's directory
   auto expdb = _svr->getSegmentMgr()->getDb(
     sg.getSession(), metaSnapshot.id, mgl::LockMode::LOCK_X);
   if (!expdb.ok()) {
@@ -238,8 +252,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
                << " failed:" << clearStatus.toString();
   }
 
-  std::shared_ptr<BlockingTcpClient> client;
-  // 2) necessary pre-conditions all ok, startup a guard to rollback
+  // 3) necessary pre-conditions all ok, startup a guard to rollback
   // state if failed
   bool rollback = true;
   auto guard = MakeGuard([this, &rollback, &metaSnapshot, &store, &client] {
@@ -265,18 +278,6 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
       }
     }
   });
-
-  // 3) require a blocking-client
-  client = std::move(
-    createClient(metaSnapshot,
-                 _connectMasterTimeoutMs.load(std::memory_order_relaxed),
-                 CLIENT_MASTER));
-  if (client == nullptr) {
-    LOG(WARNING) << "startFullSync storeid:" << metaSnapshot.id
-                 << " with: " << metaSnapshot.syncFromHost << ":"
-                 << metaSnapshot.syncFromPort << " failed, no valid client";
-    return;
-  }
 
   auto newMeta = metaSnapshot.copy();
   newMeta->replState = ReplState::REPL_TRANSFER;
