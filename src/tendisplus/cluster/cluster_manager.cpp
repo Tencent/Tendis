@@ -1663,39 +1663,39 @@ Expected<std::string> ClusterState::clusterReplyMultiBulkSlotsV2() {
 
 Status ClusterState::clusterSaveNodes() {
   std::vector<std::unique_ptr<ClusterMeta>> metaList;
-  {
-    std::lock_guard<myMutex> lk(_mutex);
-    std::unordered_map<std::string, CNodePtr>::iterator iter;
-    for (iter = _nodes.begin(); iter != _nodes.end(); iter++) {
-      CNodePtr node = iter->second;
+  std::unordered_map<std::string, CNodePtr>::iterator iter;
 
-      uint16_t nodeFlags = node->getFlags();
-      if (nodeFlags & CLUSTER_NODE_HANDSHAKE)
-        continue;
+  std::lock_guard<myMutex> lk(_mutex);
 
-      std::string masterName =
-        (node->getMaster()) ? node->getMaster()->getNodeName() : "-";
+  for (iter = _nodes.begin(); iter != _nodes.end(); iter++) {
+    CNodePtr node = iter->second;
 
-      std::bitset<CLUSTER_SLOTS> slots = node->getSlots();
+    uint16_t nodeFlags = node->getFlags();
+    if (nodeFlags & CLUSTER_NODE_HANDSHAKE)
+      continue;
 
-      auto slotBuff = bitsetEncodeVec(slots);
+    std::string masterName =
+      (node->getMaster()) ? node->getMaster()->getNodeName() : "-";
 
-      auto meta = std::make_unique<ClusterMeta>(node->getNodeName(),
-                                                node->getNodeIp(),
-                                                node->getPort(),
-                                                node->getCport(),
-                                                nodeFlags,
-                                                masterName,
-                                                node->getSentTime(),
-                                                node->getReceivedTime(),
-                                                node->getConfigEpoch(),
-                                                slotBuff);
+    std::bitset<CLUSTER_SLOTS> slots = node->getSlots();
 
-      metaList.push_back(std::move(meta));
-    }
+    auto slotBuff = std::move(bitsetEncodeVec(slots));
+
+    auto meta = std::make_unique<ClusterMeta>(node->getNodeName(),
+                                              node->getNodeIp(),
+                                              node->getPort(),
+                                              node->getCport(),
+                                              nodeFlags,
+                                              masterName,
+                                              node->getSentTime(),
+                                              node->getReceivedTime(),
+                                              node->getConfigEpoch(),
+                                              slotBuff);
+
+    metaList.push_back(std::move(meta));
   }
-  Status s = clusterSaveMeta(metaList, getCurrentEpoch(), getLastVoteEpoch());
 
+  Status s = clusterSaveMeta(metaList, getCurrentEpoch(), getLastVoteEpoch());
   if (!s.ok()) {
     LOG(ERROR) << "save Node confg error:" << s.toString();
     return s;
