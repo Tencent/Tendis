@@ -3257,6 +3257,7 @@ Status RocksKVStore::setOptionDynamic(const std::string& option,
   static std::set<std::string> rocksdb_dynamic_options = {
     "rocks.max_background_jobs",
     "rocks.max_open_files",
+    "rocks.max_subcompactions",
   };
   static std::set<std::string> rocksdb_cf_dynamic_options = {
     "rocks.enable_blob_files",
