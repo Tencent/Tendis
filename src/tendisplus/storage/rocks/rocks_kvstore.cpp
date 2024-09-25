@@ -3272,6 +3272,9 @@ Status RocksKVStore::setOptionDynamic(const std::string& option,
     "rocks.blob_compression_type",
     "rocks.disable_auto_compactions",
     "rocks.periodic_compaction_seconds",
+    "rocks.level0_file_num_compaction_trigger",
+    "rocks.level0_slowdown_writes_trigger",
+    "rocks.level0_stop_writes_trigger"
   };
   // option, example: "rocks.binlogcf.enable_blob_files"
   // new_option, example: "rocks.enable_blob_files"
