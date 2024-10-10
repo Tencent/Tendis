@@ -945,6 +945,7 @@ class ClusterManager {
     const std::shared_ptr<ClusterNode>& node);
   Expected<std::shared_ptr<BlockingTcpClient>> clusterCreateClient(
     const std::shared_ptr<ClusterNode>& node);
+  bool clusterAuth(const std::shared_ptr<ClusterNode>& node);
 
   NetworkAsio* getClusterNetwork() const;
   std::shared_ptr<ClusterState> getClusterState() const;
