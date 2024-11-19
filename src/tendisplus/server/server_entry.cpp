@@ -1371,6 +1371,33 @@ void ServerEntry::ListChannelByPattern(const std::string& pattern,
   }
 }
 
+void ServerEntry::CloseChannelBySlot(SlotsBitmap slots) {
+  if (!getParams()->enableClosePubSubConnection) {
+    return;
+  }
+  std::unordered_set<std::shared_ptr<tendisplus::Session>> sessions;
+  {
+    std::lock_guard<std::mutex> lk(_mutex_pubsubChannels);
+    for (const auto& [channel, sessionMap] : _pubsubChannels) {
+      auto slot = redis_port::keyHashSlot(channel.data(), channel.length());
+      if (slots[slot]) {
+        for (auto sess : sessionMap) {
+          sessions.insert(sess.second);
+        }
+      }
+    }
+  }
+  for (const auto& sess : sessions) {
+    dynamic_cast<NetSession*>(sess.get())->endSession();
+  }
+}
+
+void ServerEntry::CloseAllChannel() {
+  SlotsBitmap slots;
+  slots.set();
+  CloseChannelBySlot(slots);
+}
+
 bool ServerEntry::processRequest(Session* sess) {
   if (!_isRunning.load(std::memory_order_relaxed)) {
     return false;

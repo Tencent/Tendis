@@ -1897,6 +1897,7 @@ Status ClusterState::clusterSetMaster(CNodePtr node,
             << ",ignoreRepl:" << ignoreRepl;
 
   resetManualFailover();
+  _server->CloseAllChannel();
 
   return {ErrorCodes::ERR_OK, ""};
 }

@@ -618,6 +618,11 @@ ServerParams::ServerParams() {
     clientOutputBufferLimitNormalSoftSecond);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("move-dir-when-restore-ckpt",
                                   moveDirWhenRestoreCkpt);
+
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("enable-close-pubsub-connection",
+                                  enableClosePubSubConnection);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("enable-move-pubsub-request",
+                                  enableMovePubSubRequest);
 }
 
 ServerParams::~ServerParams() {

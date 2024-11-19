@@ -79,8 +79,8 @@ else
     go build -o dts/dts dts/dts.go dts/dts_common.go
     go build -o dts/dts_sync dts/dts_sync.go dts/dts_common.go
     go build memorylimit.go common.go
-
-    testNum=12
+    go build ./pubsubtest.go common.go common_cluster.go
+    testNum=13
 
     runOne ./adminHeartbeat
     runOne ./repl
@@ -98,6 +98,7 @@ else
     runOne './dts/dts_sync'
     runOne './deletefilesinrange -optype=set'
     runOne ./memorylimit
+    runOne './pubsubtest'
 fi
 
 grep "go passed" $logfile

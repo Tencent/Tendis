@@ -79,21 +79,25 @@ class PublishCommand : public Command {
   }
 
   int32_t firstkey() const {
-    return 0;
+    return 1;
   }
 
   int32_t lastkey() const {
-    return 0;
+    return 1;
   }
 
   int32_t keystep() const {
-    return 0;
+    return 1;
   }
 
   Expected<std::string> run(Session* sess) final {
-    auto pCtx = sess->getCtx();
-    INVARIANT(pCtx != nullptr);
+    const std::string& key = sess->getArgs()[firstkey()];
     auto server = sess->getServerEntry();
+
+    auto check = server->getSegmentMgr()->handleRedirectByKey(sess, key);
+    if (!check.ok())
+      return check.status();
+
     int reveiverCount = server->PublishMessage(sess);
 
     return Command::fmtLongLong(reveiverCount);
@@ -110,25 +114,33 @@ class SubscribeCommand : public Command {
   }
 
   int32_t firstkey() const {
-    return 0;
+    return 1;
   }
 
   int32_t lastkey() const {
-    return 0;
+    return -1;
   }
 
   int32_t keystep() const {
-    return 0;
+    return 1;
   }
 
   Expected<std::string> run(Session* sess) final {
     const auto& args = sess->getArgs();
-
+    const auto& cfg = sess->getServerEntry()->getParams();
     auto server = sess->getServerEntry();
     auto pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
 
     std::stringstream reply;
+    if (cfg->enableMovePubSubRequest) {
+      auto index = getKeysFromCommand(args);
+      auto check = server->getSegmentMgr()->getAllKeysLocked(
+      sess, args, index, mgl::LockMode::LOCK_NONE, getFlags());
+      if (!check.ok()) {
+        return check.status();
+      }
+    }
     for (size_t i = 1; i < args.size(); ++i) {
       pCtx->subscribeChannel(args[i]);
       server->SubscribeChannel(sess->id(), args[i]);
@@ -150,22 +162,22 @@ class UnsubscribeCommand : public Command {
   }
 
   int32_t firstkey() const {
-    return 0;
+    return 1;
   }
 
   int32_t lastkey() const {
-    return 0;
+    return -1;
   }
 
   int32_t keystep() const {
-    return 0;
+    return 1;
   }
 
   Expected<std::string> run(Session* sess) final {
     auto pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
     auto server = sess->getServerEntry();
-
+    const auto& cfg = sess->getServerEntry()->getParams();
     const auto& args = sess->getArgs();
 
     std::stringstream reply;
@@ -175,6 +187,14 @@ class UnsubscribeCommand : public Command {
       return reply.str();
     }
 
+    if (cfg->enableMovePubSubRequest) {
+      auto index = getKeysFromCommand(args);
+      auto check = server->getSegmentMgr()->getAllKeysLocked(
+      sess, args, index, mgl::LockMode::LOCK_NONE, getFlags());
+      if (!check.ok()) {
+        return check.status();
+      }
+    }
     for (size_t i = 1; i < args.size(); ++i) {
       const auto& curChannel = args[i];
       pCtx->unsubscribeChannel(curChannel);

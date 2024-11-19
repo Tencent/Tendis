@@ -132,7 +132,7 @@ Status ChunkMigrateSender::sendChunk() {
   unlockChunks();
   auto end = msSinceEpoch();
   _sendstate = MigrateSenderStatus::METACHANGE_DONE;
-
+  _svr->CloseChannelBySlot(_slots);
   serverLog(LL_NOTICE,
             "ChunkMigrateSender::sendChunk success"
             " [%s] [total used time:%lu] [snapshot time:%lu]"

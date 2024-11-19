@@ -396,6 +396,8 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   void ListChannelSubscribeNum(std::vector<std::pair<std::string, int>>*);
   void ListChannelByPattern(const std::string& pattern,
                             std::vector<std::string>* channels);
+  void CloseChannelBySlot(SlotsBitmap slots);
+  void CloseAllChannel();
 
  private:
   ServerEntry();

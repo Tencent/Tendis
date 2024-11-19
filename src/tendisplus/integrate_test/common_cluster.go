@@ -460,3 +460,19 @@ func waitMeetEndSingle(server util.RedisServer, expectedNodeNum int) {
 	servers := []util.RedisServer{server}
 	waitMeetEnd(&servers, expectedNodeNum)
 }
+
+func get_slot(channel string, clusterNodeNum int, server util.RedisServer) int {
+	serv_cli := createClient(&server)
+	slot, _ := serv_cli.Cmd("CLUSTER", "KEYSLOT", channel).Int()
+	return slot
+}
+
+func get_node_by_slot(slot int, NodeInfo *[]NodeInfo) int {
+	for i := range *NodeInfo {
+		if slot >= (*NodeInfo)[i].startSlot && slot <= (*NodeInfo)[i].endSlot {
+			return i
+		}
+	}
+	log.Fatalf("No server handle this slot")
+	return -1
+}
