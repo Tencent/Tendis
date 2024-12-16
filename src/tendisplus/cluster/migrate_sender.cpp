@@ -298,9 +298,6 @@ Status ChunkMigrateSender::sendRangeByBatch(Transaction* txn,
             << end;
 
   {
-    auto guardStat = MakeGuard([this, &migratebatch, &totalNum] {
-      *totalNum += migratebatch.sendKVEntries();
-    });
     Status migrateStatus;
 
     while (true) {
@@ -327,12 +324,14 @@ Status ChunkMigrateSender::sendRangeByBatch(Transaction* txn,
       if (migratebatch.isFull()) {
         migrateStatus = migratebatch.send();
         RET_IF_ERR(migrateStatus);
+        *totalNum = migratebatch.sendKVEntries();
       }
     }
 
     // Send the last batch if need
     migrateStatus = migratebatch.send();
     RET_IF_ERR(migrateStatus);
+    *totalNum = migratebatch.sendKVEntries();
   }
 
   LOG(INFO) << "Migrate sendRange Batch end, migrate slot: " << begin << " - "
