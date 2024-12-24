@@ -47,11 +47,13 @@ std::shared_ptr<ServerParams> makeServerParam(
     myfile << "dir ./" << dir << "/db\n";
     myfile << "dumpdir ./" << dir << "/dump\n";
     myfile << "pidfile ./" << dir << "/tendisplus.pid\n";
+    myfile << "slowlog ./" << dir << "/log/slowlog\n";
   } else {
     myfile << "logdir ./log\n";
     myfile << "dir ./db\n";
     myfile << "dumpdir ./dump\n";
     myfile << "pidfile ./tendisplus.pid\n";
+    myfile << "slowlog ./log/slowlog\n";
   }
   myfile << "storage rocks\n";
   myfile << "rocks.blockcachemb 4096\n";

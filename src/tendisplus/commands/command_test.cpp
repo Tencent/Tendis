@@ -886,7 +886,7 @@ void testGlobStylePattern(std::shared_ptr<ServerEntry> svr) {
   EXPECT_EQ(
     "*16\r\n"
     "$7\r\nslowlog\r\n"
-    "$11\r\n\"./slowlog\"\r\n"
+    "$15\r\n\"./log/slowlog\"\r\n"
     "$20\r\nslowlog-file-enabled\r\n"
     "$3\r\nyes\r\n"
     "$21\r\nslowlog-file-keep-num\r\n"
@@ -908,7 +908,7 @@ void testGlobStylePattern(std::shared_ptr<ServerEntry> svr) {
   std::stringstream ss;
   Command::fmtMultiBulkLen(ss, 2);
   Command::fmtBulk(ss, "slowlog");
-  Command::fmtBulk(ss, "\"./slowlog\"");
+  Command::fmtBulk(ss, "\"./log/slowlog\"");
   EXPECT_EQ(ss.str(), expect.value());
 
   sess.setArgs({"config", "get", "no_exist_key"});
