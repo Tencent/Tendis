@@ -5149,11 +5149,6 @@ void ClusterManager::controlRoutine() {
 
 Expected<std::shared_ptr<BlockingTcpClient>>
 ClusterManager::clusterCreateClient(const std::shared_ptr<ClusterNode>& node) {
-  auto ret = clusterAuth(node);
-  if (!ret) {
-    return {ErrorCodes::ERR_CLUSTER, "auth error"};
-  }
-
   std::shared_ptr<BlockingTcpClient> client =
     std::move(_clusterNetwork->createBlockingClient(64 * 1024 * 1024));
   Status s = client->connect(
@@ -5163,34 +5158,6 @@ ClusterManager::clusterCreateClient(const std::shared_ptr<ClusterNode>& node) {
     return s;
   }
   return client;
-}
-
-bool ClusterManager::clusterAuth(const std::shared_ptr<ClusterNode>& node) {
-  std::shared_ptr<BlockingTcpClient> client =
-    std::move(_svr->getNetwork()->createBlockingClient(64 * 1024 * 1024));
-  Status s = client->connect(
-    node->getNodeIp(), node->getPort(), std::chrono::seconds(3));
-  if (!s.ok()) {
-    LOG(WARNING) << "connect " << node->getNodeIp() << ":" << node->getPort()
-                 << " failed:" << s.toString();
-    return false;
-  }
-  std::string masterauth = _svr->masterauth();
-  if (masterauth != "") {
-    std::stringstream ss;
-    ss << "AUTH " << masterauth;
-    client->writeLine(ss.str());
-    Expected<std::string> s = client->readLine(std::chrono::seconds(10));
-    if (!s.ok()) {
-      LOG(WARNING) << "cluster connection auth error:" << s.status().toString();
-      return false;
-    }
-    if (s.value().size() == 0 || s.value()[0] == '-') {
-      LOG(INFO) << "cluster connection auth failed:" << s.value();
-      return false;
-    }
-  }
-  return true;
 }
 
 Expected<std::shared_ptr<ClusterSession>> ClusterManager::clusterCreateSession(
