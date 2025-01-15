@@ -908,7 +908,8 @@ bool compareClusterInfo(std::shared_ptr<ServerEntry> svr1,
     }
 
     LOG(INFO) << "ClusterInfo node: " << node1->toString();
-    if (node1->toString() != node2->toString()) {
+    // node2 maybe empty
+    if (!node2 || node1->toString() != node2->toString()) {
       return false;
     }
   }
