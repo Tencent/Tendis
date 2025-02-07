@@ -713,7 +713,7 @@ Status ServerParams::checkParams() {
     LOG(INFO) << "`scanJobCntIndexMgr` is not allowed to be greater than "
                  "`kvstorecount`, set from "
               << scanJobCntIndexMgr << " to " << kvStoreCount;
-    scanCntIndexMgr = kvStoreCount;
+    scanJobCntIndexMgr = kvStoreCount;
   }
 
   if (delJobCntIndexMgr > kvStoreCount) {
