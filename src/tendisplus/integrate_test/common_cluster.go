@@ -276,7 +276,7 @@ func startCluster(
 	log.Infof("start servers clusterNodeNum:%d", clusterNodeNum)
 	for i := 0; i < clusterNodeNum*2; i++ {
 		server := util.RedisServer{}
-		port := util.FindAvailablePort(clusterPortStart)
+		port := util.FindAvailablePort(clusterPortStart + i)
 		log.Infof("start server i:%d port:%d", i, port)
 		//port := clusterPortStart + i
 		server.Init(clusterIp, port, pwd, "m"+strconv.Itoa(i)+"_", util.Cluster)
@@ -393,4 +393,34 @@ func isMaster(m *util.RedisServer) bool {
 	expectMaster := "myself,master"
 	nodeString := getClusterNodes(m)
 	return strings.Contains(nodeString, expectMaster)
+}
+
+func checkisMaster(m *util.RedisServer, s *util.RedisServer) bool {
+	masterString := getNodeName(m)
+	slaveString := getNodeName(s)
+	cli := createClient(m)
+	r, err := cli.Cmd("cluster", "slaves", masterString).Array()
+	if err != nil {
+		log.Fatalf("cluster slaves failed:%v %s", err, r)
+	}
+
+	for _, v := range r {
+		if strings.Contains(v.String(), slaveString) {
+			return true
+		}
+	}
+	return false
+}
+
+func replicateof(m *util.RedisServer, s *util.RedisServer) {
+	masterNodeName := getNodeName(m)
+	cli := createClient(s)
+	if r, err := cli.Cmd("cluster", "replicate", masterNodeName).Str(); r != ("OK") {
+		log.Fatalf("do replicate failed:%v", err)
+		return
+	} else if r != "OK" {
+		log.Fatalf("do replicate error:%s", r)
+		return
+	}
+	log.Infof("replicateof sucess,mport:%d sport:%d", m.Port, s.Port)
 }

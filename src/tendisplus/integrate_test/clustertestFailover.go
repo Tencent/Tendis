@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"integrate_test/util"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -258,14 +259,7 @@ func testClusterFailover(clusterIp string, clusterPortStart int, clusterNodeNum 
 	// failover first time
 	log.Infof("cluster failover begin")
 	failoverNodeSlave := &(*servers)[clusterNodeNum]
-	cliSlave := createClient(failoverNodeSlave)
-	if r, err := cliSlave.Cmd("cluster", "failover").Str(); err != nil {
-		log.Fatalf("do cluster failover failed:%v", err)
-		return
-	} else if r != "OK" {
-		log.Fatalf("do cluster failover error:%s", r)
-		return
-	}
+	cluster_manual_failover(failoverNodeSlave)
 	log.Infof("cluster failover sucess,port:%d Path:%v", failoverNodeSlave.Port, failoverNodeSlave.Path)
 
 	time.Sleep(time.Duration(sleepInter) * time.Second)
@@ -274,14 +268,7 @@ func testClusterFailover(clusterIp string, clusterPortStart int, clusterNodeNum 
 	// failover second time
 	// need sleep more than 2*clusterNodeTimeout
 	failoverNodeMaster := &(*servers)[0]
-	cliMaster := createClient(failoverNodeMaster)
-	if r, err := cliMaster.Cmd("cluster", "failover").Str(); err != nil {
-		log.Fatalf("do cluster failover failed:%v", err)
-		return
-	} else if r != "OK" {
-		log.Fatalf("do cluster failover error:%s", r)
-		return
-	}
+	cluster_manual_failover(failoverNodeMaster)
 	log.Infof("cluster failover sucess,port:%d Path:%v", failoverNodeMaster.Port, failoverNodeMaster.Path)
 
 	time.Sleep(time.Duration(sleepInter) * time.Second)
@@ -289,13 +276,7 @@ func testClusterFailover(clusterIp string, clusterPortStart int, clusterNodeNum 
 
 	// failover third time
 	// need sleep more than 2*clusterNodeTimeout
-	if r, err := cliSlave.Cmd("cluster", "failover").Str(); err != nil {
-		log.Fatalf("do cluster failover failed:%v", err)
-		return
-	} else if r != "OK" {
-		log.Fatalf("do cluster failover error:%s", r)
-		return
-	}
+	cluster_manual_failover(failoverNodeSlave)
 	log.Infof("cluster failover sucess,port:%d Path:%v", failoverNodeSlave.Port, failoverNodeSlave.Path)
 
 	// wait redis-benchmark add data end
@@ -379,13 +360,81 @@ func testClusterFailover(clusterIp string, clusterPortStart int, clusterNodeNum 
 	stopCluster(servers, clusterNodeNum, predixy)
 }
 
+func testClusterFailoverSlaveChange(clusterIp string, clusterPortStart int, clusterNodeNum int) {
+	var servers, predixy, _ = startCluster(clusterIp, clusterPortStart, clusterNodeNum, map[string]string{}, util.GetCurrentDirectory(), "")
+	extraServers := []util.RedisServer{}
+	server := util.RedisServer{}
+	pwd := util.GetCurrentDirectory()
+	for i := 0; i < clusterNodeNum*2; i++ {
+		port := util.FindAvailablePort(clusterPortStart + clusterNodeNum*2 + i)
+		log.Infof("start server i:%d port:%d", i, port)
+		server.Init(clusterIp, port, pwd, "m"+strconv.Itoa(i)+"_", util.Cluster)
+		cfgArgs := make(map[string]string)
+		cfgArgs["aof-enabled"] = "yes"
+		cfgArgs["kvStoreCount"] = "2"
+		cfgArgs["requirepass"] = "tendis+test"
+		cfgArgs["cluster-enabled"] = "yes"
+		cfgArgs["masterauth"] = "tendis+test"
+
+		if err := server.Setup(false, &cfgArgs); err != nil {
+			log.Fatalf("setup failed,port:%s err:%v", port, err)
+		}
+		extraServers = append(extraServers, server)
+	}
+	var channel chan int = make(chan int)
+	go util.AddDataWithBenchmarkInCo(&predixy.RedisServer, *auth, 100, "tag", "set", channel)
+	<-channel
+
+	for i := range extraServers {
+		cluster_meet(&(*servers)[0], &extraServers[i])
+	}
+	time.Sleep(2 * time.Second)
+
+	for i := range extraServers {
+		masterNodeNum := i % clusterNodeNum
+		replicateof(&(*servers)[masterNodeNum], &extraServers[i])
+	}
+	time.Sleep(15 * time.Second)
+
+	for i := clusterNodeNum; i < clusterNodeNum*2; i++ {
+		cluster_manual_failover(&extraServers[i])
+	}
+	time.Sleep(45 * time.Second)
+
+	for i := clusterNodeNum; i < clusterNodeNum*2; i++ {
+		if !isMaster(&extraServers[i]) {
+			log.Fatalf("check role failed, %s should be master", getNodeName(&extraServers[i]))
+			return
+		}
+	}
+
+	for i := 0; i < clusterNodeNum; i++ {
+		if !checkisMaster(&extraServers[i+clusterNodeNum], &extraServers[i]) {
+			log.Fatalf("check role failed, %s should be %s slave", getNodeName(&extraServers[i]), getNodeName(&extraServers[i+clusterNodeNum]))
+		}
+	}
+
+	for i := 0; i < clusterNodeNum*2; i++ {
+		masterNodeNum := i%clusterNodeNum + clusterNodeNum
+		if !checkisMaster(&extraServers[masterNodeNum], &(*servers)[i]) {
+			log.Fatalf("check role failed, %s should be %s slave", getNodeName(&(*servers)[i]), getNodeName(&extraServers[masterNodeNum]))
+		}
+	}
+
+	stopCluster(servers, clusterNodeNum, predixy)
+	for i := 0; i < clusterNodeNum*2; i++ {
+		shutdownServer(&extraServers[i], *shutdown, *clear)
+	}
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
 	flag.Parse()
 	// rand.Seed(time.Now().UnixNano())
 	testClusterFailover(*clusterIp, 45200, 3, false)
 	testClusterFailover(*clusterIp, 45220, 3, true)
-	testClusterManualFailoverIncrSync(45240)
-	testClusterShutdownFailoverIncrSync(45260)
-	log.Infof("clustertestFilover.go passed.")
+	testClusterFailoverSlaveChange(*clusterIp, 45260, 3)
+	testClusterManualFailoverIncrSync(45280)
+	testClusterShutdownFailoverIncrSync(45300)
+	log.Infof("clustertestFailover.go passed.")
 }
