@@ -24,7 +24,7 @@
 #include "tendisplus/utils/time.h"
 
 namespace tendisplus {
-
+void waitClusterMeetEnd(std::vector<std::shared_ptr<ServerEntry>> servers);
 bool compareClusterInfo(std::shared_ptr<ServerEntry> svr1,
                         std::shared_ptr<ServerEntry> svr2,
                         bool testMacro = true);
@@ -149,7 +149,7 @@ makeCluster(uint32_t startPort,
   for (auto node : servers) {
     work0.clusterMeet(node->getParams()->bindIp, node->getParams()->port);
   }
-
+  waitClusterMeetEnd(servers);
   uint32_t step = CLUSTER_SLOTS / nodeNum;
   uint32_t firstslot = 0;
   uint32_t lastslot = 0;
@@ -266,7 +266,7 @@ std::vector<std::shared_ptr<ServerEntry>> makeSingleCluster(
   for (auto node : servers) {
     work0.clusterMeet(node->getParams()->bindIp, node->getParams()->port);
   }
-
+  waitClusterMeetEnd(servers);
   auto node = servers[0];
   auto ctx = std::make_shared<asio::io_context>();
   auto sess = makeSession(node, ctx);
@@ -2432,7 +2432,7 @@ TEST(Cluster, deleteChunks) {
   work1.init();
 
   work1.clusterMeet(dstNode->getParams()->bindIp, dstNode->getParams()->port);
-  std::this_thread::sleep_for(std::chrono::seconds(10));
+  waitClusterMeetEnd(servers);
 
   // addSlots
   LOG(INFO) << "begin addSlots.";
@@ -3018,7 +3018,7 @@ TEST(Cluster, ChangeMaster) {
   work1.init();
 
   work1.clusterMeet(node7->getParams()->bindIp, node7->getParams()->port);
-  std::this_thread::sleep_for(std::chrono::seconds(10));
+  std::this_thread::sleep_for(std::chrono::seconds(30));
 
   auto ctx2 = std::make_shared<asio::io_context>();
   auto sess2 = makeSession(node7, ctx2);
@@ -3103,7 +3103,7 @@ TEST(Cluster, FixReplication) {
   WorkLoad work1(node1, sess1);
   work1.init();
   work1.clusterMeet(node7->getParams()->bindIp, node7->getParams()->port);
-  std::this_thread::sleep_for(std::chrono::seconds(3));
+  std::this_thread::sleep_for(std::chrono::seconds(30));
 
   auto ctx2 = std::make_shared<asio::io_context>();
   auto sess2 = makeSession(node7, ctx2);
@@ -3190,7 +3190,7 @@ TEST(Cluster, ManualfailoverCheck) {
   WorkLoad work1(master, sess1);
   work1.init();
   work1.clusterMeet(slave->getParams()->bindIp, slave->getParams()->port);
-  std::this_thread::sleep_for(std::chrono::seconds(3));
+  std::this_thread::sleep_for(std::chrono::seconds(30));
 
   auto ctx2 = std::make_shared<asio::io_context>();
   auto sess2 = makeSession(slave, ctx2);

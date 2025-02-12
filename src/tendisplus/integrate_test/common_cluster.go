@@ -312,8 +312,7 @@ func startCluster(
 			return nil, nil, nil
 		}
 	}
-	time.Sleep(2 * time.Second)
-
+	waitMeetEnd(&servers, clusterNodeNum*2)
 	// slaveof
 	log.Infof("cluster slaveof begin")
 	for i := clusterNodeNum; i < clusterNodeNum*2; i++ {
@@ -423,4 +422,32 @@ func replicateof(m *util.RedisServer, s *util.RedisServer) {
 		return
 	}
 	log.Infof("replicateof sucess,mport:%d sport:%d", m.Port, s.Port)
+}
+
+func waitMeetEnd(servers *[]util.RedisServer, expectedNodeNum int) {
+	start := time.Now().Second()
+	for {
+		flag := true
+		for i := range *servers {
+			cli := createClient(&(*servers)[i])
+			r, _ := cli.Cmd("cluster", "nodes").Str()
+			res := strings.Split(r, "\n")
+			if len(res) <= expectedNodeNum {
+				flag = false
+			}
+		}
+		if flag {
+			break
+		}
+		if (time.Now().Second() - start) > 60 {
+			log.Fatalf("meet cost too much time")
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func waitMeetEndSingle(server util.RedisServer, expectedNodeNum int) {
+	servers := []util.RedisServer{server}
+	waitMeetEnd(&servers, expectedNodeNum)
 }

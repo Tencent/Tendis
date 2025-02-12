@@ -51,7 +51,8 @@ func testClusterManualFailoverIncrSync(mport int) {
 
 	// add another slave node
 	cluster_meet(&master, slave2)
-	time.Sleep(5 * time.Second)
+	waitMeetEndSingle(*slave2, 7)
+	waitMeetEnd(servers, 7)
 	cluster_slaveof(&master, slave2)
 
 	// check cluster online state
@@ -145,6 +146,12 @@ func testClusterShutdownFailoverIncrSync(mport int) {
 	cluster_set_node_arbiter(arbiter1)
 	cluster_set_node_arbiter(arbiter2)
 	time.Sleep(5 * time.Second)
+
+	waitMeetEndSingle(*slave2, 9)
+	waitMeetEndSingle(*arbiter1, 9)
+	waitMeetEndSingle(*arbiter2, 9)
+	waitMeetEnd(servers, 9)
+
 	cluster_slaveof(&master, slave2)
 
 	time.Sleep(5 * time.Second)
@@ -388,7 +395,7 @@ func testClusterFailoverSlaveChange(clusterIp string, clusterPortStart int, clus
 	for i := range extraServers {
 		cluster_meet(&(*servers)[0], &extraServers[i])
 	}
-	time.Sleep(2 * time.Second)
+	waitMeetEnd(&extraServers, clusterNodeNum*4)
 
 	for i := range extraServers {
 		masterNodeNum := i % clusterNodeNum

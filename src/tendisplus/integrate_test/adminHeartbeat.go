@@ -61,7 +61,9 @@ func testAutoGenerateHeartbeatTimestamp() {
 
 	cluster_meet(&m1, &m2)
 	cluster_meet(&m2, &m3)
-	time.Sleep(5 * time.Second)
+	waitMeetEndSingle(m1, 3)
+	waitMeetEndSingle(m2, 3)
+	waitMeetEndSingle(m3, 3)
 
 	// addslots
 	log.Infof("cluster addslots begin")
