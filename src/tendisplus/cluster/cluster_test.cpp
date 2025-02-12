@@ -24,10 +24,13 @@
 #include "tendisplus/utils/time.h"
 
 namespace tendisplus {
-void waitClusterMeetEnd(std::vector<std::shared_ptr<ServerEntry>> servers);
+void waitClusterMeetEnd(std::vector<std::shared_ptr<ServerEntry>> servers,
+  std::string infoType = "clusterInfo");
 bool compareClusterInfo(std::shared_ptr<ServerEntry> svr1,
                         std::shared_ptr<ServerEntry> svr2,
                         bool testMacro = true);
+bool compareNodeName(std::shared_ptr<ServerEntry> svr1,
+                     std::shared_ptr<ServerEntry> svr2);
 
 void testCommandArrayResult(
   std::shared_ptr<ServerEntry> svr,
@@ -429,11 +432,10 @@ void waitMigrateTaskStop(std::shared_ptr<ServerEntry> srcNode,
             << "s";
 }
 
-// wait all nodes's cluster_known_nodes same as servers's size
-void waitClusterMeetEnd(std::vector<std::shared_ptr<ServerEntry>> servers) {
+
+void waitNodeNum(const std::vector<std::shared_ptr<ServerEntry>>& servers) {
   auto start = msSinceEpoch();
   uint32_t expectNum = servers.size();
-
   // wait every node's cluster_known_nodes same as servers's size
   for (auto server : servers) {
     while (server->getClusterMgr()->getClusterState()->getNodeCount() !=
@@ -446,7 +448,44 @@ void waitClusterMeetEnd(std::vector<std::shared_ptr<ServerEntry>> servers) {
       }
     }
   }
+  LOG(INFO) << "waitNodeNum success, cost time:"
+            << (msSinceEpoch() - start) / 1000 << "s";
+}
 
+void waitNodeInfo(const std::vector<std::shared_ptr<ServerEntry>>& servers,
+                  std::string type) {
+  auto start = msSinceEpoch();
+
+  // wait every node corresponding configure epoch same
+  auto node_1 = servers[0];
+  uint32_t succNum = 0;
+  while (succNum != servers.size()) {
+    LOG(INFO) << "wait configure epoch begin";
+    succNum = 0;
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    if (msSinceEpoch() - start > 100 * 1000) {
+      // take too long time
+      INVARIANT_D(0);
+      break;
+    }
+
+    for (auto svr : servers) {
+      int succ = 0;
+      if (type == "nodeName") {
+        succ = compareNodeName(node_1, svr);
+      } else if (type == "clusterInfo") {
+        succ = compareClusterInfo(node_1, svr, false);
+      }
+      succNum += succ;
+    }
+  }
+  LOG(INFO) << "waitNodeInfo success, cost time:"
+            << (msSinceEpoch() - start) / 1000 << "s"
+            << " type:" << type;
+}
+
+void waitConfigEpoch(const std::vector<std::shared_ptr<ServerEntry>>& servers) {
+  auto start = msSinceEpoch();
   // wait every node gets a different config epoch
   std::set<int> epochs;
   while (epochs.size() != servers.size()) {
@@ -471,30 +510,23 @@ void waitClusterMeetEnd(std::vector<std::shared_ptr<ServerEntry>> servers) {
       break;
     }
   }
+  LOG(INFO) << "waitConfigEpoch success, cost time:"
+            << (msSinceEpoch() - start) / 1000 << "s";
+}
 
-  // wait every node corresponding configure epoch same
-  auto node_1 = servers[0];
-  uint32_t succNum = 0;
-  while (succNum != servers.size()) {
-    LOG(INFO) << "wait configure epoch begin";
-    succNum = 0;
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    if (msSinceEpoch() - start > 100 * 1000) {
-      // take too long time
-      INVARIANT_D(0);
-      break;
-    }
+// wait all nodes's cluster_known_nodes same as servers's size
+void waitClusterMeetEnd(std::vector<std::shared_ptr<ServerEntry>> servers,
+                        std::string infoType) {
+  auto start = msSinceEpoch();
+  std::thread th1([&servers]() { waitNodeNum(servers); });
+  std::thread th2([&servers, &infoType]() { waitNodeInfo(servers, infoType); });
+  std::thread th3([&servers]() { waitConfigEpoch(servers); });
+  th1.join();
+  th2.join();
+  th3.join();
 
-    for (auto svr : servers) {
-      auto succ = compareClusterInfo(svr, node_1, false);
-      LOG(INFO) << "wait configure epoch end times: " << succ;
-      succNum += succ;
-    }
-    LOG(INFO) << "wait configure epoch end";
-  }
-
-  LOG(INFO) << "Cluster Meet Ok cost time:" << (msSinceEpoch() - start) / 1000
-            << "s";
+  LOG(INFO) << "waitClusterMeetEnd success, cost time:"
+            << (msSinceEpoch() - start) / 1000 << "s";
 }
 
 void destroyCluster(uint32_t nodeNum) {
@@ -910,6 +942,34 @@ bool compareClusterInfo(std::shared_ptr<ServerEntry> svr1,
     LOG(INFO) << "ClusterInfo node: " << node1->toString();
     // node2 maybe empty
     if (!node2 || node1->toString() != node2->toString()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// check node name be same
+bool compareNodeName(std::shared_ptr<ServerEntry> svr1,
+                     std::shared_ptr<ServerEntry> svr2) {
+  auto cs1 = svr1->getClusterMgr()->getClusterState();
+  auto cs2 = svr2->getClusterMgr()->getClusterState();
+
+  auto nodelist1 = cs1->getNodesList();
+  auto nodelist2 = cs2->getNodesList();
+
+  if (cs1->getNodeCount() != cs2->getNodeCount()) {
+    return false;
+  }
+
+  for (auto nodep : nodelist1) {
+    auto node1 = nodep.second;
+
+    auto node2 = cs2->clusterLookupNode(node1->getNodeName());
+
+    LOG(INFO) << "compareNodeName node: " << node1->getNodeName();
+    // node2 maybe empty
+    if (!node2 || node1->getNodeName() != node2->getNodeName()) {
       return false;
     }
   }
@@ -2889,6 +2949,67 @@ TEST(Cluster, ConvergenceRate) {
   }
 #endif
   servers.clear();
+}
+
+void ConvergenceRateTest(uint32_t startPort, const std::string& type) {
+  uint32_t nodeNum = 30;
+
+  LOG(INFO) << "ConvergenceRate nodeNum:" << nodeNum;
+  std::vector<std::string> dirs;
+  for (uint32_t i = 0; i < nodeNum; ++i) {
+    dirs.push_back("node" + std::to_string(i));
+  }
+
+  const auto guard = MakeGuard([dirs] {
+    for (auto dir : dirs) {
+      destroyEnv(dir);
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+
+  std::vector<std::shared_ptr<ServerEntry>> servers;
+
+  uint32_t index = 0;
+  for (auto dir : dirs) {
+    uint32_t nodePort = startPort + index++;
+    servers.emplace_back(std::move(makeClusterNode(dir, nodePort, storeCnt)));
+  }
+
+  // meet
+  LOG(INFO) << "begin meet.";
+  if (type == "point") {
+    for (uint32_t i = 1; i < nodeNum; ++i) {
+      auto ctx = std::make_shared<asio::io_context>();
+      auto sess = makeSession(servers[0], ctx);
+      WorkLoad work(servers[0], sess);
+      work.init();
+      work.clusterMeet(servers[i]->getParams()->bindIp,
+                       servers[i]->getParams()->port);
+    }
+  } else if (type == "line") {
+    for (uint32_t i = 0; i < nodeNum - 1; ++i) {
+      auto ctx = std::make_shared<asio::io_context>();
+      auto sess = makeSession(servers[i], ctx);
+      WorkLoad work(servers[0], sess);
+      work.init();
+      work.clusterMeet(servers[i + 1]->getParams()->bindIp,
+                       servers[i + 1]->getParams()->port);
+    }
+  }
+  waitClusterMeetEnd(servers, "nodeName");
+#ifndef _WIN32
+  for (auto svr : servers) {
+    svr->stop();
+    LOG(INFO) << "stop " << svr->getParams()->port << " success";
+  }
+#endif
+  servers.clear();
+}
+
+// Convergence rate test
+TEST(Cluster, ConvergenceRate2) {
+  ConvergenceRateTest(17540, "point");
+  ConvergenceRateTest(17570, "line");
 }
 
 TEST(Cluster, MigrateTTLIndex) {
