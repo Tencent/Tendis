@@ -572,6 +572,9 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void clusterRenameNode(CNodePtr node,
                          const std::string& newname,
                          bool save = false);
+  void clusterRenameNodeNoLock(CNodePtr node,
+                         const std::string& newname,
+                         bool save = false);
 
   bool clusterSetNodeAsMaster(CNodePtr node);
   bool clusterSetNodeAsMasterNoLock(CNodePtr node);

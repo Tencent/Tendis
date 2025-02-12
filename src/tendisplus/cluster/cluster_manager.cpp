@@ -2203,6 +2203,12 @@ void ClusterState::clusterRenameNode(CNodePtr node,
                                      const std::string& newname,
                                      bool save) {
   std::lock_guard<myMutex> lk(_mutex);
+  clusterRenameNodeNoLock(node, newname, save);
+}
+
+void ClusterState::clusterRenameNodeNoLock(CNodePtr node,
+                                     const std::string& newname,
+                                     bool save) {
   std::string oldname = node->getNodeName();
   serverLog(LL_DEBUG,
             "Renaming node %.40s into %.40s",
@@ -2212,7 +2218,6 @@ void ClusterState::clusterRenameNode(CNodePtr node,
   clusterDelNodeNoLock(node);
   node->setNodeName(newname);
   clusterAddNodeNoLock(node);
-  LOG(WARNING) << "Node " << oldname << " renamed into " << newname;
 
   if (save) {
     setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
