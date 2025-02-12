@@ -2104,7 +2104,7 @@ class InfoCommand : public Command {
          << "arch_bits:" << ((sizeof(size_t) == 8) ? 64 : 32) << "\r\n"
          << "multiplexing_api:asio\r\n"
 #ifdef __GNUC__
-         << "gcc_version:" << __GNUC__ << ":" << __GNUC_MINOR__ << ":"
+         << "gcc_version:" << __GNUC__ << "." << __GNUC_MINOR__ << "."
          << __GNUC_PATCHLEVEL__ << "\r\n"
 #else
          << "gcc_version:0.0.0\r\n"
