@@ -425,6 +425,10 @@ func replicateof(m *util.RedisServer, s *util.RedisServer) {
 }
 
 func waitMeetEnd(servers *[]util.RedisServer, expectedNodeNum int) {
+	var namelist []string
+	for _, v := range *servers {
+		namelist = append(namelist, getNodeName(&v))
+	}
 	start := time.Now().Second()
 	for {
 		flag := true
@@ -432,8 +436,13 @@ func waitMeetEnd(servers *[]util.RedisServer, expectedNodeNum int) {
 			cli := createClient(&(*servers)[i])
 			r, _ := cli.Cmd("cluster", "nodes").Str()
 			res := strings.Split(r, "\n")
-			if len(res) <= expectedNodeNum {
+			if len(res) != expectedNodeNum+1 {
 				flag = false
+			}
+			for _, str := range namelist {
+				if !strings.Contains(r, str) {
+					flag = false
+				}
 			}
 		}
 		if flag {
