@@ -5726,8 +5726,11 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
                   sessNode->getNodeName().c_str());
         auto tmpflag = flags &
           (CLUSTER_NODE_MASTER | CLUSTER_NODE_SLAVE | CLUSTER_NODE_ARBITER);
-        sessNode->changeFlags(tmpflag, CLUSTER_NODE_HANDSHAKE);
-        clusterRenameNode(sessNode, hdr->_sender);
+        {
+          std::lock_guard<myMutex> lk(_mutex);
+          sessNode->changeFlags(tmpflag, CLUSTER_NODE_HANDSHAKE);
+          clusterRenameNodeNoLock(sessNode, hdr->_sender);
+        }
         setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
       } else if (sessNode->getNodeName() != hdr->_sender) {
         /* TODO(vinchen): How to repeat?
