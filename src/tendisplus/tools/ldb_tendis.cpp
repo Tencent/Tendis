@@ -7,6 +7,7 @@
 #include "rocksdb/utilities/ttl/db_ttl_impl.h"
 
 #include "tendisplus/storage/record.h"
+#include "tendisplus/utils/time.h"
 
 using namespace ROCKSDB_NAMESPACE;
 using namespace tendisplus;
@@ -347,6 +348,12 @@ void TScanCommand::DoCommand() {
         keyType != RecordType::RT_BINLOG) {
       continue;
     }
+    uint64_t currentTs = msSinceEpoch();
+    uint64_t targetTtl = rv.getTtl();
+    if (targetTtl != 0 && currentTs >= targetTtl) {
+      continue;
+    }
+
     // value length of string
     uint64_t vallen = 0;
     // num of value of secondary key
