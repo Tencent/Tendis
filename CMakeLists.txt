@@ -169,7 +169,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 	list(APPEND SYS_LIBS "dl" "pthread" "rt")
 	# thirdparty code
 	# do not set unnecessary flags before thirdparty dirs
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -g -fno-omit-frame-pointer ")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -g3 -ggdb3 -fno-omit-frame-pointer ")
 
 	add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX -DROCKSDB_SUPPORT_THREAD_LOCAL)
 endif()
