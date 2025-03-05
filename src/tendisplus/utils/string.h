@@ -297,6 +297,8 @@ constexpr bool starts_with(std::string_view s,
   return s.substr(0, prefix.size()) == prefix;
 }
 
+std::string getSizeReadable(size_t size);
+
 }  // namespace tendisplus
 
 #ifdef _MSC_VER

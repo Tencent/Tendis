@@ -441,4 +441,22 @@ Expected<int64_t> getIntSize(const std::string& str) {
   return {ErrorCodes::ERR_DECODE, "getIntSize failed:" + str};
 }
 
+std::string getSizeReadable(size_t size) {
+  char buf[20];
+  double KB = 1024;
+  double MB = 1024*1024;
+  double GB = 1024*1024*1024;
+  if (size < KB) {
+    return std::to_string(size) + " B";
+  } else if (size < MB) {
+    snprintf(buf, sizeof(buf), "%.3f KB", size/KB);
+    return buf;
+  } else if (size < GB) {
+    snprintf(buf, sizeof(buf), "%.3f MB", size/MB);
+    return buf;
+  } else {
+    snprintf(buf, sizeof(buf), "%.3f GB", size/GB);
+    return buf;
+  }
+}
 }  // namespace tendisplus

@@ -5041,6 +5041,36 @@ class JeprofCommand : public Command {
   int32_t keystep() const {
     return 0;
   }
+
+  Expected<std::string> getUsage() {
+    std::vector<std::string> nameList = {"stats.allocated",
+    "stats.active",
+    "stats.metadata",
+    "stats.resident",
+    "stats.mapped",
+    "stats.retained"};
+
+    // NOTE(takenliu): we need refresh jamalloc statistic data,
+    //   but mallctl("epoch",xxx) maybe have bug and cant refresh,
+    //   so we call malloc_stats_print() to refresh.
+    malloc_stats_print([](void* ctx, const char* s){}, NULL, NULL);
+
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, nameList.size());
+    for (const auto& name : nameList) {
+      size_t allocated;
+      size_t len = sizeof(allocated);
+
+      if (mallctl(name.c_str(), &allocated, &len, NULL, 0) == 0) {
+      } else {
+        return {ErrorCodes::ERR_UNKNOWN,
+          "mallctl() failed."};
+      }
+      Command::fmtBulk(ss, name + ": " + std::to_string(allocated)
+        + " (" + getSizeReadable(allocated) + ")");
+    }
+    return ss.str();
+  }
   Expected<std::string> run(Session* sess) final {
 #ifdef TENDIS_JEMALLOC
     const std::vector<std::string>& args = sess->getArgs();
@@ -5053,9 +5083,11 @@ class JeprofCommand : public Command {
       mallctl("prof.active", NULL, NULL, &active, sizeof(active));
     } else if (action == "dump") {
       mallctl("prof.dump", NULL, NULL, NULL, 0);
+    } else if (action == "stats") {
+      return getUsage();
     } else {
       return {ErrorCodes::ERR_UNKNOWN,
-              "args wrong, only support: jeprof [on/off/dump]"};
+              "args wrong, only support: jeprof [on/off/dump/stats]"};
     }
     return Command::fmtOK();
 #else
