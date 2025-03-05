@@ -70,7 +70,13 @@ func testVersion(versions []string) {
 			shutdownServer(&(*servers)[i], *shutdown, *clear)
 		}
 
-		time.Sleep(10 * time.Second)
+		for i := clusterNodeNum; i < clusterNodeNum*2; i++ {
+			var exists = true
+			for exists {
+				exists = checkServerPidFile(&(*servers)[i])
+				time.Sleep(1 * time.Second)
+			}
+		}
 
 		for i := clusterNodeNum; i < clusterNodeNum*2; i++ {
 			(*servers)[i].WithBinPath("")
@@ -115,7 +121,13 @@ func testVersion(versions []string) {
 			shutdownServer(&(*servers)[i], *shutdown, *clear)
 		}
 
-		time.Sleep(10 * time.Second)
+		for i := 0; i < clusterNodeNum; i++ {
+			var exists = true
+			for exists {
+				exists = checkServerPidFile(&(*servers)[i])
+				time.Sleep(1 * time.Second)
+			}
+		}
 
 		for i := 0; i < clusterNodeNum; i++ {
 			(*servers)[i].WithBinPath("")
@@ -162,6 +174,13 @@ func testVersion(versions []string) {
 			shutdownServer(&(*servers)[i], *shutdown, *clear)
 		}
 		shutdownPredixy(predixy, *shutdown, *clear)
+		for i := 0; i < clusterNodeNum*2; i++ {
+			var exists = true
+			for exists {
+				exists = checkServerPidFile(&(*servers)[i])
+				time.Sleep(1 * time.Second)
+			}
+		}
 		log.Infof("version: %v done.", v)
 	}
 }

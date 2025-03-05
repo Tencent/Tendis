@@ -359,6 +359,16 @@ func shutdownServer(m *util.RedisServer, shutdown int, clear int) {
 	log.Infof("shutdownServer server,port:%d", m.Port)
 }
 
+func checkServerPidFile(m *util.RedisServer) bool {
+	_, err := os.Stat(m.Path + "/tendisplus.pid")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
+	}
+	return true
+}
+
 func shutdownPredixy(m *util.Predixy, shutdown int, clear int) {
 	if shutdown <= 0 {
 		return
