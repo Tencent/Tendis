@@ -56,6 +56,8 @@ class BackupCommand : public Command {
         return {ErrorCodes::ERR_MANUAL, "mode error, should be ckpt or copy"};
       }
     }
+    LOG(INFO) << "BackupCommand begin, dir: " << dir
+              << ", mode:" << static_cast<int>(mode);
     auto svr = sess->getServerEntry();
     INVARIANT(svr != nullptr);
 
@@ -100,7 +102,10 @@ class BackupCommand : public Command {
       // TODO(wayenchen) find path to write to file
     }
 
-    svr->setBackupRunning();
+    if (!svr->setBackupRunning()) {
+      LOG(ERROR) << "BackupCommand wrong, backup is running.";
+      return {ErrorCodes::ERR_INTERNAL, "backup is running."};
+    }
     std::thread t([svr, dir = dir, mode]() {
       bool succ = true;
       uint32_t storeid = 0;
@@ -131,6 +136,7 @@ class BackupCommand : public Command {
           break;
         }
       }
+      LOG(INFO) << "BackupCommand complete, succ:" << succ;
       if (succ) {
         svr->onBackupEnd();
       } else {

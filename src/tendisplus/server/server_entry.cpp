@@ -367,11 +367,12 @@ ServerEntry::ServerEntry()
     _dbNum(CONFIG_DEFAULT_DBNUM),
     _scheduleNum(0),
     _cfg(nullptr),
+    _backupRunning(false),
+    _lastBackupSuccess(true),
     _lastBackupTime(0),
     _backupTimes(0),
     _lastBackupFailedTime(0),
     _backupFailedTimes(0),
-    _backupRunning(0),
     _internalErrorCnt(0),
     _lastBackupFailedErr("") {}
 
@@ -509,10 +510,6 @@ void ServerEntry::logError(const Status& s, Session* sess) {
 
 uint32_t ServerEntry::getKVStoreCount() const {
   return _catalog->getKVStoreCount();
-}
-
-void ServerEntry::setBackupRunning() {
-  _backupRunning.fetch_add(1, std::memory_order_relaxed);
 }
 
 Status ServerEntry::adaptSomeThreadNumByCpuNum(

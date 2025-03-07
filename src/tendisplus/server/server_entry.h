@@ -295,18 +295,35 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
     uint64_t duration, /* including the queue time */
     uint64_t execTime,
     Session* sess);
+  bool setBackupRunning() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    bool expected = false;
+    return _backupRunning.compare_exchange_strong(
+      expected, true, std::memory_order_relaxed);
+  }
+  bool getBackupRunning() const {
+    return _backupRunning.load(std::memory_order_relaxed);
+  }
   void onBackupEnd() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    _backupRunning.store(false, std::memory_order_relaxed);
+    _lastBackupSuccess.store(true, std::memory_order_relaxed);
+
     _lastBackupTime.store(sinceEpoch(), std::memory_order_relaxed);
-    _backupRunning.fetch_sub(1, std::memory_order_relaxed);
     _backupTimes.fetch_add(1, std::memory_order_relaxed);
   }
   void onBackupEndFailed(uint32_t storeid, const std::string& errinfo) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    _backupRunning.store(false, std::memory_order_relaxed);
+    _lastBackupSuccess.store(false, std::memory_order_relaxed);
+
     _lastBackupFailedTime.store(sinceEpoch(), std::memory_order_relaxed);
     _backupFailedTimes.fetch_add(1, std::memory_order_relaxed);
-    _backupRunning.fetch_sub(1, std::memory_order_relaxed);
-    std::lock_guard<std::mutex> lk(_mutex);
     _lastBackupFailedErr =
       "storeid " + std::to_string(storeid) + ",err:" + errinfo;
+  }
+  bool getLastBackupSucces() const {
+    return _lastBackupSuccess.load(std::memory_order_relaxed);
   }
   uint64_t getLastBackupTime() const {
     return _lastBackupTime.load(std::memory_order_relaxed);
@@ -324,15 +341,11 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
     std::lock_guard<std::mutex> lk(_mutex);
     return _lastBackupFailedErr;
   }
-  uint64_t getBackupRunning() const {
-    return _backupRunning.load(std::memory_order_relaxed);
-  }
 
   uint64_t getInternalErrorCnt() const {
     return _internalErrorCnt.load(std::memory_order_relaxed);
   }
 
-  void setBackupRunning();
   bool getTotalIntProperty(
     Session* sess,
     const std::string& property,
@@ -485,11 +498,12 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
 
   std::atomic<uint64_t> _scheduleNum;
   std::shared_ptr<ServerParams> _cfg;
+  std::atomic<bool> _backupRunning;
+  std::atomic<bool> _lastBackupSuccess;
   std::atomic<uint64_t> _lastBackupTime;
   std::atomic<uint64_t> _backupTimes;
   std::atomic<uint64_t> _lastBackupFailedTime;
   std::atomic<uint64_t> _backupFailedTimes;
-  std::atomic<uint64_t> _backupRunning;
   std::atomic<uint64_t> _internalErrorCnt;
   std::string _lastBackupFailedErr;
   ServerStat _serverStat;

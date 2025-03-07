@@ -2398,12 +2398,14 @@ class InfoCommand : public Command {
                          std::stringstream& result) {
     if (allsections || defsections || section == "backup") {
       auto server = sess->getServerEntry();
-      std::string runStr = server->getBackupRunning() > 0 ? "yes" : "no";
+      std::string runStr = server->getBackupRunning() ? "yes" : "no";
+      std::string lastSuccStr = server->getLastBackupSucces() ? "ok" : "err";
       std::stringstream ss;
       ss << "# Backup\r\n";
       ss << "backup-count:" << server->getBackupTimes() << "\r\n";
       ss << "last-backup-time:" << server->getLastBackupTime() << "\r\n";
       ss << "current-backup-running:" << runStr << "\r\n";
+      ss << "last-backup-status:" << lastSuccStr << "\r\n";
       if (server->getBackupFailedTimes() > 0) {
         ss << "backup-failed-count:" << server->getBackupFailedTimes()
            << "\r\n";
@@ -5044,16 +5046,16 @@ class JeprofCommand : public Command {
 
   Expected<std::string> getUsage() {
     std::vector<std::string> nameList = {"stats.allocated",
-    "stats.active",
-    "stats.metadata",
-    "stats.resident",
-    "stats.mapped",
-    "stats.retained"};
+                                         "stats.active",
+                                         "stats.metadata",
+                                         "stats.resident",
+                                         "stats.mapped",
+                                         "stats.retained"};
 
     // NOTE(takenliu): we need refresh jamalloc statistic data,
     //   but mallctl("epoch",xxx) maybe have bug and cant refresh,
     //   so we call malloc_stats_print() to refresh.
-    malloc_stats_print([](void* ctx, const char* s){}, NULL, NULL);
+    malloc_stats_print([](void* ctx, const char* s) {}, NULL, NULL);
 
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, nameList.size());
@@ -5063,11 +5065,11 @@ class JeprofCommand : public Command {
 
       if (mallctl(name.c_str(), &allocated, &len, NULL, 0) == 0) {
       } else {
-        return {ErrorCodes::ERR_UNKNOWN,
-          "mallctl() failed."};
+        return {ErrorCodes::ERR_UNKNOWN, "mallctl() failed."};
       }
-      Command::fmtBulk(ss, name + ": " + std::to_string(allocated)
-        + " (" + getSizeReadable(allocated) + ")");
+      Command::fmtBulk(ss,
+                       name + ": " + std::to_string(allocated) + " (" +
+                         getSizeReadable(allocated) + ")");
     }
     return ss.str();
   }
