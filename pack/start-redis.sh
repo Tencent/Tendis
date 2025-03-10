@@ -12,8 +12,8 @@ PORT=$1
 
 if [ ! -n "$PORT"  ];then
 	echo "PORT not set, exit"
-	usage;
-	exit;
+	usage
+	exit
 fi
 
 shift
@@ -22,17 +22,19 @@ shift
 CDIR=`dirname $0`
 cd $CDIR
 
-#check if there is /data1 exist mounted, if exists,use it.
-EX_DATA1=`df -h|grep -E "/data1$" |wc -l`
-
-#default dir
-DISKROOT="/data"
-
-if [ $EX_DATA1 -gt 0 ]
+DISKROOT="$REDIS_DATA_DIR"
+if [ -z $DISKROOT ]
 then
-    DISKROOT="/data1"
-else
-    DISKROOT="/data"
+	if [ -d "/data1/redis" ]
+	then
+		DISKROOT="/data1"
+	elif [ -d "/data/redis" ]
+	then
+		DISKROOT="/data"
+	else
+		echo "cannot find data directory"
+		exit -1
+	fi
 fi
 
 rootdir="${DISKROOT}/redis/$PORT"
@@ -44,14 +46,14 @@ logDir="${datadir}/log"
 
 if [ ! -d "$rootdir" ];then
 	echo "dir $rootdir not exists"
-	usage;
-	exit;
+	usage
+	exit
 fi
 
 if [ ! -f "$confpath" ];then
 	echo "file $confpath not exists"
-	usage;
-	exit;
+	usage
+	exit
 fi
 
 if [ ! -d "$dbDir" ];then
