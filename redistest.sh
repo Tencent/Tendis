@@ -12,7 +12,7 @@ function lm_traverse_dir() {
         else
             file_name=$1"/"$file
             echo "===== $file_name ====="
-            cat $file_name
+            #cat $file_name
         fi
     done
 }

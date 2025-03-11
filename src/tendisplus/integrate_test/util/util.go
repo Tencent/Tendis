@@ -152,7 +152,7 @@ func StartProcess(command []string, env []string, pidPath string, timeout time.D
 	var cmd *exec.Cmd
 	go func() {
 		if inShell {
-			cmd = exec.Command("/bin/sh", "-c", command[0])
+			cmd = exec.Command("/bin/bash", "-c", command[0])
 			// NOTE(takenliu) set pgid = pid, then SIGKILL can kill the group process
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		} else {

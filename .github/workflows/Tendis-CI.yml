@@ -2,15 +2,15 @@ name: Tendis-build-CI
 # Controls when the action will run.
 on:
   pull_request:
-    branches: [dev-2.2, master]
+    branches: [unstable, master]
   push:
-    branches: [dev-2.2, master]
+    branches: [unstable, master]
 jobs:
   cpplint-check:
     name: Lint
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 2
       - name: Prepare Env
@@ -41,30 +41,19 @@ jobs:
               fi
             fi
           done
-  build-test:
+
+  test-unittest-sh:
     needs: [cpplint-check]
-    name: Build-Test
-    runs-on: ubuntu-18.04
+    name: Test-unittest.sh
+    runs-on: ubuntu-latest
     env:
         TEST_DIR: build/bin
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 2
-      - name: Set up Go
-        uses: actions/setup-go@v2
-        with:
-          go-version: 1.15
-      - name: Set Up TCL
-        run: sudo apt-get install tcl8.5
-      - name: Init Submodules
-        run: |
-          git submodule update --init --recursive
-      - name: Build
-        run: |
-          mkdir build && cd build
-          cmake -DTENDIS_DEBUG=ON ..
-          cmake --build . -j2
+      - name: compile
+        uses: ./.github/actions/compile/
       - name: Unit Test
         run: |
           chmod +x unittest.sh
@@ -78,6 +67,19 @@ jobs:
               exit $errcnt1
           fi
           exit 0
+
+  test-redistest-sh:
+    needs: [cpplint-check]
+    name: Test-redistest.sh
+    runs-on: ubuntu-latest
+    env:
+        TEST_DIR: build/bin
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+      - name: compile
+        uses: ./.github/actions/compile/
       - name: Redis Test
         run: |
           chmod +x redistest.sh
@@ -91,28 +93,84 @@ jobs:
               exit $errcnt2
           fi
           exit 0
+  test-restore_test:
+    needs: [cpplint-check]
+    name: Test-restore_test
+    runs-on: ubuntu-latest
+    env:
+        TEST_DIR: build/bin
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+      - name: compile
+        uses: ./.github/actions/compile/
       - name: Restore Test
         run: |
           ./$TEST_DIR/restore_test --gtest_throw_on_failure
+  test-repl_test:
+    needs: [cpplint-check]
+    name: Test-repl_test
+    runs-on: ubuntu-latest
+    env:
+        TEST_DIR: build/bin
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+      - name: compile
+        uses: ./.github/actions/compile/
       - name: Repl Test
         run: |
          ./$TEST_DIR/repl_test --gtest_throw_on_failure
-      # - name: Cluster Test
-      #   run: |
-      #     ./$TEST_DIR/cluster_test --gtest_throw_on_failure
+  test-cluster_test:
+    needs: [cpplint-check]
+    name: Test-cluster_test
+    runs-on: ubuntu-latest
+    env:
+        TEST_DIR: build/bin
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+      - name: compile
+        uses: ./.github/actions/compile/
+      - name: Cluster Test
+        run: |
+          ./$TEST_DIR/cluster_test --gtest_throw_on_failure
+  test-gotest-normaltest-part1:
+    needs: [cpplint-check]
+    name: Test-gotest-normaltest-part1
+    runs-on: ubuntu-latest
+    env:
+        TEST_DIR: build/bin
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+      - name: compile
+        uses: ./.github/actions/compile/
       - name: GoTest
         run: |
           cd src/tendisplus/integrate_test
           chmod +x gotest.sh
-          ./gotest.sh  | tee go-test2.log
-          if [ $? -ne 0 ]; then
-            exit 10
-          fi
-          cd -
-          errcnt3=`grep "go passed" src/tendisplus/integrate_test/gotest.log|wc -l`
-          if [ $errcnt3 -ne 7 ]; then
-              grep "fatal" src/tendisplus/integrate_test/gotest.log
-              grep "go passed" src/tendisplus/integrate_test/gotest.log
-              exit $errcnt3
-          fi
-          exit 0
+          ./gotest.sh normaltest-part1
+
+  test-gotest-normaltest-part2:
+    needs: [cpplint-check]
+    name: Test-gotest-normaltest-part2
+    runs-on: ubuntu-latest
+    env:
+        TEST_DIR: build/bin
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+      - name: compile
+        uses: ./.github/actions/compile/
+      - name: GoTest
+        run: |
+          cd src/tendisplus/integrate_test
+          chmod +x gotest.sh
+          ./gotest.sh normaltest-part2
+
