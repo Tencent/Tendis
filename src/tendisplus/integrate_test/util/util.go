@@ -53,7 +53,7 @@ func FindAvailablePort(start int) int {
 		log.Infof("check port:%d", i)
 		cmd1 := fmt.Sprintf("netstat -anpl 2>&1|grep %d", i)
 		output1, err1 := exec.Command("sh", "-c", cmd1).CombinedOutput()
-		log.Infof("output1:%s", string(output1))
+		// log.Infof("output1:%s", string(output1))
 		log.Infof("err1:%v", err1)
 
 		cmd2 := fmt.Sprintf("netstat -anpl 2>&1|grep %d", i+10000)

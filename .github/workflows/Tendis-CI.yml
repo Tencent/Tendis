@@ -32,7 +32,7 @@ jobs:
                   continue
                 else
                   echo "cpplint --filter=\"-runtime/reference\" $file"
-                  cpplint --filter="-runtime/reference" $file
+                  cpplint --filter="-runtime/reference,-whitespace/indent_namespace" $file
                   if [[ $? -ne 0 ]]; then
                       echo "Run cpplint against $file failed..."
                       exit 1
@@ -166,9 +166,9 @@ jobs:
       - name: Repl Test
         run: |
          ./$TEST_DIR/repl_test --gtest_throw_on_failure
-  test-cluster_test:
+  test-cluster_test-part1:
     needs: [cpplint-check]
-    name: Test-cluster_test
+    name: Test-cluster_test-part1
     runs-on: ubuntu-latest
     env:
         TEST_DIR: build/bin
@@ -180,7 +180,22 @@ jobs:
         uses: ./.github/actions/compile/
       - name: Cluster Test
         run: |
-          ./$TEST_DIR/cluster_test --gtest_throw_on_failure
+          ./$TEST_DIR/cluster_test --gtest_throw_on_failure --gtest_filter=ClusterMsg.*:Cluster.*
+  test-cluster_test-part2:
+    needs: [cpplint-check]
+    name: Test-cluster_test-part2
+    runs-on: ubuntu-latest
+    env:
+        TEST_DIR: build/bin
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+      - name: compile
+        uses: ./.github/actions/compile/
+      - name: Cluster Test
+        run: |
+          ./$TEST_DIR/cluster_test --gtest_throw_on_failure --gtest_filter=Cluster2.*
   test-gotest-normaltest-part1:
     needs: [cpplint-check]
     name: Test-gotest-normaltest-part1
@@ -216,4 +231,22 @@ jobs:
           cd src/tendisplus/integrate_test
           chmod +x gotest.sh
           ./gotest.sh normaltest-part2
+
+  test-gotest-normaltest-part3:
+    needs: [cpplint-check]
+    name: Test-gotest-normaltest-part3
+    runs-on: ubuntu-latest
+    env:
+        TEST_DIR: build/bin
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+      - name: compile
+        uses: ./.github/actions/compile/
+      - name: GoTest
+        run: |
+          cd src/tendisplus/integrate_test
+          chmod +x gotest.sh
+          ./gotest.sh normaltest-part3
 

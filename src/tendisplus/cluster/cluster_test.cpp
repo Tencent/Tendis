@@ -4,11 +4,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <ctime>
 #include <limits>
+#include <map>
+#include <memory>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -25,7 +29,7 @@
 
 namespace tendisplus {
 void waitClusterMeetEnd(std::vector<std::shared_ptr<ServerEntry>> servers,
-  std::string infoType = "clusterInfo");
+                        std::string infoType = "clusterInfo");
 bool compareClusterInfo(std::shared_ptr<ServerEntry> svr1,
                         std::shared_ptr<ServerEntry> svr2,
                         bool testMacro = true);
@@ -480,8 +484,7 @@ void waitNodeInfo(const std::vector<std::shared_ptr<ServerEntry>>& servers,
     }
   }
   LOG(INFO) << "waitNodeInfo success, cost time:"
-            << (msSinceEpoch() - start) / 1000 << "s"
-            << " type:" << type;
+            << (msSinceEpoch() - start) / 1000 << "s" << " type:" << type;
 }
 
 void waitConfigEpoch(const std::vector<std::shared_ptr<ServerEntry>>& servers) {
@@ -867,7 +870,7 @@ TEST(ClusterMsg, bitsetEncodeSize) {
   ASSERT_EQ(s, " 0 100-102 16383 ");
 }
 
-TEST(ClusterState, clusterReplyMultiBulkSlotsV2) {
+TEST(Cluster, clusterReplyMultiBulkSlotsV2) {
   uint32_t startPort = 15300;
   auto server = makeClusterNode("node", startPort, 10);
   auto clusterState = server->getClusterMgr()->getClusterState();
@@ -1811,7 +1814,8 @@ TEST(Cluster, migrateChangeThread) {
       EXPECT_TRUE(s.ok());
     }
     // compute migrate key num
-    uint32_t hash = uint32_t(redis_port::keyHashSlot(key.c_str(), key.size()));
+    uint32_t hash =
+      static_cast<uint32_t>(redis_port::keyHashSlot(key.c_str(), key.size()));
     auto writeSlots = hash % srcNode->getParams()->chunkSize;
     if (bitmap.test(writeSlots)) {
       keysize1++;
@@ -2133,7 +2137,8 @@ TEST(Cluster, restartMigrate) {
       taskid = exptTaskid.value().substr(5, 42);
     }
     // compute migrate key num
-    uint32_t hash = uint32_t(redis_port::keyHashSlot(key.c_str(), key.size()));
+    uint32_t hash =
+      static_cast<uint32_t>(redis_port::keyHashSlot(key.c_str(), key.size()));
     auto writeSlots = hash % srcNode->getParams()->chunkSize;
     if (bitmap.test(writeSlots)) {
       keysize1++;
@@ -2660,7 +2665,7 @@ TEST(Cluster, deleteFilesInRange) {
   servers.clear();
 }
 
-TEST(Cluster, ErrStoreNum) {
+TEST(Cluster2, ErrStoreNum) {
   std::vector<std::string> dirs = {"node1", "node2"};
   uint32_t startPort = 17400;
 
@@ -2805,7 +2810,7 @@ void checkEpoch(std::vector<std::shared_ptr<ServerEntry>> servers,
 }
 
 // Convergence rate test
-TEST(Cluster, ConvergenceRate) {
+TEST(Cluster2, ConvergenceRate) {
   uint32_t nodeNum = 30;
   uint32_t migrateSlot = 8373;
   uint32_t startPort = 17500;
@@ -3007,12 +3012,12 @@ void ConvergenceRateTest(uint32_t startPort, const std::string& type) {
 }
 
 // Convergence rate test
-TEST(Cluster, ConvergenceRate2) {
+TEST(Cluster2, ConvergenceRate2) {
   ConvergenceRateTest(17540, "point");
   ConvergenceRateTest(17570, "line");
 }
 
-TEST(Cluster, MigrateTTLIndex) {
+TEST(Cluster2, MigrateTTLIndex) {
   uint32_t nodeNum = 2;
   uint32_t migrateSlot = 8373;
   uint32_t startPort = 17600;
@@ -3118,7 +3123,7 @@ TEST(Cluster, MigrateTTLIndex) {
   servers.clear();
 }
 
-TEST(Cluster, ChangeMaster) {
+TEST(Cluster2, ChangeMaster) {
   uint32_t nodeNum = 3;
   uint32_t startPort = 17700;
 
@@ -3197,7 +3202,7 @@ TEST(Cluster, ChangeMaster) {
   servers.clear();
 }
 
-TEST(Cluster, FixReplication) {
+TEST(Cluster2, FixReplication) {
   uint32_t nodeNum = 3;
   uint32_t startPort = 17800;
   bool withSlave = true;
@@ -3285,7 +3290,7 @@ TEST(Cluster, FixReplication) {
   servers.clear();
 }
 
-TEST(Cluster, ManualfailoverCheck) {
+TEST(Cluster2, ManualfailoverCheck) {
   uint32_t nodeNum = 3;
   uint32_t startPort = 17900;
   bool withSlave = true;
@@ -3334,7 +3339,7 @@ TEST(Cluster, ManualfailoverCheck) {
   servers.clear();
 }
 
-TEST(Cluster, lockConfict) {
+TEST(Cluster2, lockConfict) {
   uint32_t nodeNum = 3;
   uint32_t startPort = 18000;
 
@@ -3366,7 +3371,7 @@ TEST(Cluster, lockConfict) {
   servers.clear();
 }
 
-TEST(Cluster, CrossSlot) {
+TEST(Cluster2, CrossSlot) {
   uint32_t nodeNum = 2;
   uint32_t startPort = 18100;
   bool withSlave = true;
@@ -3608,7 +3613,7 @@ TEST(Cluster, CrossSlot) {
   servers.clear();
 }
 
-TEST(Cluster, singleNode) {
+TEST(Cluster2, singleNode) {
   uint32_t nodeNum = 4;
   uint32_t startPort = 18200;
 
@@ -3634,7 +3639,7 @@ TEST(Cluster, singleNode) {
   servers.clear();
 }
 
-TEST(Cluster, failoverNeedFullSyncDone) {
+TEST(Cluster2, failoverNeedFullSyncDone) {
   uint32_t nodeNum = 3;
   uint32_t startPort = 18300;
   bool withSlave = true;
@@ -3728,7 +3733,7 @@ TEST(Cluster, failoverNeedFullSyncDone) {
   servers.clear();
 }
 
-TEST(Cluster, bindZeroAddr) {
+TEST(Cluster2, bindZeroAddr) {
   uint32_t nodeNum = 3;
   uint32_t startPort = 18400;
   bool withSlave = true;
@@ -3833,7 +3838,7 @@ TEST(Cluster, bindZeroAddr) {
   servers.clear();
 }
 
-TEST(Cluster, failoverConfilct) {
+TEST(Cluster2, failoverConfilct) {
   uint32_t nodeNum = 3;
   uint32_t startPort = 18500;
   bool withSlave = true;
@@ -3932,7 +3937,7 @@ TEST(Cluster, failoverConfilct) {
   servers.clear();
 }
 
-TEST(Cluster, failoveCheckBinlogTs) {
+TEST(Cluster2, failoveCheckBinlogTs) {
   uint32_t nodeNum = 3;
   uint32_t startPort = 18600;
   bool withSlave = true;
@@ -4027,7 +4032,7 @@ TEST(Cluster, failoveCheckBinlogTs) {
   servers.clear();
 }
 
-TEST(Cluster, saveNode) {
+TEST(Cluster2, saveNode) {
   uint32_t nodeNum = 3;
   uint32_t startPort = 18700;
   bool withSlave = true;

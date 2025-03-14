@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # usage:
-#     ./gotest.sh [all, normaltest, normaltest-part1, normaltest-part2]
+#     ./gotest.sh [all, normaltest, normaltest-part1, normaltest-part2, normaltest-part3]
 
 testcontent="all"
 if [[ $# == 1 ]]; then
@@ -89,15 +89,14 @@ if [[ $testcontent == "all" || "${testcontent}" == "versiontest" ]]; then
 fi
 
 if [[ $testcontent == "all" || "${testcontent}" == "normaltest" || "${testcontent}" == "normaltest-part1" ]]; then
-    rm -rf adminHeartbeat repl repltest restore restoretest clustertest clustertestRestore
+    rm -rf adminHeartbeat repl repltest restore restoretest clustertest
     go build adminHeartbeat.go common.go common_cluster.go
     go build repl.go common.go
     go build repltest.go common.go
     go build restore.go common.go
     go build restoretest.go common.go
     go build clustertest.go common.go common_cluster.go
-    go build clustertestRestore.go common.go common_cluster.go
-    testNum=7
+    testNum=6
 
     runOne ./adminHeartbeat
     runOne ./repl
@@ -109,21 +108,28 @@ if [[ $testcontent == "all" || "${testcontent}" == "normaltest" || "${testconten
     #runOne './clustertest -optype=hset -clusterNodeNum=5 -num1=10000'
     #runOne './clustertest -optype=lpush -clusterNodeNum=5 -num1=10000'
     #runOne './clustertest -optype=zadd -clusterNodeNum=5 -num1=10000'
-    runOne './clustertestRestore'
     checkPassed $logfile $testNum
 fi
 
 if [[ $testcontent == "all" || "${testcontent}" == "normaltest" || "${testcontent}" == "normaltest-part2" ]]; then
-    rm -rf clustertestFailover deletefilesinrange dts/dts dts/dts_sync memorylimit pubsubtest
-    testNum=6
+    rm -rf clustertestRestore clustertestFailover dts/dts
+    testNum=3
+    go build clustertestRestore.go common.go common_cluster.go
     go build clustertestFailover.go common.go common_cluster.go
-    go build deletefilesinrange.go common.go common_cluster.go
     go build -o dts/dts dts/dts.go dts/dts_common.go
-    go build -o dts/dts_sync dts/dts_sync.go dts/dts_common.go
-    go build memorylimit.go common.go
-    go build ./pubsubtest.go common.go common_cluster.go
+    runOne './clustertestRestore'
     runOne './clustertestFailover'
     runOne './dts/dts'
+    checkPassed $logfile $testNum
+fi
+
+if [[ $testcontent == "all" || "${testcontent}" == "normaltest" || "${testcontent}" == "normaltest-part3" ]]; then
+    rm -rf dts/dts_sync deletefilesinrange memorylimit pubsubtest
+    testNum=4
+    go build -o dts/dts_sync dts/dts_sync.go dts/dts_common.go
+    go build deletefilesinrange.go common.go common_cluster.go
+    go build memorylimit.go common.go
+    go build ./pubsubtest.go common.go common_cluster.go
     runOne './dts/dts_sync'
     runOne './deletefilesinrange -optype=set'
     runOne ./memorylimit
