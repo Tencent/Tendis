@@ -67,7 +67,7 @@ int main(int argc, char* argv[]) {
     return 0;
   }
 
-  std::srand((uint32_t)tendisplus::msSinceEpoch());
+  std::srand(static_cast<uint32_t>(tendisplus::msSinceEpoch()));
 
   tendisplus::gParams = std::make_shared<tendisplus::ServerParams>();
   auto params = tendisplus::gParams;

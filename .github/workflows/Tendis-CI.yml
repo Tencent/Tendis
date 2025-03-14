@@ -41,7 +41,50 @@ jobs:
               fi
             fi
           done
-
+      - name: format
+        run: |
+          export PATH=$PATH:~/.local/bin/
+          files=`git diff --name-only HEAD HEAD~1`
+          echo "$files" | while read file
+          do
+            if [[ $file =~ \.cc$ || $file =~ \.h$ || $file =~ \.hpp$ || $file =~ \.cpp$ ]]; then
+              if [[ -f $file ]]; then
+                if [[ $file =~ ^src/tendisplus/tools/ldb_ || $file =~ src/tendisplus/include ||
+                  $file =~ src/thirdparty ]]; then
+                  echo "clang-format skip $file"
+                  continue
+                else
+                  echo "clang-format --style=file --sort-includes $file > formatTMP"
+                  clang-format --style=file --sort-includes $file > formatTMP
+                  a=$(diff $file formatTMP | wc -l)
+                  if [[ "$a" -ne "0" ]]; then
+                    echo "Run clang-format against $file failed..."
+                    diff formatTMP $file
+                    exit 1
+                  fi
+                fi
+              fi
+            fi
+          
+            if [[ $file =~ \.go$ ]]; then
+              if [[ -f $file ]]; then
+                if [[ $file =~ ^src/tendisplus/misc || $file =~ src/tendisplus/perftools ||
+                  $file =~ src/thirdparty ]]; then
+                  echo "gofmt skip $file"
+                  continue
+                else
+                  echo "gofmt -d $file"
+                  a=$(gofmt -d $file | wc -l)
+                  if [[ "$a" -ne "0" ]]; then
+                    echo "Run gofmt -d against $file failed..."
+                    gofmt -d $file
+                    exit 1
+                  fi
+                fi
+              fi
+            fi
+          done
+          
   test-unittest-sh:
     needs: [cpplint-check]
     name: Test-unittest.sh
