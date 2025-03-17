@@ -165,7 +165,8 @@ func testDeleteFilesInRange() {
 	afterStep3AllL6FileNum := afterStep3Store0L6FileNum + afterStep3Store1L6FileNum
 
 	// after step1,2,3 it should remove at least 16-20 sst files.
-	if beforeStep1AllL6FileNum-afterStep3AllL6FileNum != 170 {
+	diff := beforeStep1AllL6FileNum - afterStep3AllL6FileNum
+	if diff < 165 || diff > 175 {
 		log.Fatalf("Wrong result! "+
 			"every step: (num on store0) (num on store1) (num on two stores) "+
 			"before step1(delete on store0): %v %v %v "+

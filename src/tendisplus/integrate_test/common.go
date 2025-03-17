@@ -75,6 +75,17 @@ func backup(m *util.RedisServer, backup_mode string, dir string) {
 		log.Fatalf("do backup error:%s", r)
 		return
 	}
+	for {
+		if r, err := cli.Cmd("info", "backup").Str(); err != nil {
+			log.Fatalf("do backup failed:%v", err)
+		} else {
+			if strings.Contains(r, "current-backup-running:no") {
+				break
+			} else {
+				time.Sleep(time.Millisecond * 100)
+			}
+		}
+	}
 	log.Infof("backup sucess,port:%d dir:%v", m.Port, dir)
 }
 
@@ -346,6 +357,16 @@ func shutdownServer(m *util.RedisServer, shutdown int, clear int) {
 		m.Destroy()
 	}
 	log.Infof("shutdownServer server,port:%d", m.Port)
+}
+
+func checkServerPidFile(m *util.RedisServer) bool {
+	_, err := os.Stat(m.Path + "/tendisplus.pid")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
+	}
+	return true
 }
 
 func shutdownPredixy(m *util.Predixy, shutdown int, clear int) {

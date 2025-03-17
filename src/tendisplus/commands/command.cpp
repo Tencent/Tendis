@@ -439,16 +439,12 @@ Expected<std::pair<std::string, std::list<Record>>> Command::scan(
 }
 
 Expected<std::list<Record>> Command::scanSimple(Session* sess,
-                                                const std::string& pk,
-                                                const std::string& from,
+                                                const std::string& prefix,
+                                                const std::string& seekPos,
                                                 uint64_t cnt,
                                                 Transaction* txn) {
   auto cursor = txn->createDataCursor();
-  if (from == "0") {
-    cursor->seek(pk);
-  } else {
-    cursor->seek(from);
-  }
+  cursor->seek(seekPos);
   std::list<Record> result;
   while (true) {
     if (result.size() >= cnt) {
@@ -463,7 +459,7 @@ Expected<std::list<Record>> Command::scanSimple(Session* sess,
     }
     Record& rcd = exptRcd.value();
     const RecordKey& rcdKey = rcd.getRecordKey();
-    if (rcdKey.prefixPk() != pk) {
+    if (rcdKey.prefixPk() != prefix) {
       break;
     }
     RET_IF_MEMORY_REQUEST_FAILED(sess,

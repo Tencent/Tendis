@@ -295,6 +295,24 @@ void RecordKey::encodePrefixPk(std::vector<uint8_t>* arr) const {
   arr->insert(arr->end(), v.begin(), v.end());
 }
 
+std::string RecordKey::suffixSubKey() const {
+  std::vector<uint8_t> key;
+  key.reserve(128);
+  // SK
+  key.insert(key.end(), _sk.begin(), _sk.end());
+
+  // len(PK)
+  auto lenPK = varintEncode(_pk.size());
+  // NOTE(vinchen): big endian
+  key.insert(key.end(), lenPK.rbegin(), lenPK.rend());
+
+  // reserved
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(&_fmtVsn);
+  static_assert(sizeof(_fmtVsn) == 1, "invalid fmtversion size");
+  key.insert(key.end(), p, p + (sizeof(_fmtVsn)));
+  return std::string(reinterpret_cast<const char*>(key.data()), key.size());
+}
+
 uint32_t RecordKey::getChunkId() const {
   return _chunkId;
 }
@@ -429,20 +447,10 @@ std::string RecordKey::encode() const {
 
   encodePrefixPk(&key);
 
-  // SK
-  key.insert(key.end(), _sk.begin(), _sk.end());
+  std::string suffix = suffixSubKey();
 
-  // len(PK)
-  auto lenPK = varintEncode(_pk.size());
-  // NOTE(vinchen): big endian
-  key.insert(key.end(), lenPK.rbegin(), lenPK.rend());
-
-  // reserved
-  const uint8_t* p = reinterpret_cast<const uint8_t*>(&_fmtVsn);
-  static_assert(sizeof(_fmtVsn) == 1, "invalid fmtversion size");
-  key.insert(key.end(), p, p + (sizeof(_fmtVsn)));
-
-  return std::string(reinterpret_cast<const char*>(key.data()), key.size());
+  return std::string(reinterpret_cast<const char*>(key.data()), key.size()) +
+    suffix;
 }
 
 const std::string& RecordKey::getPrimaryKey() const {
@@ -1384,7 +1392,7 @@ void SetMetaValue::setSKIndex(const std::string& sk) {
   _skIndex = sk;
 }
 
-std::string SetMetaValue::getSKIndex() {
+std::string SetMetaValue::getSKIndex() const {
   return _skIndex;
 }
 

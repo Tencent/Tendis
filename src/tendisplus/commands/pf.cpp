@@ -74,7 +74,8 @@ struct MyAllocator {
     }
 
     // check the left size after
-    size_t left = (size_t)(data + allocSize - reinterpret_cast<char*>(val));
+    size_t left =
+      static_cast<size_t>(data + allocSize - reinterpret_cast<char*>(val));
     if (left < size) {
       INVARIANT_D(0);
       return nullptr;
@@ -137,7 +138,7 @@ class HPLLObject {
   }
   int updateByRawHpll(const HPLLObject* rawHpll);
   int hllSparseToDense();
-  const redis_port::hllhdr* getHdr() const {
+  redis_port::hllhdr* getHdr() const {
     return _hdr;
   }
   size_t getHdrSize() const {
@@ -489,8 +490,7 @@ class PfCountCommand : public Command {
           continue;
         }
 
-        auto keyHpll =
-          std::make_unique<HPLLObject>(rv.value().getValue());  // NOLINT
+        auto keyHpll = std::make_unique<HPLLObject>(rv.value().getValue());
         if (hpll->merge(keyHpll.get()) == -1) {
           return {ErrorCodes::ERR_INVALID_HLL, ""};
         }
@@ -611,8 +611,8 @@ class PfMergeCommand : public Command {
 
     /* Convert the destination object to dense representation if at least
      * one of the inputs was dense. */
-    auto result = std::make_unique<HPLLObject>(
-      useDense ? HLL_DENSE : HLL_SPARSE);  // NOLINT
+    auto result =
+      std::make_unique<HPLLObject>(useDense ? HLL_DENSE : HLL_SPARSE);
     if (result->updateByRawHpll(hpll.get()) == -1) {
       return {ErrorCodes::ERR_INVALID_HLL, ""};
     }
@@ -723,7 +723,7 @@ class PfSelfTestCommand : public Command {
      *
      * The test is performed with both dense and sparse HLLs at the same
      * time also verifying that the computed cardinality is the same. */
-    memset((void*)hdr->registers, 0, HLL_DENSE_SIZE - HLL_HDR_SIZE);  // NOLINT
+    memset(hdr->registers, 0, HLL_DENSE_SIZE - HLL_HDR_SIZE);
     // o = createHLLObject();
     auto o = std::make_unique<HPLLObject>();
     double relerr = 1.04 / sqrt(HLL_REGISTERS);
@@ -739,8 +739,7 @@ class PfSelfTestCommand : public Command {
 
       /* Make sure that for small cardinalities we use sparse
        * encoding. */
-      if (j == checkpoint &&
-          j < CONFIG_DEFAULT_HLL_SPARSE_MAX_BYTES / 2) {  // NOLINT
+      if (j == checkpoint && j < CONFIG_DEFAULT_HLL_SPARSE_MAX_BYTES / 2) {
         if (o->getHdrEncoding() != HLL_SPARSE) {
           std::stringstream ss;
           ss << "TESTFAILED sparse encoding not used:"
@@ -843,8 +842,7 @@ class PfDebugCommand : public Command {
     }
     ttl = rv.value().getTtl();
 
-    auto keyHpll =
-      std::make_unique<HPLLObject>(rv.value().getValue());  // NOLINT
+    auto keyHpll = std::make_unique<HPLLObject>(rv.value().getValue());
 
     std::stringstream ss;
     auto cmd = toLower(args[1]);

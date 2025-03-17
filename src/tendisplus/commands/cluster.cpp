@@ -285,7 +285,7 @@ class ClusterCommand : public Command {
       auto eport = ::tendisplus::stoul(args[3]);
       if (!eport.ok()) {
         return {ErrorCodes::ERR_CLUSTER,
-                "Invalid TCP base port specified " + args[3]};
+                "Invalid TCP base port specified: " + args[3]};
       }
       port = eport.value();
 
@@ -293,7 +293,7 @@ class ClusterCommand : public Command {
         auto ecport = ::tendisplus::stoul(args[4]);
         if (!ecport.ok()) {
           return {ErrorCodes::ERR_CLUSTER,
-                  "Invalid TCP bus port specified " + args[4]};
+                  "Invalid TCP bus port specified: " + args[4]};
         }
         cport = ecport.value();
       } else {
@@ -302,7 +302,7 @@ class ClusterCommand : public Command {
 
       if (!clusterState->clusterStartHandshake(host, port, cport)) {
         return {ErrorCodes::ERR_CLUSTER,
-                "Invalid node address specified:" + host +
+                "Invalid node address specified: " + host + ":" +
                   std::to_string(port)};
       }
       return Command::fmtOK();
@@ -320,7 +320,7 @@ class ClusterCommand : public Command {
       myself->setFlag(CLUSTER_NODE_ARBITER);
       LOG(INFO) << "set myself as arbiter";
       return Command::fmtOK();
-    } else if (arg1 == "nodes" && argSize <= 3) {
+    } else if (arg1 == "nodes" && (argSize == 2 || argSize == 3)) {
       bool showall = false;
       if (argSize == 3 && args[2] == "showall") {
         showall = true;
@@ -473,7 +473,7 @@ class ClusterCommand : public Command {
     } else if (arg1 == "forget" && argSize == 3) {
       auto n = clusterState->clusterLookupNode(args[2]);
       if (n == nullptr) {
-        return {ErrorCodes::ERR_CLUSTER, "forget node unkown"};
+        return {ErrorCodes::ERR_CLUSTER, "Unknown node " + args[2]};
       } else if (n == myself) {
         return {ErrorCodes::ERR_CLUSTER,
                 "I tried hard but I can't forget myself..."};
@@ -489,6 +489,7 @@ class ClusterCommand : public Command {
                    << "fail when forget nodes";
         return {ErrorCodes::ERR_CLUSTER, "delete metadata fail"};
       }
+      LOG(INFO) << "Forget node " << args[2] << " success.";
       clusterState->clusterUpdateState();
 
       return Command::fmtOK();
@@ -570,9 +571,10 @@ class ClusterCommand : public Command {
     } else if (arg1 == "reset" && (argSize == 2 || argSize == 3)) {
       uint16_t hard = 0;
       if (argSize == 3) {
-        if (args[2] == "hard") {
+        std::string arg2 = toLower(args[2]);
+        if (arg2 == "hard") {
           hard = 1;
-        } else if (args[2] == "soft") {
+        } else if (arg2 == "soft") {
           hard = 0;
         } else {
           return {ErrorCodes::ERR_CLUSTER, "error reset flag"};
@@ -792,6 +794,10 @@ class ClusterCommand : public Command {
     if (!expRsp.ok()) {
       LOG(ERROR) << "preparemigrate error:" << expRsp.status().toString();
       return expRsp.status();
+    }
+    if (expRsp.value()[0] == '-') {
+      LOG(ERROR) << "preparemigrate error response:" << expRsp.value();
+      return {ErrorCodes::ERR_INTERNAL, expRsp.value()};
     }
 
     const std::string& json = expRsp.value();

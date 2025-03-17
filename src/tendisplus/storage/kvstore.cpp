@@ -588,7 +588,7 @@ KVStore::KVStore(const std::string& id, const std::string& path)
 #endif
 }
 
-uint64_t KVStore::getBinlogTime() {
+uint64_t KVStore::getBinlogTime() const {
   return _binlogTimeSpov.load(std::memory_order_relaxed);
 }
 
@@ -596,7 +596,7 @@ void KVStore::setBinlogTime(uint64_t timestamp) {
   _binlogTimeSpov.store(timestamp, std::memory_order_relaxed);
 }
 
-uint64_t KVStore::getCurrentTime() {
+uint64_t KVStore::getCurrentTime() const {
   uint64_t ts = 0;
   if (getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
     // NOTE(vinchen): Here it may return zero, because the

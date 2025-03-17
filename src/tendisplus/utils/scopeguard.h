@@ -30,7 +30,7 @@ namespace tendisplus {
 template <class T>
 class RefToValue {
  public:
-  RefToValue(T& ref) : ref_(ref) {}  // NOLINT
+  explicit RefToValue(T& ref) : ref_(ref) {}
 
   RefToValue(const RefToValue& rhs) : ref_(rhs.ref_) {}
 
@@ -52,7 +52,7 @@ class RefToValue {
 ////////////////////////////////////////////////////////////////////////////////
 
 template <class T>
-inline RefToValue<T> ByRef(T& t) {
+inline RefToValue<T> ByRef(T& t) {  // NOLINT(runtime/references)
   return RefToValue<T>(t);
 }
 
@@ -72,11 +72,12 @@ class ScopeGuardImplBase {
   }
 
   template <typename J>
-  static void SafeExecute(J& j) throw() {
-    if (!j.dismissed_)  // NOLINT
+  static void SafeExecute(J& j) throw() {  // NOLINT(runtime/references)
+    if (!j.dismissed_) {
       try {
         j.Execute();
       } catch (...) {}
+    }
   }
 
   mutable bool dismissed_;
@@ -107,7 +108,7 @@ class ScopeGuardImpl0 : public ScopeGuardImplBase {
   }
 
  protected:
-  ScopeGuardImpl0(F fun) : fun_(fun) {}  // NOLINT
+  explicit ScopeGuardImpl0(F fun) : fun_(fun) {}
 
   F fun_;
 };
@@ -283,7 +284,8 @@ inline ScopeGuardImpl5<F, P1, P2, P3, P4, P5> MakeGuard(
 template <class Obj, typename MemFun>
 class ObjScopeGuardImpl0 : public ScopeGuardImplBase {
  public:
-  static ObjScopeGuardImpl0<Obj, MemFun> MakeObjGuard(Obj& obj, MemFun memFun) {
+  static ObjScopeGuardImpl0<Obj, MemFun> MakeObjGuard(
+    Obj& obj, MemFun memFun) {  // NOLINT(runtime/references)
     return ObjScopeGuardImpl0<Obj, MemFun>(obj, memFun);
   }
 
@@ -303,13 +305,14 @@ class ObjScopeGuardImpl0 : public ScopeGuardImplBase {
 };
 
 template <class Obj, typename MemFun>
-inline ObjScopeGuardImpl0<Obj, MemFun> MakeObjGuard(Obj& obj, MemFun memFun) {
+inline ObjScopeGuardImpl0<Obj, MemFun> MakeObjGuard(
+  Obj& obj, MemFun memFun) {  // NOLINT(runtime/references)
   return ObjScopeGuardImpl0<Obj, MemFun>::MakeObjGuard(obj, memFun);
 }
 
 template <typename Ret, class Obj1, class Obj2>
 inline ObjScopeGuardImpl0<Obj1, Ret (Obj2::*)()> MakeGuard(
-  Ret (Obj2::*memFun)(), Obj1& obj) {
+  Ret (Obj2::*memFun)(), Obj1& obj) {  // NOLINT(runtime/references)
   return ObjScopeGuardImpl0<Obj1, Ret (Obj2::*)()>::MakeObjGuard(obj, memFun);
 }
 
@@ -322,9 +325,10 @@ inline ObjScopeGuardImpl0<Obj1, Ret (Obj2::*)()> MakeGuard(
 template <class Obj, typename MemFun, typename P1>
 class ObjScopeGuardImpl1 : public ScopeGuardImplBase {
  public:
-  static ObjScopeGuardImpl1<Obj, MemFun, P1> MakeObjGuard(Obj& obj,
-                                                          MemFun memFun,
-                                                          P1 p1) {
+  static ObjScopeGuardImpl1<Obj, MemFun, P1> MakeObjGuard(
+    Obj& obj,  // NOLINT(runtime/references)
+    MemFun memFun,
+    P1 p1) {
     return ObjScopeGuardImpl1<Obj, MemFun, P1>(obj, memFun, p1);
   }
 
@@ -337,7 +341,9 @@ class ObjScopeGuardImpl1 : public ScopeGuardImplBase {
   }
 
  protected:
-  ObjScopeGuardImpl1(Obj& obj, MemFun memFun, P1 p1)
+  ObjScopeGuardImpl1(Obj& obj,  // NOLINT(runtime/references)
+                     MemFun memFun,
+                     P1 p1)
     : obj_(obj), memFun_(memFun), p1_(p1) {}
 
   Obj& obj_;
@@ -346,15 +352,16 @@ class ObjScopeGuardImpl1 : public ScopeGuardImplBase {
 };
 
 template <class Obj, typename MemFun, typename P1>
-inline ObjScopeGuardImpl1<Obj, MemFun, P1> MakeObjGuard(Obj& obj,
-                                                        MemFun memFun,
-                                                        P1 p1) {
+inline ObjScopeGuardImpl1<Obj, MemFun, P1> MakeObjGuard(
+  Obj& obj,  // NOLINT(runtime/references)
+  MemFun memFun,
+  P1 p1) {
   return ObjScopeGuardImpl1<Obj, MemFun, P1>::MakeObjGuard(obj, memFun, p1);
 }
 
 template <typename Ret, class Obj1, class Obj2, typename P1a, typename P1b>
 inline ObjScopeGuardImpl1<Obj1, Ret (Obj2::*)(P1a), P1b> MakeGuard(
-  Ret (Obj2::*memFun)(P1a), Obj1& obj, P1b p1) {
+  Ret (Obj2::*memFun)(P1a), Obj1& obj, P1b p1) {  // NOLINT(runtime/references)
   return ObjScopeGuardImpl1<Obj1, Ret (Obj2::*)(P1a), P1b>::MakeObjGuard(
     obj, memFun, p1);
 }
@@ -369,10 +376,11 @@ inline ObjScopeGuardImpl1<Obj1, Ret (Obj2::*)(P1a), P1b> MakeGuard(
 template <class Obj, typename MemFun, typename P1, typename P2>
 class ObjScopeGuardImpl2 : public ScopeGuardImplBase {
  public:
-  static ObjScopeGuardImpl2<Obj, MemFun, P1, P2> MakeObjGuard(Obj& obj,
-                                                              MemFun memFun,
-                                                              P1 p1,
-                                                              P2 p2) {
+  static ObjScopeGuardImpl2<Obj, MemFun, P1, P2> MakeObjGuard(
+    Obj& obj,  // NOLINT(runtime/references)
+    MemFun memFun,
+    P1 p1,
+    P2 p2) {
     return ObjScopeGuardImpl2<Obj, MemFun, P1, P2>(obj, memFun, p1, p2);
   }
 
@@ -385,7 +393,10 @@ class ObjScopeGuardImpl2 : public ScopeGuardImplBase {
   }
 
  protected:
-  ObjScopeGuardImpl2(Obj& obj, MemFun memFun, P1 p1, P2 p2)
+  ObjScopeGuardImpl2(Obj& obj,  // NOLINT(runtime/references)
+                     MemFun memFun,
+                     P1 p1,
+                     P2 p2)
     : obj_(obj), memFun_(memFun), p1_(p1), p2_(p2) {}
 
   Obj& obj_;
@@ -395,10 +406,11 @@ class ObjScopeGuardImpl2 : public ScopeGuardImplBase {
 };
 
 template <class Obj, typename MemFun, typename P1, typename P2>
-inline ObjScopeGuardImpl2<Obj, MemFun, P1, P2> MakeObjGuard(Obj& obj,
-                                                            MemFun memFun,
-                                                            P1 p1,
-                                                            P2 p2) {
+inline ObjScopeGuardImpl2<Obj, MemFun, P1, P2> MakeObjGuard(
+  Obj& obj,  // NOLINT(runtime/references)
+  MemFun memFun,
+  P1 p1,
+  P2 p2) {
   return ObjScopeGuardImpl2<Obj, MemFun, P1, P2>::MakeObjGuard(
     obj, memFun, p1, p2);
 }
@@ -411,7 +423,10 @@ template <typename Ret,
           typename P2a,
           typename P2b>
 inline ObjScopeGuardImpl2<Obj1, Ret (Obj2::*)(P1a, P2a), P1b, P2b> MakeGuard(
-  Ret (Obj2::*memFun)(P1a, P2a), Obj1& obj, P1b p1, P2b p2) {
+  Ret (Obj2::*memFun)(P1a, P2a),
+  Obj1& obj,  // NOLINT(runtime/references)
+  P1b p1,
+  P2b p2) {
   return ObjScopeGuardImpl2<Obj1, Ret (Obj2::*)(P1a, P2a), P1b, P2b>::
     MakeObjGuard(obj, memFun, p1, p2);
 }
@@ -433,7 +448,11 @@ template <class Obj, typename MemFun, typename P1, typename P2, typename P3>
 class ObjScopeGuardImpl3 : public ScopeGuardImplBase {
  public:
   static ObjScopeGuardImpl3<Obj, MemFun, P1, P2, P3> MakeObjGuard(
-    Obj& obj, MemFun memFun, P1 p1, P2 p2, P3 p3) {
+    Obj& obj,  // NOLINT(runtime/references)
+    MemFun memFun,
+    P1 p1,
+    P2 p2,
+    P3 p3) {
     return ObjScopeGuardImpl3<Obj, MemFun, P1, P2, P3>(obj, memFun, p1, p2, p3);
   }
 
@@ -446,7 +465,8 @@ class ObjScopeGuardImpl3 : public ScopeGuardImplBase {
   }
 
  protected:
-  ObjScopeGuardImpl3(Obj& obj, MemFun memFun, P1 p1, P2 p2, P3 p3)
+  ObjScopeGuardImpl3(
+    Obj& obj, MemFun memFun, P1 p1, P2 p2, P3 p3)  // NOLINT(runtime/references)
     : obj_(obj), memFun_(memFun), p1_(p1), p2_(p2), p3_(p3) {}
 
   Obj& obj_;
@@ -458,7 +478,7 @@ class ObjScopeGuardImpl3 : public ScopeGuardImplBase {
 
 template <class Obj, typename MemFun, typename P1, typename P2, typename P3>
 inline ObjScopeGuardImpl3<Obj, MemFun, P1, P2, P3> MakeObjGuard(
-  Obj& obj, MemFun memFun, P1 p1, P2 p2, P3 p3) {
+  Obj& obj, MemFun memFun, P1 p1, P2 p2, P3 p3) {  // NOLINT(runtime/references)
   return ObjScopeGuardImpl3<Obj, MemFun, P1, P2, P3>::MakeObjGuard(
     obj, memFun, p1, p2, p3);
 }
@@ -473,8 +493,11 @@ template <typename Ret,
           typename P3a,
           typename P3b>
 inline ObjScopeGuardImpl3<Obj1, Ret (Obj2::*)(P1a, P2a, P3a), P1b, P2b, P3b>
-MakeGuard(
-  Ret (Obj2::*memFun)(P1a, P2a, P3a), Obj1& obj, P1b p1, P2b p2, P3b p3) {
+MakeGuard(Ret (Obj2::*memFun)(P1a, P2a, P3a),
+          Obj1& obj,  // NOLINT(runtime/references)
+          P1b p1,
+          P2b p2,
+          P3b p3) {
   return ObjScopeGuardImpl3<Obj1, Ret (Obj2::*)(P1a, P2a, P3a), P1b, P2b, P3b>::
     MakeObjGuard(obj, memFun, p1, p2, p3);
 }

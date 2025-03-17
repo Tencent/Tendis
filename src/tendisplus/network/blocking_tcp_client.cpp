@@ -11,8 +11,6 @@
 #include <string>
 #include <utility>
 
-#include "asio.hpp"
-
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/time.h"

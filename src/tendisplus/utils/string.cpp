@@ -231,14 +231,16 @@ bool isOptionOn(const std::string& s) {
 }
 
 // trim from start (in place)
-static inline void sdsltrim(std::string& s, const char* cset) {  // NOLINT
+static inline void sdsltrim(std::string& s,  // NOLINT(runtime/references)
+                            const char* cset) {
   s.erase(s.begin(), std::find_if(s.begin(), s.end(), [cset](int ch) {
             return !strchr(cset, ch);
           }));
 }
 
 // trim from end (in place)
-static inline void sdsrtrim(std::string& s, const char* cset) {  // NOLINT
+static inline void sdsrtrim(std::string& s,  // NOLINT(runtime/references)
+                            const char* cset) {
   s.erase(std::find_if(
             s.rbegin(), s.rend(), [cset](int ch) { return !strchr(cset, ch); })
             .base(),
@@ -246,7 +248,8 @@ static inline void sdsrtrim(std::string& s, const char* cset) {  // NOLINT
 }
 
 // trim from both ends (in place)
-void sdstrim(std::string& s, const char* cset) {  // NOLINT
+void sdstrim(std::string& s,  // NOLINT(runtime/references)
+             const char* cset) {
   sdsltrim(s, cset);
   sdsrtrim(s, cset);
 }
@@ -307,7 +310,7 @@ Expected<std::pair<uint32_t, uint32_t>> getSlotRange(const std::string& str) {
     return {ErrorCodes::ERR_CLUSTER, "Invalid slot range string"};
   }
 }
-std::string& replaceAll(std::string& str,  // NOLINT
+std::string& replaceAll(std::string& str,  // NOLINT(runtime/references)
                         const std::string& old_value,
                         const std::string& new_value) {
   for (std::string::size_type pos(0); pos != std::string::npos;
@@ -438,4 +441,22 @@ Expected<int64_t> getIntSize(const std::string& str) {
   return {ErrorCodes::ERR_DECODE, "getIntSize failed:" + str};
 }
 
+std::string getSizeReadable(size_t size) {
+  char buf[20];
+  double KB = 1024;
+  double MB = 1024*1024;
+  double GB = 1024*1024*1024;
+  if (size < KB) {
+    return std::to_string(size) + " B";
+  } else if (size < MB) {
+    snprintf(buf, sizeof(buf), "%.3f KB", size/KB);
+    return buf;
+  } else if (size < GB) {
+    snprintf(buf, sizeof(buf), "%.3f MB", size/MB);
+    return buf;
+  } else {
+    snprintf(buf, sizeof(buf), "%.3f GB", size/GB);
+    return buf;
+  }
+}
 }  // namespace tendisplus

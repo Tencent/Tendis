@@ -164,19 +164,14 @@ start_server {tags {"scripting"}} {
     # Redis use 'script replication' by default until Redis 5.0.
     # In 'script replication', 'spop' command is not allowed since it is nondeterministic
     # Tendis use 'effect replication' like Redis 5.0
-    # test {EVAL - Scripts can't run certain commands} {
-    #     set e {}
-    #     catch {r eval {return redis.pcall('spop','x')} 0} e
-    #     set e
-    # } {*not allowed*}
+    test {EVAL - Scripts can run any commands} {
+        r sadd s1 a
+        r eval {return redis.call('spop', KEYS[1])} 1 s1
+    } {a}
 
-    test {EVAL - Scripts can't run certain commands} {
-        set e {}
-        catch {
-            r eval "redis.pcall('scan','0'); return redis.pcall('set','x','ciao')" 0
-        } e
-        set e
-    } {*not allowed after*}
+    test {EVAL - Scripts can run any commands} {
+        r eval {local t = redis.call('TIME'); return redis.call('set', KEYS[1], t[1])} 1 seconds
+    } {OK}
 
     test {EVAL - No arguments to redis.call/pcall is considered an error} {
         set e {}

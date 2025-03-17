@@ -12,6 +12,7 @@
 #include <string>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -154,6 +155,17 @@ class SessionCtx {
 
   void resetStatisticInfo();
 
+  void subscribeChannel(const std::string& channel);
+  void subscribePattern(const std::string& pattern);
+  void unsubscribeChannel(const std::string& channel);
+  void unsubscribePattern(const std::string& pattern);
+  const std::unordered_set<std::string> getSubscribeChannels() const;
+  const std::unordered_set<std::string> getSubscribePatterns() const;
+  void clearSubscribeChannel();
+  void clearSubscribePattern();
+  int getSubChannelCount();
+  int getSubPatternCount();
+
   static constexpr uint64_t VERSIONEP_UNINITED = -1;
   static constexpr uint64_t TSEP_UNINITED = -1;
 
@@ -193,6 +205,9 @@ class SessionCtx {
   std::vector<std::string> _argsBrief;
   rocksdb::PerfContext _perfContext;
   rocksdb::IOStatsContext _ioContext;
+
+  std::unordered_set<std::string> _subscribeChannels;
+  std::unordered_set<std::string> _subscribePatterns;
 };
 
 }  // namespace tendisplus

@@ -915,6 +915,7 @@ bool ClusterState::clusterStartHandshake(const std::string& host,
                                   port,
                                   cport);
   clusterAddNode(node);
+  LOG(INFO) << "Add new node " << name << " for handshake.";
 
   return true;
 }
@@ -1663,39 +1664,39 @@ Expected<std::string> ClusterState::clusterReplyMultiBulkSlotsV2() {
 
 Status ClusterState::clusterSaveNodes() {
   std::vector<std::unique_ptr<ClusterMeta>> metaList;
-  {
-    std::lock_guard<myMutex> lk(_mutex);
-    std::unordered_map<std::string, CNodePtr>::iterator iter;
-    for (iter = _nodes.begin(); iter != _nodes.end(); iter++) {
-      CNodePtr node = iter->second;
+  std::unordered_map<std::string, CNodePtr>::iterator iter;
 
-      uint16_t nodeFlags = node->getFlags();
-      if (nodeFlags & CLUSTER_NODE_HANDSHAKE)
-        continue;
+  std::lock_guard<myMutex> lk(_mutex);
 
-      std::string masterName =
-        (node->getMaster()) ? node->getMaster()->getNodeName() : "-";
+  for (iter = _nodes.begin(); iter != _nodes.end(); iter++) {
+    CNodePtr node = iter->second;
 
-      std::bitset<CLUSTER_SLOTS> slots = node->getSlots();
+    uint16_t nodeFlags = node->getFlags();
+    if (nodeFlags & CLUSTER_NODE_HANDSHAKE)
+      continue;
 
-      auto slotBuff = bitsetEncodeVec(slots);
+    std::string masterName =
+      (node->getMaster()) ? node->getMaster()->getNodeName() : "-";
 
-      auto meta = std::make_unique<ClusterMeta>(node->getNodeName(),
-                                                node->getNodeIp(),
-                                                node->getPort(),
-                                                node->getCport(),
-                                                nodeFlags,
-                                                masterName,
-                                                node->getSentTime(),
-                                                node->getReceivedTime(),
-                                                node->getConfigEpoch(),
-                                                slotBuff);
+    std::bitset<CLUSTER_SLOTS> slots = node->getSlots();
 
-      metaList.push_back(std::move(meta));
-    }
+    auto slotBuff = std::move(bitsetEncodeVec(slots));
+
+    auto meta = std::make_unique<ClusterMeta>(node->getNodeName(),
+                                              node->getNodeIp(),
+                                              node->getPort(),
+                                              node->getCport(),
+                                              nodeFlags,
+                                              masterName,
+                                              node->getSentTime(),
+                                              node->getReceivedTime(),
+                                              node->getConfigEpoch(),
+                                              slotBuff);
+
+    metaList.push_back(std::move(meta));
   }
-  Status s = clusterSaveMeta(metaList, getCurrentEpoch(), getLastVoteEpoch());
 
+  Status s = clusterSaveMeta(metaList, getCurrentEpoch(), getLastVoteEpoch());
   if (!s.ok()) {
     LOG(ERROR) << "save Node confg error:" << s.toString();
     return s;
@@ -1896,6 +1897,7 @@ Status ClusterState::clusterSetMaster(CNodePtr node,
             << ",ignoreRepl:" << ignoreRepl;
 
   resetManualFailover();
+  _server->CloseAllChannel();
 
   return {ErrorCodes::ERR_OK, ""};
 }
@@ -2071,7 +2073,7 @@ std::string ClusterState::clusterGenStateDescription() {
   uint8_t x = (_state == ClusterHealth::CLUSTER_OK) ? 0 : 1;
 
   clusterInfo << "cluster_state:" << states[x] << "\r\n"
-              << "cluster_slots_assigend:" << slots_assigned << "\r\n"
+              << "cluster_slots_assigned:" << slots_assigned << "\r\n"
               << "cluster_slots_ok:" << slots_ok << "\r\n"
               << "cluster_slots_pfail:" << slots_pfail << "\r\n"
               << "cluster_slots_fail:" << slots_fail << "\r\n"
@@ -2202,6 +2204,12 @@ void ClusterState::clusterRenameNode(CNodePtr node,
                                      const std::string& newname,
                                      bool save) {
   std::lock_guard<myMutex> lk(_mutex);
+  clusterRenameNodeNoLock(node, newname, save);
+}
+
+void ClusterState::clusterRenameNodeNoLock(CNodePtr node,
+                                     const std::string& newname,
+                                     bool save) {
   std::string oldname = node->getNodeName();
   serverLog(LL_DEBUG,
             "Renaming node %.40s into %.40s",
@@ -3489,7 +3497,7 @@ void ClusterMsg::setTotlen(uint32_t totlen) {
   _totlen = totlen;
 }
 
-std::string ClusterMsg::msgEncode() {  // NOLINT
+std::string ClusterMsg::msgEncode() {
   std::vector<uint8_t> key;
 
   std::string data = "";
@@ -4178,6 +4186,11 @@ Status ClusterManager::clusterReset(uint16_t hard) {
 
 void ClusterManager::stop() {
   LOG(WARNING) << "cluster manager begins stops...";
+#ifdef TENDIS_DEBUG
+  if (!_isRunning.load()) {
+    return;
+  }
+#endif
   _isRunning.store(false, std::memory_order_relaxed);
   _controller->join();
   _diskChecker->join();
@@ -4247,6 +4260,7 @@ Status ClusterManager::initMetaData() {
                                              pongTime,
                                              nodeMeta->configEpoch);
         _clusterState->clusterAddNode(node);
+        LOG(INFO) << "Load node " << nodeMeta->nodeName << " from meta.";
 
         Expected<std::bitset<CLUSTER_SLOTS>> st =
           bitsetDecodeVec<CLUSTER_SLOTS>(nodeMeta->slots);
@@ -5335,7 +5349,6 @@ void ClusterSession::drainReqNet() {
   // it's convinent for c-style string search
   if (readlen + static_cast<size_t>(_queryBufPos) >= _queryBuf.size()) {
     // the fill should be as fast as memset in 02 mode, refer to here
-    // NOLINT(whitespace/line_length)
     // https://stackoverflow.com/questions/8848575/fastest-way-to-reset-every-value-of-stdvectorint-to-0)
     _queryBuf.resize((readlen + _queryBufPos) * 2, 0);
   }
@@ -5504,14 +5517,26 @@ bool ClusterState::clusterProcessGossipSection(
       }
     } else {
       /* If it's not in NOADDR state and we don't have it, we
-       * start a handshake process against this IP/PORT pairs.
+       * add it to our trusted dict with exact nodeid and flag.
+       *
+       * Note that we cannot simply start a handshake against
+       * this IP/PORT pairs, since IP/PORT can be reused already,
+       * otherwise we risk joining another cluster.
        *
        * Note that we require that the sender of this gossip message
        * is a well known node in our cluster, otherwise we risk
        * joining another cluster. */
       if (sender && !(flags & CLUSTER_NODE_NOADDR) &&
           !clusterBlacklistExists(g._gossipName)) {
-        clusterStartHandshake(g._gossipIp, g._gossipPort, g._gossipCport);
+        auto node = std::make_shared<ClusterNode>(g._gossipName,
+                                                  flags,
+                                                  shared_from_this(),
+                                                  g._gossipIp,
+                                                  g._gossipPort,
+                                                  g._gossipCport);
+        clusterAddNode(node);
+        LOG(INFO) << "Add new node " << g._gossipName << " which reported "
+                  << "from " << sender->getNodeName() << ".";
       }
     }
   }
@@ -5635,6 +5660,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
                                                 hdr->_cport);
 
       clusterAddNode(node);
+      LOG(INFO) << "Add new node " << node->getNodeName() << " for a MEET msg.";
       setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
     }
 
@@ -5701,8 +5727,11 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
                   sessNode->getNodeName().c_str());
         auto tmpflag = flags &
           (CLUSTER_NODE_MASTER | CLUSTER_NODE_SLAVE | CLUSTER_NODE_ARBITER);
-        sessNode->changeFlags(tmpflag, CLUSTER_NODE_HANDSHAKE);
-        clusterRenameNode(sessNode, hdr->_sender);
+        {
+          std::lock_guard<myMutex> lk(_mutex);
+          sessNode->changeFlags(tmpflag, CLUSTER_NODE_HANDSHAKE);
+          clusterRenameNodeNoLock(sessNode, hdr->_sender);
+        }
         setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
       } else if (sessNode->getNodeName() != hdr->_sender) {
         /* TODO(vinchen): How to repeat?
@@ -6085,7 +6114,7 @@ Status ClusterSession::clusterReadHandler() {
   return {ErrorCodes::ERR_OK, ""};
 }
 
-Status ClusterSession::clusterSendMessage(ClusterMsg& msg) {  // NOLINT
+Status ClusterSession::clusterSendMessage(ClusterMsg& msg) {
   setResponse(msg.msgEncode());
 
   //  NOTE(takenliu): we need call drainRsp to trigger write.

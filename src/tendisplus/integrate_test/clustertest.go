@@ -202,7 +202,9 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
 			return
 		}
 	}
-	time.Sleep(2 * time.Second)
+	for i := 1; i < clusterNodeNum*2; i++ {
+		waitMeetEndSingle(servers[i], clusterNodeNum*2)
+	}
 
 	// slaveof
 	log.Infof("cluster slaveof begin")
@@ -236,7 +238,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
 			return
 		}
 	}
-	time.Sleep(2 * time.Second)
+	waitMeetEnd(&servers, clusterNodeNum*2+2)
 
 	// dst node slaveof
 	{

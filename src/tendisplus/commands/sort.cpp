@@ -196,7 +196,7 @@ class SortCommand : public Command {
           return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
         }
         count = eCount.value();
-      } else if (!::strcasecmp(args[i].c_str(), "store")) {
+      } else if (!::strcasecmp(args[i].c_str(), "store") && leftargs >= 1) {
         store = true;
         storeKeyIndex = i + 1;
         i++;
@@ -553,7 +553,7 @@ class SortCommand : public Command {
 
       // ops has a minimum size 1.
       result.reserve(ops.size() > 1 ? (ops.size() - 1) * records.size()
-                                    : records.size());  // NOLINT
+                                    : records.size());
       if (ops.size() == 1) {
         ops.emplace_back(SortOp{"", ""});
       }

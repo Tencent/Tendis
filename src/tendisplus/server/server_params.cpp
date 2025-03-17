@@ -30,8 +30,8 @@
 namespace tendisplus {
 
 std::shared_ptr<tendisplus::ServerParams> gParams;
-std::string gRenameCmdList = "";   // NOLINT
-std::string gMappingCmdList = "";  // NOLINT
+std::string gRenameCmdList = "";   // NOLINT(runtime/string)
+std::string gMappingCmdList = "";  // NOLINT(runtime/string)
 
 #define REGISTER_VARS_FULL(                                                   \
   str, var, checkfun, prefun, minval, maxval, allowDynamicSet)                \
@@ -323,6 +323,7 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME("bind", bindIp);
   REGISTER_VARS_DIFF_NAME("bind2", bindIp2);
   REGISTER_VARS_FULL("port", port, nullptr, nullptr, 1, 65535, false);
+  REGISTER_VARS_DIFF_NAME("tcp-backlog", tcpBacklog);
   REGISTER_VARS_FULL("logLevel",
                      logLevel,
                      logLevelParamCheck,
@@ -384,6 +385,11 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-max-len", slowlogMaxLen);
   REGISTER_VARS_NOUSE("slowlog-flush-interval");
   REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-file-enabled", slowlogFileEnabled);
+  REGISTER_VARS_DIFF_NAME("slowlog-file-split-enabled",
+                          slowlogFileSplitEnabled);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-file-max-size-mb",
+                                  slowlogFileMaxSizeMb);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-file-keep-num", slowlogFileKeepNum);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("tendis-latency-limit", tendisLatencyLimit);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.latency-limit", rocksdbLatencyLimit);
 
@@ -612,6 +618,11 @@ ServerParams::ServerParams() {
     clientOutputBufferLimitNormalSoftSecond);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("move-dir-when-restore-ckpt",
                                   moveDirWhenRestoreCkpt);
+
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("enable-close-pubsub-connection",
+                                  enableClosePubSubConnection);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("enable-move-pubsub-request",
+                                  enableMovePubSubRequest);
 }
 
 ServerParams::~ServerParams() {
@@ -707,7 +718,7 @@ Status ServerParams::checkParams() {
     LOG(INFO) << "`scanJobCntIndexMgr` is not allowed to be greater than "
                  "`kvstorecount`, set from "
               << scanJobCntIndexMgr << " to " << kvStoreCount;
-    scanCntIndexMgr = kvStoreCount;
+    scanJobCntIndexMgr = kvStoreCount;
   }
 
   if (delJobCntIndexMgr > kvStoreCount) {

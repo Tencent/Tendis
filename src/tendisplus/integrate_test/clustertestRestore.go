@@ -304,7 +304,10 @@ func testClusterRestore(portStart int, num int, testFun int, commandType string)
 	cluster_meet(&src_master, &src_slave)
 	cluster_meet(&src_master, &dst_master)
 	cluster_meet(&src_master, &dst_slave)
-	time.Sleep(2 * time.Second)
+	waitMeetEndSingle(src_master, 4)
+	waitMeetEndSingle(src_slave, 4)
+	waitMeetEndSingle(dst_master, 4)
+	waitMeetEndSingle(dst_slave, 4)
 
 	// slaveof
 	log.Infof("cluster slaveof begin")

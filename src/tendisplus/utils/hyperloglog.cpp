@@ -1200,7 +1200,8 @@ hllhdr* createHLLObject(const char* buf, size_t bufSize, size_t* sizeOut) {
     p += 2;
     aux -= xzero;
   }
-  serverAssert((size_t)(p - reinterpret_cast<uint8_t*>(s)) == sparselen);
+  serverAssert(static_cast<size_t>(p - reinterpret_cast<uint8_t*>(s)) ==
+               sparselen);
 
   memcpy(hdr->magic, "HYLL", 4);
   hdr->encoding = HLL_SPARSE;

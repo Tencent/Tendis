@@ -70,14 +70,20 @@ func testVersion(versions []string) {
 			shutdownServer(&(*servers)[i], *shutdown, *clear)
 		}
 
-		time.Sleep(10 * time.Second)
+		for i := clusterNodeNum; i < clusterNodeNum*2; i++ {
+			var exists = true
+			for exists {
+				exists = checkServerPidFile(&(*servers)[i])
+				time.Sleep(1 * time.Second)
+			}
+		}
 
 		for i := clusterNodeNum; i < clusterNodeNum*2; i++ {
 			(*servers)[i].WithBinPath("")
 			(*servers)[i].Start(false, fmt.Sprintf("%s/test.cfg", (*servers)[i].Path))
 		}
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(15 * time.Second)
 		for i := clusterNodeNum; i < clusterNodeNum*2; i++ {
 			if !cluster_check_state_continuous(&(*servers)[i]) {
 				log.Fatal("cluster state error, online failed")
@@ -115,7 +121,13 @@ func testVersion(versions []string) {
 			shutdownServer(&(*servers)[i], *shutdown, *clear)
 		}
 
-		time.Sleep(10 * time.Second)
+		for i := 0; i < clusterNodeNum; i++ {
+			var exists = true
+			for exists {
+				exists = checkServerPidFile(&(*servers)[i])
+				time.Sleep(1 * time.Second)
+			}
+		}
 
 		for i := 0; i < clusterNodeNum; i++ {
 			(*servers)[i].WithBinPath("")
@@ -162,6 +174,13 @@ func testVersion(versions []string) {
 			shutdownServer(&(*servers)[i], *shutdown, *clear)
 		}
 		shutdownPredixy(predixy, *shutdown, *clear)
+		for i := 0; i < clusterNodeNum*2; i++ {
+			var exists = true
+			for exists {
+				exists = checkServerPidFile(&(*servers)[i])
+				time.Sleep(1 * time.Second)
+			}
+		}
 		log.Infof("version: %v done.", v)
 	}
 }

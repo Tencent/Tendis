@@ -9,7 +9,7 @@ if(TENDIS_DEBUG)
     add_definitions(-DTENDIS_DEBUG)
 endif()
 
-option(COM_OPT_LTO "compile optimize with lto" ON)
+option(COM_OPT_LTO "compile optimize with lto" OFF)
 option(COM_OPT_PGO_GEN "compile optimize with pgo, profile-generate" OFF)
 option(COM_OPT_PGO_USE "compile optimize with pgo, profile-use" OFF)
 
@@ -135,13 +135,9 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		set(JEMALLOC_ROOT_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc")
 		add_definitions(-DTENDIS_JEMALLOC)
 
-		if(COM_OPT_LTO)
-			message("COM_OPT_LTO is ON, we need jemalloc prof be false, otherwise the process will be hanged")
-		else()
-			set(patchCommand "cd ${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc\; git apply ../patch/jemalloc_patch.diff")
-			message("jemalloc git patch, we force set jemalloc  prof:true")
-			execute_process(COMMAND bash "-c" ${patchCommand} OUTPUT_VARIABLE FOO)
-		endif()
+		set(patchCommand "cd ${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc\; git apply ../patch/jemalloc_patch.diff")
+		message("jemalloc git patch, we force set jemalloc  prof:true")
+		execute_process(COMMAND bash "-c" ${patchCommand} OUTPUT_VARIABLE FOO)
 
 		set(WITH_JEMALLOC ON)
 
@@ -173,7 +169,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 	list(APPEND SYS_LIBS "dl" "pthread" "rt")
 	# thirdparty code
 	# do not set unnecessary flags before thirdparty dirs
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -g -fno-omit-frame-pointer ")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -g3 -ggdb3 -fno-omit-frame-pointer ")
 
 	add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX -DROCKSDB_SUPPORT_THREAD_LOCAL)
 endif()
@@ -181,10 +177,12 @@ endif()
 # TODO(vinchen): in the future it should disable sync_ponit in production
 add_definitions(-DWITH_SYNC_POINT)
 add_subdirectory(src/thirdparty/gflag)
+set(SNAPPY_BUILD_TESTS OFF)
 add_subdirectory(src/thirdparty/snappy)
 target_compile_options(snappy PRIVATE -fPIC)
 add_subdirectory(src/thirdparty/lz4/contrib/cmake_unofficial)
 add_subdirectory(src/thirdparty/googletest)
+set(WITH_GFLAGS OFF)
 add_subdirectory(src/thirdparty/glog glog EXCLUDE_FROM_ALL)
 
 list(APPEND SYS_LIBS sync_point)
@@ -210,6 +208,10 @@ list(APPEND THIRDPARTY_LIBS ${LZ4_LIBRARIES})
 
 add_definitions(-DENABLE_CJSON_GLOBAL)
 option(RAPIDJSON_BUILD_TESTS "" OFF)
+set(RAPIDJSON_BUILD_DOC OFF)
+set(RAPIDJSON_BUILD_EXAMPLES OFF)
+set(RAPIDJSON_BUILD_TESTS OFF)
+set(RAPIDJSON_HAS_STDSTRING ON)
 add_subdirectory(src/thirdparty/rapidjson)
 add_subdirectory(src/thirdparty/lua)
 

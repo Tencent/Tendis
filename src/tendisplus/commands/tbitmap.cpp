@@ -982,17 +982,18 @@ class TBitFieldCommand : public Command {
     return 0;
   }
 
-  Status setUnsignedBitfield(const uint32_t chunkId,
-                             const uint32_t dbId,
-                             Transaction* ptxn,
-                             PStore kvstore,
-                             SessionCtx* pctx,
-                             TBitMapMetaValue& meta,  // NOLINT
-                             const std::string& key,
-                             uint64_t offset,
-                             const uint64_t bits,
-                             const uint64_t value,
-                             FragMap* fragMap) {
+  Status setUnsignedBitfield(
+    const uint32_t chunkId,
+    const uint32_t dbId,
+    Transaction* ptxn,
+    PStore kvstore,
+    SessionCtx* pctx,
+    TBitMapMetaValue& meta,  // NOLINT(runtime/references)
+    const std::string& key,
+    uint64_t offset,
+    const uint64_t bits,
+    const uint64_t value,
+    FragMap* fragMap) {
     uint64_t fragId = offset / (8 * meta.fragmentLen());
     uint64_t cross = fragId;
     if ((8 * meta.fragmentLen()) - offset % (8 * meta.fragmentLen()) < bits) {

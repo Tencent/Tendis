@@ -342,7 +342,7 @@ void testSimulateScanCmd(uint64_t totalScanSession,
     thread_local static uint64_t cursor = 0;  // static data
     if (cursor) {
       auto expMapping = map->getMapping(std::to_string(cursor));
-      // TODO(pecochen): check expMapping.ok()    // NOLINT
+      // TODO(pecochen): check expMapping.ok()
       //   ASSERT_TRUE(expMapping.ok());
       //   ASSERT_EQ(expMapping.value().lastScanKey, std::to_string(cursor));
     }

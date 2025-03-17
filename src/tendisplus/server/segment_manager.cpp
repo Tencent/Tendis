@@ -31,6 +31,25 @@ uint32_t SegmentMgrFnvHash64::getStoreid(uint32_t chunkid) {
   return getKvStoreID(chunkid, _instances.size());
 }
 
+Expected<bool> SegmentMgrFnvHash64::handleRedirectByKey(
+  Session* sess, const std::string& key) {
+  const auto& cfg = sess->getServerEntry()->getParams();
+  auto server = sess->getServerEntry();
+  auto clusterEnabled = sess->getServerEntry()->isClusterEnabled();
+  auto clusterSingle = cfg->clusterSingleNode;
+
+  if (clusterEnabled && !clusterSingle && cfg->enableMovePubSubRequest) {
+    uint32_t hash = uint32_t(redis_port::keyHashSlot(key.c_str(),
+                                                       key.size()));
+    uint32_t chunkId = hash % CLUSTER_SLOTS;
+    auto node = server->getClusterMgr()->
+      getClusterState()->clusterHandleRedirect(chunkId, sess);
+    if (!node.ok())
+      return node.status();
+  }
+  return true;
+}
+
 Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
   Session* sess, const std::string& key, mgl::LockMode mode) {
   INVARIANT(sess != nullptr && sess->getServerEntry() != nullptr);
@@ -161,9 +180,6 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
   INVARIANT(sess != nullptr && sess->getServerEntry() != nullptr);
   std::list<std::unique_ptr<KeyLock>> locklist;
 
-  if (mode == mgl::LockMode::LOCK_NONE) {
-    return locklist;
-  }
   // a duration of 49 days.
   uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
   bool clusterEnabled = false;
@@ -236,24 +252,29 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
           lock chunks from small to big(chunk id) in kvstore
               lock keys from small to big(key name) in chunk
   */
-  for (const auto& element : segList) {
-    uint32_t segId = element.first;
-    auto keysvec = element.second;
-    std::sort(keysvec.begin(), keysvec.end(), [](const auto& a, const auto& b) {
-      return a.first < b.first || (a.first == b.first && a.second < b.second);
-    });
-    for (const auto& pair : keysvec) {
-      auto elk = KeyLock::AquireKeyLock(segId,
-                                        pair.first,
-                                        pair.second,
-                                        mode,
-                                        sess,
-                                        sess->getServerEntry()->getMGLockMgr(),
-                                        lockTimeoutMs);
-      if (!elk.ok()) {
-        return elk.status();
+  if (mode != mgl::LockMode::LOCK_NONE) {
+    for (const auto& element : segList) {
+      uint32_t segId = element.first;
+      auto keysvec = element.second;
+      std::sort(keysvec.begin(), keysvec.end(), [](const auto& a,
+                                                   const auto& b) {
+        return a.first < b.first || (a.first == b.first &&
+                                     a.second < b.second);
+      });
+      for (const auto& pair : keysvec) {
+        auto elk = KeyLock::AquireKeyLock(segId,
+                                          pair.first,
+                                          pair.second,
+                                          mode,
+                                          sess,
+                                          sess->getServerEntry()
+                                          ->getMGLockMgr(),
+                                          lockTimeoutMs);
+        if (!elk.ok()) {
+          return elk.status();
+        }
+        locklist.emplace_back(std::move(elk.value()));
       }
-      locklist.emplace_back(std::move(elk.value()));
     }
   }
 

@@ -276,7 +276,7 @@ func startCluster(
 	log.Infof("start servers clusterNodeNum:%d", clusterNodeNum)
 	for i := 0; i < clusterNodeNum*2; i++ {
 		server := util.RedisServer{}
-		port := util.FindAvailablePort(clusterPortStart)
+		port := util.FindAvailablePort(clusterPortStart + i)
 		log.Infof("start server i:%d port:%d", i, port)
 		//port := clusterPortStart + i
 		server.Init(clusterIp, port, pwd, "m"+strconv.Itoa(i)+"_", util.Cluster)
@@ -312,8 +312,7 @@ func startCluster(
 			return nil, nil, nil
 		}
 	}
-	time.Sleep(2 * time.Second)
-
+	waitMeetEnd(&servers, clusterNodeNum*2)
 	// slaveof
 	log.Infof("cluster slaveof begin")
 	for i := clusterNodeNum; i < clusterNodeNum*2; i++ {
@@ -393,4 +392,87 @@ func isMaster(m *util.RedisServer) bool {
 	expectMaster := "myself,master"
 	nodeString := getClusterNodes(m)
 	return strings.Contains(nodeString, expectMaster)
+}
+
+func checkisMaster(m *util.RedisServer, s *util.RedisServer) bool {
+	masterString := getNodeName(m)
+	slaveString := getNodeName(s)
+	cli := createClient(m)
+	r, err := cli.Cmd("cluster", "slaves", masterString).Array()
+	if err != nil {
+		log.Fatalf("cluster slaves failed:%v %s", err, r)
+	}
+
+	for _, v := range r {
+		if strings.Contains(v.String(), slaveString) {
+			return true
+		}
+	}
+	return false
+}
+
+func replicateof(m *util.RedisServer, s *util.RedisServer) {
+	masterNodeName := getNodeName(m)
+	cli := createClient(s)
+	if r, err := cli.Cmd("cluster", "replicate", masterNodeName).Str(); r != ("OK") {
+		log.Fatalf("do replicate failed:%v", err)
+		return
+	} else if r != "OK" {
+		log.Fatalf("do replicate error:%s", r)
+		return
+	}
+	log.Infof("replicateof sucess,mport:%d sport:%d", m.Port, s.Port)
+}
+
+func waitMeetEnd(servers *[]util.RedisServer, expectedNodeNum int) {
+	var namelist []string
+	for _, v := range *servers {
+		namelist = append(namelist, getNodeName(&v))
+	}
+	start := time.Now().Second()
+	for {
+		flag := true
+		for i := range *servers {
+			cli := createClient(&(*servers)[i])
+			r, _ := cli.Cmd("cluster", "nodes").Str()
+			res := strings.Split(r, "\n")
+			if len(res) != expectedNodeNum+1 {
+				flag = false
+			}
+			for _, str := range namelist {
+				if !strings.Contains(r, str) {
+					flag = false
+				}
+			}
+		}
+		if flag {
+			break
+		}
+		if (time.Now().Second() - start) > 60 {
+			log.Fatalf("meet cost too much time")
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func waitMeetEndSingle(server util.RedisServer, expectedNodeNum int) {
+	servers := []util.RedisServer{server}
+	waitMeetEnd(&servers, expectedNodeNum)
+}
+
+func get_slot(channel string, clusterNodeNum int, server util.RedisServer) int {
+	serv_cli := createClient(&server)
+	slot, _ := serv_cli.Cmd("CLUSTER", "KEYSLOT", channel).Int()
+	return slot
+}
+
+func get_node_by_slot(slot int, NodeInfo *[]NodeInfo) int {
+	for i := range *NodeInfo {
+		if slot >= (*NodeInfo)[i].startSlot && slot <= (*NodeInfo)[i].endSlot {
+			return i
+		}
+	}
+	log.Fatalf("No server handle this slot")
+	return -1
 }

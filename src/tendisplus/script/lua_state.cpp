@@ -671,7 +671,7 @@ void scriptingEnableGlobalsProtection(lua_State* lua) {
   code += "    if w ~= \"main\" and w ~= \"C\" then\n";
   code +=
     "      error(\"Script attempted to create global variable "
-    "'\"..tostring(n)..\"'\", 2)\n";  // NOLINT
+    "'\"..tostring(n)..\"'\", 2)\n";
   code += "    end\n";
   code += "  end\n";
   code += "  rawset(t, n, v)\n";
@@ -680,7 +680,7 @@ void scriptingEnableGlobalsProtection(lua_State* lua) {
   code += "  if dbg.getinfo(2) and dbg.getinfo(2, \"S\").what ~= \"C\" then\n";
   code +=
     "    error(\"Script attempted to access nonexistent global variable "
-    "'\"..tostring(n)..\"'\", 2)\n";  // NOLINT
+    "'\"..tostring(n)..\"'\", 2)\n";
   code += "  end\n";
   code += "  return rawget(t, n)\n";
   code += "end\n";
@@ -819,7 +819,7 @@ lua_State* LuaState::initLua(int setup) {
       "    i = dbg.getinfo(3,'nSl')\n"
       "  end\n"
       "  if i then\n"
-      "    return i.source .. ':' .. i.currentline .. ': ' .. err\n"  // NOLINT
+      "    return i.source .. ':' .. i.currentline .. ': ' .. err\n"
       "  else\n"
       "    return err\n"
       "  end\n"
@@ -1045,7 +1045,7 @@ Expected<std::string> LuaState::evalGenericCommand(Session* sess, int evalsha) {
 
   lua_random_dirty = 0;
   lua_write_dirty = 0;
-  int lua_always_replicate_commands = 0;  // TODO(takenliu)
+  int lua_always_replicate_commands = 1;  // TODO(takenliu)
   lua_replicate_commands = lua_always_replicate_commands;
   // has_command_error = false;
 

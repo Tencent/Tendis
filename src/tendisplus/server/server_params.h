@@ -444,6 +444,7 @@ class ServerParams {
   std::string bindIp = "127.0.0.1";
   std::string bindIp2 = "";
   uint32_t port = 8903;
+  uint32_t tcpBacklog = 0;
   std::string logLevel = "";
   std::string logDir = "./";
   uint32_t logSizeMb = 128;
@@ -494,6 +495,9 @@ class ServerParams {
   uint64_t tendisLatencyLimit = 0;   // us
   uint64_t rocksdbLatencyLimit = 0;  // us
   bool slowlogFileEnabled = true;
+  bool slowlogFileSplitEnabled = true;
+  uint64_t slowlogFileMaxSizeMb = 128;
+  uint64_t slowlogFileKeepNum = 8;
   bool binlogUsingDefaultCF = false;
 
   // If false, Tendis don't save binlog when write data. Without Binlog, Tendis
@@ -636,6 +640,9 @@ class ServerParams {
   uint64_t clientOutputBufferLimitNormalSoftMB = 0;
   uint64_t clientOutputBufferLimitNormalSoftSecond = 10;
   bool moveDirWhenRestoreCkpt = false;
+
+  bool enableClosePubSubConnection = true;
+  bool enableMovePubSubRequest = true;
 };
 
 extern std::shared_ptr<tendisplus::ServerParams> gParams;

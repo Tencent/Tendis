@@ -35,19 +35,21 @@ namespace redis_port {
 /* Convert a string into a long long. Returns 1 if the string could be parsed
  * into a (non-overflowing) long long, 0 otherwise. The value will be set to
  * the parsed value when appropriate. */
-int string2ll(const char* s, size_t slen, long long* value);  // (NOLINT/int)
+int string2ll(const char* s,
+              size_t slen,
+              long long* value);  // NOLINT(runtime/int)
 
 std::string errorReply(const std::string& s);
 
 // port from redis source code, sds.c::sdssplitargs
 std::vector<std::string>* splitargs(
-  std::vector<std::string>& result,  // (NOLINT)
+  std::vector<std::string>& result,  // NOLINT(runtime/references)
   const std::string& lineStr);
 
 // port from redis source code object.c::createStringObjectFromLongDouble
 int ld2string(char* buf, size_t len, long double value, int humanfriendly);
 
-size_t popCount(const void* s, long count);  // (NOLINT)
+size_t popCount(const void* s, long count);  // NOLINT(runtime/int)
 size_t popCount(const std::string& value, size_t offset, size_t end);
 int64_t bitPos(const void* s, size_t count, uint32_t bit);
 int64_t bitPos(const std::string& fragment,
@@ -74,9 +76,7 @@ int random();
 #define CMD_FAST (1 << 13)              /* "F" flag */
 #define CMD_MODULE_GETKEYS (1 << 14)    /* Use the modules getkeys interface. */
 #define CMD_MODULE_NO_CLUSTER (1 << 15) /* Deny on Redis Cluster. */
-#define CMD_ALLOW_CROSS_SLOT                      \
-  (1 << 16) /* 'c' flag, allow cmd key cross slot \
-             */
+#define CMD_ALLOW_CROSS_SLOT (1 << 16)  /* 'c' flag allow key cross slot */
 
 #define CMD_MASK 0x7FFFFFFF  // enough for 31 CMD_* marco.
 
@@ -127,12 +127,10 @@ int random();
 #define ZADD_XX (1 << 2)   /* Only touch elements already exisitng. */
 
 /* Output flags. */
-#define ZADD_NOP \
-  (1 << 3) /* Operation not performed because of conditionals.*/  // NOLINT
-#define ZADD_NAN (1 << 4)   /* Only touch elements already exisitng. */
-#define ZADD_ADDED (1 << 5) /* The element was new and was added. */
-#define ZADD_UPDATED \
-  (1 << 6) /* The element already existed, score updated. */  // NOLINT
+#define ZADD_NOP (1 << 3)    // Operation not performed because of conditionals.
+#define ZADD_NAN (1 << 4)    // Only touch elements already exisitng.
+#define ZADD_ADDED (1 << 5)  // The element was new and was added.
+#define ZADD_UPDATED (1 << 6)  // The element already existed, score updated.
 
 /* Flags only used by the ZADD command but not by zsetAdd() API: */
 #define ZADD_CH (1 << 16) /* Return num of elements added or updated. */
@@ -249,7 +247,7 @@ void serverLogOld(int level, const char* fmt, ...);
  * 'p' is an array of unsigned bytes. */
 #define HLL_DENSE_GET_REGISTER(target, p, regnum)             \
   do {                                                        \
-    uint8_t* _p = (uint8_t*)p; /* NOLINT */                   \
+    uint8_t* _p = reinterpret_cast<uint8_t*>(p);              \
     uint64_t _byte = regnum * HLL_BITS / 8;                   \
     uint64_t _fb = regnum * HLL_BITS & 7;                     \
     uint64_t _fb8 = 8 - _fb;                                  \
@@ -262,7 +260,7 @@ void serverLogOld(int level, const char* fmt, ...);
  * 'p' is an array of unsigned bytes. */
 #define HLL_DENSE_SET_REGISTER(p, regnum, val)    \
   do {                                            \
-    uint8_t* _p = (uint8_t*)p; /* NOLINT */       \
+    uint8_t* _p = reinterpret_cast<uint8_t*>(p);  \
     uint64_t _byte = regnum * HLL_BITS / 8;       \
     uint64_t _fb = regnum * HLL_BITS & 7;         \
     uint64_t _fb8 = 8 - _fb;                      \
@@ -395,9 +393,9 @@ void sha256_final(SHA256_CTX* ctx, BYTE hash[]);
 
 void getRandomHexChars(char* p, size_t len);
 void getRandomBytes(unsigned char* p, size_t len);
-void strmapchars(std::string& s,
+void strmapchars(std::string& s,  // NOLINT(runtime/references)
                  const char* from,
-                 const char* to,  // (NOLINT)
+                 const char* to,
                  size_t setlen);
 }  // namespace redis_port
 }  // namespace tendisplus

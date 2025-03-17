@@ -297,8 +297,8 @@ Expected<uint64_t> RocksTxn::commit() {
     INVARIANT_D(!isReplOnly());
 
     if (_replLogValues.size() >= std::numeric_limits<uint16_t>::max()) {
-      LOG(WARNING) << "too big binlog size:",
-        std::to_string(_replLogValues.size());
+      LOG(WARNING) << "too big binlog size:"
+                   << std::to_string(_replLogValues.size());
     }
 
     _store->assignBinlogIdIfNeeded(this);
@@ -960,10 +960,8 @@ const rocksdb::Snapshot* RocksWBTxn::getSnapshot() {
 
 rocksdb::Iterator* RocksWBTxn::getIterator(
   rocksdb::ReadOptions readOpts, rocksdb::ColumnFamilyHandle* columnFamily) {
-  // rocksdb::Iterator* dbIter = _store->newIterator(readOpts, columnFamily);
-  // TODO(jingjunli): ReadUncommited or ReadCommited ?
-  // return _writeBatch->NewIteratorWithBase(columnFamily, dbIter);
-  return _store->newIterator(readOpts, columnFamily);
+  rocksdb::Iterator* dbIter = _store->newIterator(readOpts, columnFamily);
+  return _writeBatch->NewIteratorWithBase(columnFamily, dbIter);
 }
 
 rocksdb::CompressionType rocksGetCompressType(const std::string& typeStr) {
@@ -979,9 +977,10 @@ rocksdb::CompressionType rocksGetCompressType(const std::string& typeStr) {
   }
 }
 
-Status rocksdbOptionsSet(rocksdb::Options& options,
-                         const std::string& key,
-                         const std::string& rawValue) {
+Status rocksdbOptionsSet(
+  rocksdb::Options& options,  // NOLINT(runtime/references)
+  const std::string& key,
+  const std::string& rawValue) {
   // TODO(takenliu): not int params need change two place, resolve it
   static std::set<std::string> notIntParams = {
     "blob_compression_type",
@@ -1221,9 +1220,10 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
   return {ErrorCodes::ERR_OK, ""};
 }
 
-Status rocksdbTableOptionsSet(rocksdb::BlockBasedTableOptions& options,
-                              const std::string& key,
-                              const std::string& rawValue) {
+Status rocksdbTableOptionsSet(
+  rocksdb::BlockBasedTableOptions& options,  // NOLINT(runtime/references)
+  const std::string& key,
+  const std::string& rawValue) {
   // TODO(takenliu): not int params need change two place, resolve it
   static std::set<std::string> notIntParams = {};
 
@@ -1728,6 +1728,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
       }
       written += len;
       newDump = explog.value().getBinlogId() + 1;
+      ts = explog.value().getTimestamp();
     }
     if (_cfg->dumpFileFlush) {
       fs->flush();
@@ -1736,6 +1737,8 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     result.err = err;
     result.written = written;
     result.newDump = newDump;
+    // slave use timestamp from last dump binlog
+    result.timestamp = ts;
     newEnd = newDump - 1;
   }
 
@@ -1759,7 +1762,10 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     ts = explog.value().getTimestamp();
   }
   result.newStart = newStart;
-  result.timestamp = ts;
+  if (result.timestamp == 0) {
+    // master use timestamp from deleterange last binlog
+    result.timestamp = ts;
+  }
   if (fs == nullptr) {
     result.newDump = result.newStart;
   }
@@ -3249,6 +3255,7 @@ Status RocksKVStore::setOptionDynamic(const std::string& option,
   static std::set<std::string> rocksdb_dynamic_options = {
     "rocks.max_background_jobs",
     "rocks.max_open_files",
+    "rocks.max_subcompactions",
   };
   static std::set<std::string> rocksdb_cf_dynamic_options = {
     "rocks.enable_blob_files",
@@ -3263,6 +3270,9 @@ Status RocksKVStore::setOptionDynamic(const std::string& option,
     "rocks.blob_compression_type",
     "rocks.disable_auto_compactions",
     "rocks.periodic_compaction_seconds",
+    "rocks.level0_file_num_compaction_trigger",
+    "rocks.level0_slowdown_writes_trigger",
+    "rocks.level0_stop_writes_trigger"
   };
   // option, example: "rocks.binlogcf.enable_blob_files"
   // new_option, example: "rocks.enable_blob_files"

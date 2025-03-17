@@ -56,6 +56,8 @@ class BackupCommand : public Command {
         return {ErrorCodes::ERR_MANUAL, "mode error, should be ckpt or copy"};
       }
     }
+    LOG(INFO) << "BackupCommand begin, dir: " << dir
+              << ", mode:" << static_cast<int>(mode);
     auto svr = sess->getServerEntry();
     INVARIANT(svr != nullptr);
 
@@ -100,32 +102,49 @@ class BackupCommand : public Command {
       // TODO(wayenchen) find path to write to file
     }
 
-    // TODO(wayenchen): use make guard to unset backupruning when backup
-    // failed!
-    svr->setBackupRunning();
-
-    for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
-      // NOTE(deyukong): here we acquire IS lock
-      auto expdb =
-        svr->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS, true);
-      if (!expdb.ok()) {
-        return expdb.status();
-      }
-
-      auto store = std::move(expdb.value().store);
-      // if store is not open, skip it
-      if (!store->isOpen()) {
-        continue;
-      }
-      std::string dbdir = dir + "/" + std::to_string(i) + "/";
-      Expected<BackupInfo> bkInfo =
-        store->backup(dbdir, mode, svr->getCatalog()->getBinlogVersion());
-      if (!bkInfo.ok()) {
-        svr->onBackupEndFailed(i, bkInfo.status().toString());
-        return bkInfo.status();
-      }
+    if (!svr->setBackupRunning()) {
+      LOG(ERROR) << "BackupCommand wrong, backup is running.";
+      return {ErrorCodes::ERR_INTERNAL, "backup is running."};
     }
-    svr->onBackupEnd();
+    std::thread t([svr, dir = dir, mode]() {
+      bool succ = true;
+      uint32_t storeid = 0;
+      std::string errormsg;
+      LocalSessionGuard g(svr);
+      for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
+        storeid = i;
+        // NOTE(deyukong): here we acquire IS lock
+        auto expdb = svr->getSegmentMgr()->getDb(
+          g.getSession(), i, mgl::LockMode::LOCK_IS, true);
+        if (!expdb.ok()) {
+          succ = false;
+          errormsg = expdb.status().toString();
+          break;
+        }
+
+        auto store = std::move(expdb.value().store);
+        // if store is not open, skip it
+        if (!store->isOpen()) {
+          continue;
+        }
+        std::string dbdir = dir + "/" + std::to_string(i) + "/";
+        Expected<BackupInfo> bkInfo =
+          store->backup(dbdir, mode, svr->getCatalog()->getBinlogVersion());
+        if (!bkInfo.ok()) {
+          succ = false;
+          errormsg = bkInfo.status().toString();
+          break;
+        }
+      }
+      LOG(INFO) << "BackupCommand complete, succ:" << succ;
+      if (succ) {
+        svr->onBackupEnd();
+      } else {
+        svr->onBackupEndFailed(storeid, errormsg);
+      }
+    });
+    t.detach();
+
     return Command::fmtOK();
   }
 } bkupCmd;

@@ -53,7 +53,7 @@ func FindAvailablePort(start int) int {
 		log.Infof("check port:%d", i)
 		cmd1 := fmt.Sprintf("netstat -anpl 2>&1|grep %d", i)
 		output1, err1 := exec.Command("sh", "-c", cmd1).CombinedOutput()
-		log.Infof("output1:%s", string(output1))
+		// log.Infof("output1:%s", string(output1))
 		log.Infof("err1:%v", err1)
 
 		cmd2 := fmt.Sprintf("netstat -anpl 2>&1|grep %d", i+10000)
@@ -152,7 +152,7 @@ func StartProcess(command []string, env []string, pidPath string, timeout time.D
 	var cmd *exec.Cmd
 	go func() {
 		if inShell {
-			cmd = exec.Command("/bin/sh", "-c", command[0])
+			cmd = exec.Command("/bin/bash", "-c", command[0])
 			// NOTE(takenliu) set pgid = pid, then SIGKILL can kill the group process
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		} else {

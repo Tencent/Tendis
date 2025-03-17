@@ -13,6 +13,8 @@
 #include <shared_mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -32,6 +34,7 @@
 #include "tendisplus/storage/pessimistic.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/utils/cursor_map.h"
+#include "tendisplus/utils/redis_port.h"
 
 #define SLOWLOG_ENTRY_MAX_ARGC 32;
 #define SLOWLOG_ENTRY_MAX_STRING 128;
@@ -134,7 +137,9 @@ class SlowlogStat {
     uint64_t execTime,
     Session* sess);
   std::list<SlowlogEntry> getSlowlogData(uint64_t count);
-  Status initSlowlogFile(std::string logPath);
+  Status initSlowlogFile(const std::shared_ptr<ServerParams>&);
+  Status newSlowlogFile(const std::shared_ptr<ServerParams>&);
+  Status recycleSlowlogFile(const std::shared_ptr<ServerParams>&);
   void closeSlowlogFile();
 
  private:
@@ -143,6 +148,8 @@ class SlowlogStat {
   std::atomic<uint64_t> _slowlogId;
   mutable std::mutex _dataMutex;
   mutable std::mutex _fileMutex;
+  bool _waitingFlush;
+  uint64_t _filesize;
 };
 
 #define THREAD_SLEEP(n_secs)                                \
@@ -165,7 +172,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   Status startup(const std::shared_ptr<ServerParams>& cfg);
   uint64_t getStartupTimeNs() const;
   template <typename fn>
-  void schedule(fn&& task, uint32_t& ctxId) {  // NOLINT
+  void schedule(fn&& task, uint32_t& ctxId) {  // NOLINT(runtime/references)
     if (UNLIKELY(_newExecutorThreadNum.load() != 0)) {
       std::unique_lock<std::shared_timed_mutex> lock(_exeThreadMutex);
       // NOTE(takenliu): need check again in write lock;
@@ -288,18 +295,35 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
     uint64_t duration, /* including the queue time */
     uint64_t execTime,
     Session* sess);
+  bool setBackupRunning() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    bool expected = false;
+    return _backupRunning.compare_exchange_strong(
+      expected, true, std::memory_order_relaxed);
+  }
+  bool getBackupRunning() const {
+    return _backupRunning.load(std::memory_order_relaxed);
+  }
   void onBackupEnd() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    _backupRunning.store(false, std::memory_order_relaxed);
+    _lastBackupSuccess.store(true, std::memory_order_relaxed);
+
     _lastBackupTime.store(sinceEpoch(), std::memory_order_relaxed);
-    _backupRunning.fetch_sub(1, std::memory_order_relaxed);
     _backupTimes.fetch_add(1, std::memory_order_relaxed);
   }
   void onBackupEndFailed(uint32_t storeid, const std::string& errinfo) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    _backupRunning.store(false, std::memory_order_relaxed);
+    _lastBackupSuccess.store(false, std::memory_order_relaxed);
+
     _lastBackupFailedTime.store(sinceEpoch(), std::memory_order_relaxed);
     _backupFailedTimes.fetch_add(1, std::memory_order_relaxed);
-    _backupRunning.fetch_sub(1, std::memory_order_relaxed);
-    std::lock_guard<std::mutex> lk(_mutex);
     _lastBackupFailedErr =
       "storeid " + std::to_string(storeid) + ",err:" + errinfo;
+  }
+  bool getLastBackupSucces() const {
+    return _lastBackupSuccess.load(std::memory_order_relaxed);
   }
   uint64_t getLastBackupTime() const {
     return _lastBackupTime.load(std::memory_order_relaxed);
@@ -317,15 +341,11 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
     std::lock_guard<std::mutex> lk(_mutex);
     return _lastBackupFailedErr;
   }
-  uint64_t getBackupRunning() const {
-    return _backupRunning.load(std::memory_order_relaxed);
-  }
 
   uint64_t getInternalErrorCnt() const {
     return _internalErrorCnt.load(std::memory_order_relaxed);
   }
 
-  void setBackupRunning();
   bool getTotalIntProperty(
     Session* sess,
     const std::string& property,
@@ -381,6 +401,17 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
                                                                     cursor);
   }
 
+  int PublishMessage(Session* sess);
+  void SubscribeChannel(uint64_t sessId, const std::string& channel);
+  void UnsubscribeChannel(Session* sess, const std::string& channel);
+  void SubscribePattern(uint64_t sessId, const std::string& pattern);
+  void UnsubscribePattern(Session* sess, const std::string& pattern);
+  void ListChannelSubscribeNum(std::vector<std::pair<std::string, int>>*);
+  void ListChannelByPattern(const std::string& pattern,
+                            std::vector<std::string>* channels);
+  void CloseChannelBySlot(SlotsBitmap slots);
+  void CloseAllChannel();
+
  private:
   ServerEntry();
   Status adaptSomeThreadNumByCpuNum(const std::shared_ptr<ServerParams>& cfg);
@@ -389,11 +420,13 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   void jemallocBgThreadConf();
   void replyMonitors(Session* sess);
   void DelMonitorNoLock(uint64_t connId);
+  void DelSubSession(uint64_t connId);
   void resizeExecutorThreadNum(uint64_t newThreadNum);
   void resizeIncrExecutorThreadNum(uint64_t newThreadNum);
   void resizeDecrExecutorThreadNum(uint64_t newThreadNum);
   Status generateHeartbeatBinlogRoutine();
   void bgCompactCron();
+  void updateRateLimiter(uint64_t bytesPerSecond);
 
   // NOTE(deyukong): _isRunning = true -> running
   // _isRunning = false && _isStopped = false -> stopping in progress
@@ -412,6 +445,16 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   mutable std::mutex _mutex_session;
   std::map<uint64_t, std::shared_ptr<Session>> _sessions;
   std::list<std::shared_ptr<Session>> _monitors;
+
+  // NOTE(barneyxiao) _mutex_pubsubChannels is used only for
+  // _pubsubChannels and _pubsubPatterns
+  mutable std::mutex _mutex_pubsubChannels;
+  std::unordered_map<std::string,
+                     std::unordered_map<uint64_t, std::shared_ptr<Session>>>
+    _pubsubChannels;
+  std::unordered_map<std::string,
+                     std::unordered_map<uint64_t, std::shared_ptr<Session>>>
+    _pubsubPatterns;
 
   std::atomic<uint64_t> _newExecutorThreadNum = 0;
   mutable std::shared_timed_mutex _exeThreadMutex;
@@ -455,11 +498,12 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
 
   std::atomic<uint64_t> _scheduleNum;
   std::shared_ptr<ServerParams> _cfg;
+  std::atomic<bool> _backupRunning;
+  std::atomic<bool> _lastBackupSuccess;
   std::atomic<uint64_t> _lastBackupTime;
   std::atomic<uint64_t> _backupTimes;
   std::atomic<uint64_t> _lastBackupFailedTime;
   std::atomic<uint64_t> _backupFailedTimes;
-  std::atomic<uint64_t> _backupRunning;
   std::atomic<uint64_t> _internalErrorCnt;
   std::string _lastBackupFailedErr;
   ServerStat _serverStat;

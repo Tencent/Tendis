@@ -38,9 +38,9 @@ std::string ultos(uint64_t d);
 std::string hexlify(const std::string&);
 Expected<std::string> unhexlify(const std::string&);
 bool isOptionOn(const std::string& s);
-void sdstrim(std::string& s, const char* cset);
+void sdstrim(std::string& s, const char* cset);  // NOLINT(runtime/references)
 
-std::string& replaceAll(std::string& str,
+std::string& replaceAll(std::string& str,  // NOLINT(runtime/references)
                         const std::string& old_value,
                         const std::string& new_value);
 
@@ -289,6 +289,16 @@ size_t easyCopy(T* dest, const std::string& buf, size_t* pos) {
   return sizeof(T);
 }
 
+// ref https://en.cppreference.com/w/cpp/string/basic_string/starts_with
+// NOTE(raffertyyu) std::string/std::string_view's starts_with is available
+// since c++20. Remove starts_with function when tendis using c++20
+constexpr bool starts_with(std::string_view s,
+                           std::string_view prefix) noexcept {
+  return s.substr(0, prefix.size()) == prefix;
+}
+
+std::string getSizeReadable(size_t size);
+
 }  // namespace tendisplus
 
 #ifdef _MSC_VER
@@ -303,8 +313,8 @@ using std::string_view;
 #define mystring_view string_view
 
 #elif __has_include(<experimental/string_view>)
-#include <experimental/string_view>  // NOLINT
-using std::experimental::string_view;  // NOLINT
+#include <experimental/string_view>
+using std::experimental::string_view;
 #define mystring_view string_view
 
 #else

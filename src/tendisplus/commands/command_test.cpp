@@ -884,12 +884,23 @@ void testGlobStylePattern(std::shared_ptr<ServerEntry> svr) {
   sess.setArgs({"config", "get", "*slow*"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(
-    "*10\r\n$7\r\nslowlog\r\n$11\r\n\"./"
-    "slowlog\"\r\n$20\r\nslowlog-file-enabled\r\n$3\r\nyes\r\n$"
-    "22\r\nslowlog-"
-    "flush-interval\r\n$22\r\n not supported anymore\r\n$23\r\n"
-    "slowlog-log-slower-than\r\n$"
-    "6\r\n100000\r\n$15\r\nslowlog-max-len\r\n$4\r\n1024\r\n",
+    "*16\r\n"
+    "$7\r\nslowlog\r\n"
+    "$15\r\n\"./log/slowlog\"\r\n"
+    "$20\r\nslowlog-file-enabled\r\n"
+    "$3\r\nyes\r\n"
+    "$21\r\nslowlog-file-keep-num\r\n"
+    "$1\r\n8\r\n"
+    "$24\r\nslowlog-file-max-size-mb\r\n"
+    "$3\r\n128\r\n"
+    "$26\r\nslowlog-file-split-enabled\r\n"
+    "$3\r\nyes\r\n"
+    "$22\r\nslowlog-flush-interval\r\n"
+    "$22\r\n not supported anymore\r\n"
+    "$23\r\nslowlog-log-slower-than\r\n"
+    "$6\r\n100000\r\n"
+    "$15\r\nslowlog-max-len\r\n"
+    "$4\r\n1024\r\n",
     expect.value());
 
   sess.setArgs({"config", "get", "?lowlog"});
@@ -897,7 +908,7 @@ void testGlobStylePattern(std::shared_ptr<ServerEntry> svr) {
   std::stringstream ss;
   Command::fmtMultiBulkLen(ss, 2);
   Command::fmtBulk(ss, "slowlog");
-  Command::fmtBulk(ss, "\"./slowlog\"");
+  Command::fmtBulk(ss, "\"./log/slowlog\"");
   EXPECT_EQ(ss.str(), expect.value());
 
   sess.setArgs({"config", "get", "no_exist_key"});
@@ -2221,7 +2232,7 @@ TEST(Command, dexec) {
     {{"dexec", "-1", "set", "a", "c"},
      "*3\r\n$7\r\ndreturn\r\n$2\r\n-1\r\n$5\r\n+OK\r\n\r\n"},
     {{"dexec", "-1", "cluster", "nodes"},
-     "*3\r\n$7\r\ndreturn\r\n$2\r\n-1\r\n$56\r\n-ERR:18,msg:This instance "
+     "*3\r\n$7\r\ndreturn\r\n$2\r\n-1\r\n$49\r\n-ERR This instance "
      "has cluster support disabled\r\n\r\n"},
     {{"dexec", "1", "dexec", "2", "get", "a"},
      "*3\r\n$7\r\ndreturn\r\n$1\r\n1\r\n$37\r\n*3\r\n$7\r\ndreturn\r\n$"
@@ -2727,7 +2738,7 @@ TEST(Command, tbitmap) {
         "tsrckey1",
         "tsrckey2",
         "tsrckey3",
-        "tsrckey4"},  // NOLINT
+        "tsrckey4"},
        {"bitop", "or", "destkey", "srckey1", "srckey2", "srckey3", "srckey4"}},
       {{"dump", "tdestkey"}, {"dump", "destkey"}},
 
@@ -3268,6 +3279,41 @@ TEST(Command, renameCommand) {
   gRenameCmdList = "";
   gMappingCmdList = "";
 
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
+TEST(Command, getSessionCmd) {
+  auto guard = MakeGuard([] { destroyEnv(); });
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  cfg->aofEnabled = true;
+  auto server = makeServerEntry(cfg);
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext);
+  NetSession sess(server, std::move(socket), 1, false, nullptr, nullptr);
+
+  sess.setArgs({"zincrby", "z1", "10", "ex"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(Command::fmtBulk("10"), expect.value());
+  sess.setArgs({"zincrby", "z1", "10", "px"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(Command::fmtBulk("10"), expect.value());
+
+  sess.setArgs({"set", "k1", "v1", "px", "10000000"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(Command::fmtOK(), expect.value());
+  sess.setArgs({"set", "k1", "v1", "xx", "px", "10000000"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(Command::fmtOK(), expect.value());
+  sess.setArgs({"set", "k1", "v1", "px", "10000000", "xx"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(Command::fmtOK(), expect.value());
+  sess.setArgs({"set", "k1", "v1", "px", "10000000", "ex", "100"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(Command::fmtOK(), expect.value());
 #ifndef _WIN32
   server->stop();
   EXPECT_EQ(server.use_count(), 1);

@@ -30,13 +30,13 @@ Expected<ReplLogKeyV2> ReplLogKeyV2::decode(const RecordKey& rk) {
   if (type != RecordType::RT_BINLOG) {
     return {ErrorCodes::ERR_DECODE,
             "ReplLogKeyV2::decode:it is not a valid binlog type " +
-              std::string(1, rt2Char(type))};  // NOLINT
+              std::string(1, rt2Char(type))};
   }
 
   if (rk.getChunkId() != ReplLogKeyV2::CHUNKID ||
       rk.getDbId() != ReplLogKeyV2::DBID) {
     return {ErrorCodes::ERR_DECODE,
-            "ReplLogKeyV2::decode:chunkid or dbid is invalied"};  // NOLINT
+            "ReplLogKeyV2::decode:chunkid or dbid is invalied"};
   }
 
   const std::string& key = rk.getPrimaryKey();
@@ -80,7 +80,7 @@ std::string ReplLogKeyV2::encode() const {
 //    size_t offset = RecordKey::getHdrSize();
 //    for (size_t i = 0; i < sizeof(_binlogId); i++) {
 //        encodeStr[offset + i] = static_cast<char>((newBinlogId >>
-//        ((sizeof(_binlogId) - i - 1) * 8)) & 0xff);   // NOLINT
+//        ((sizeof(_binlogId) - i - 1) * 8)) & 0xff);
 //    }
 //    return encodeStr;
 //}
@@ -367,7 +367,7 @@ Expected<ReplLogValueV2> ReplLogValueV2::decode(const std::string& s) {
   if (type != RecordType::RT_BINLOG) {
     return {ErrorCodes::ERR_DECODE,
             "ReplLogValueV2::decode: it is not a valid binlog type" +
-              std::string(1, rt2Char(type))};  // NOLINT
+              std::string(1, rt2Char(type))};
   }
 
   auto hdrSize = RecordValue::decodeHdrSizeNoMeta(s);
@@ -434,7 +434,7 @@ bool ReplLogValueV2::isEqualHdr(const ReplLogValueV2& o) const {
 //
 //    for (size_t i = 0; i < sizeof(_txnId); i++) {
 //        encodeStr[offset + i] = static_cast<char>((newTxnId >>
-//        ((sizeof(_txnId) - i - 1) * 8)) & 0xff);   // NOLINT
+//        ((sizeof(_txnId) - i - 1) * 8)) & 0xff);
 //    }
 //    return encodeStr;
 //

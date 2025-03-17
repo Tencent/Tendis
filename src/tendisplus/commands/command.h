@@ -85,8 +85,8 @@ class Command {
   // NOTE[zakzheng] scanSimple will seek to from,
   // and will return cnt number of element if enough
   static Expected<std::list<Record>> scanSimple(Session* sess,
-                                                const std::string& pk,
-                                                const std::string& from,
+                                                const std::string& prefix,
+                                                const std::string& seekPos,
                                                 uint64_t cnt,
                                                 Transaction* txn);
 

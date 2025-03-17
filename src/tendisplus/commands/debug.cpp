@@ -167,11 +167,11 @@ class KeysCommand : public Command {
         }
         RET_IF_MEMORY_REQUEST_FAILED(sess, key.size());
         result.emplace_back(std::move(key));
-        if (result.size() >= (size_t)limit) {
+        if (result.size() >= static_cast<size_t>(limit)) {
           break;
         }
       }
-      if (result.size() >= (size_t)limit) {
+      if (result.size() >= static_cast<size_t>(limit)) {
         break;
       }
     }
@@ -1295,8 +1295,7 @@ class CommandListCommand : public Command {
     if (checkCompatible) {
       for (const auto& cmd : cmdmap) {
         if (cmd.second->getFlags() & flag) {
-          auto rcmd =
-            redis_port::getCommandFromTable(cmd.first.c_str());  // NOLINT
+          auto rcmd = redis_port::getCommandFromTable(cmd.first.c_str());
           if (!rcmd) {
             continue;
           }
@@ -1311,7 +1310,7 @@ class CommandListCommand : public Command {
                      sizeof(buf),
                      "%s flags(%d,%d), arity(%d,%d), "
                      "firstkey(%d,%d), lastkey(%d,%d), "
-                     "keystep(%d,%d) sameWithRedis(%s)",  // NOLINT
+                     "keystep(%d,%d) sameWithRedis(%s)",
                      cmd.first.c_str(),
                      rcmd->flags,
                      tcmd->getFlags(),
@@ -1334,8 +1333,7 @@ class CommandListCommand : public Command {
       int numcommands = redis_port::getCommandCount();
 
       for (j = 0; j < numcommands; j++) {
-        struct redis_port::redisCommand* c =
-          redis_port::getCommandFromTable(j);  // NOLINT
+        struct redis_port::redisCommand* c = redis_port::getCommandFromTable(j);
 
         if (c->flags & flag) {
           if (!cmdmap.count(c->name)) {
@@ -1886,9 +1884,11 @@ class ClientCommand : public Command {
   Expected<std::string> killClients(Session* sess) {
     const std::vector<std::string>& args = sess->getArgs();
 
-    int skipme = 0;
+    int skipme = 1;
     std::string remote = "";
     uint64_t id = 0;
+    size_t killed = 0;
+    int closeThisClient = 0;
 
     if (args.size() == 3) {
       remote = args[2];
@@ -1896,34 +1896,35 @@ class ClientCommand : public Command {
     } else if (args.size() > 3) {
       size_t i = 2;
       while (i < args.size()) {
-        int moreargs = args.size() > i + 1;
-        if (args[i] == "id" && moreargs) {
+        bool moreargs = args.size() > i + 1;
+        if (!::strcasecmp(args[i].c_str(), "id") && moreargs) {
           Expected<uint64_t> eid = ::tendisplus::stoul(args[i + 1]);
           if (!eid.ok()) {
             return eid.status();
           }
           id = eid.value();
-        } else if (args[i] == "addr" && moreargs) {
+        } else if (!::strcasecmp(args[i].c_str(), "addr") && moreargs) {
           remote = args[i + 1];
-        } else if (args[i] == "skipme" && moreargs) {
-          if (args[i + 1] == "yes") {
+        } else if (!::strcasecmp(args[i].c_str(), "skipme") && moreargs) {
+          if (!::strcasecmp(args[i + 1].c_str(), "yes")) {
             skipme = 1;
-          } else if (args[i + 1] == "no") {
+          } else if (!::strcasecmp(args[i + 1].c_str(), "no")) {
             skipme = 0;
           } else {
-            return {ErrorCodes::ERR_PARSEOPT, "skipme yes|no"};
+            return {ErrorCodes::ERR_PARSEOPT, ""};
           }
         } else {
-          return {ErrorCodes::ERR_PARSEOPT, "invalid syntax"};
+          return {ErrorCodes::ERR_PARSEOPT, ""};
         }
         i += 2;
       }
+    } else {
+      return {ErrorCodes::ERR_PARSEOPT, ""};
     }
 
     auto svr = sess->getServerEntry();
     INVARIANT(svr != nullptr);
     auto sesses = svr->getAllSessions();
-    int closeThisClient = 0;
     for (auto& v : sesses) {
       if (v->getFd() == -1) {
         continue;
@@ -1942,28 +1943,36 @@ class ClientCommand : public Command {
         }
       } else {
         v->cancel();
-        return Command::fmtOK();
       }
+      killed++;
     }
     if (closeThisClient) {
       auto vv = dynamic_cast<NetSession*>(sess);
       INVARIANT(vv != nullptr);
       vv->setCloseAfterRsp();
-      return Command::fmtOK();
     }
-    return {ErrorCodes::ERR_NOTFOUND, "No such client"};
+    if (args.size() == 3) {
+      if (killed == 0) {
+        return {ErrorCodes::ERR_NOTFOUND, "No such client"};
+      } else {
+        return {ErrorCodes::ERR_OK, ""};
+      }
+    } else {
+      return fmtLongLong(killed);
+    }
   }
 
   Expected<std::string> run(Session* sess) final {
     const std::vector<std::string>& args = sess->getArgs();
 
     auto arg1 = tendisplus::toLower(args[1]);
+    auto argSize = args.size();
 
-    if (arg1 == "id") {
+    if (arg1 == "id" && argSize == 2) {
       return Command::fmtLongLong(sess->id());
-    } else if (arg1 == "list") {
+    } else if (arg1 == "list" && argSize == 2) {
       return listClients(sess);
-    } else if (arg1 == "getname") {
+    } else if (arg1 == "getname" && argSize == 2) {
       std::string name = sess->getName();
       if (name == "") {
         return Command::fmtNull();
@@ -1976,7 +1985,7 @@ class ClientCommand : public Command {
           LOG(INFO) << "word:" << args[2] << ' ' << v << " illegal";
           return {ErrorCodes::ERR_PARSEOPT,
                   "Client names cannot contain spaces, newlines or "
-                  "special characters."};  // NOLINT
+                  "special characters."};
         }
       }
       sess->setName(args[2]);
@@ -1986,7 +1995,7 @@ class ClientCommand : public Command {
     } else {
       return {ErrorCodes::ERR_PARSEOPT,
               "Syntax error, try CLIENT (LIST | KILL ip:port | GETNAME | "
-              "SETNAME connection-name)"};  // NOLINT
+              "SETNAME connection-name)"};
     }
   }
 } clientCmd;
@@ -2090,13 +2099,13 @@ class InfoCommand : public Command {
 #endif
 #ifndef _WIN32
          << "os:" << name.sysname << " " << name.release << " " << name.machine
-         << "\r\n"  // NOLINT
+         << "\r\n"
 #endif
          << "arch_bits:" << ((sizeof(size_t) == 8) ? 64 : 32) << "\r\n"
          << "multiplexing_api:asio\r\n"
 #ifdef __GNUC__
-         << "gcc_version:" << __GNUC__ << ":" << __GNUC_MINOR__ << ":"
-         << __GNUC_PATCHLEVEL__ << "\r\n"  // NOLINT
+         << "gcc_version:" << __GNUC__ << "." << __GNUC_MINOR__ << "."
+         << __GNUC_PATCHLEVEL__ << "\r\n"
 #else
          << "gcc_version:0.0.0\r\n"
 #endif
@@ -2132,7 +2141,6 @@ class InfoCommand : public Command {
          << "\r\n"
          << "cluster_clients:"
          << server->getSessionCount(Session::Type::CLUSTER) << "\r\n";
-      ;
       ss << "\r\n";
       result << ss.str();
     }
@@ -2390,12 +2398,14 @@ class InfoCommand : public Command {
                          std::stringstream& result) {
     if (allsections || defsections || section == "backup") {
       auto server = sess->getServerEntry();
-      std::string runStr = server->getBackupRunning() > 0 ? "yes" : "no";
+      std::string runStr = server->getBackupRunning() ? "yes" : "no";
+      std::string lastSuccStr = server->getLastBackupSucces() ? "ok" : "err";
       std::stringstream ss;
       ss << "# Backup\r\n";
       ss << "backup-count:" << server->getBackupTimes() << "\r\n";
       ss << "last-backup-time:" << server->getLastBackupTime() << "\r\n";
       ss << "current-backup-running:" << runStr << "\r\n";
+      ss << "last-backup-status:" << lastSuccStr << "\r\n";
       if (server->getBackupFailedTimes() > 0) {
         ss << "backup-failed-count:" << server->getBackupFailedTimes()
            << "\r\n";
@@ -2771,7 +2781,7 @@ class ObjectCommand : public Command {
         ss,
         "freq -- Return the access frequency index of the key. The "
         "returned integer is proportional to the logarithm of the "
-        "recent access frequency of the key. Always 0");  // NOLINT
+        "recent access frequency of the key. Always 0");
       return ss.str();
     } else if (args.size() == 3) {
       const std::string& key = sess->getArgs()[2];
@@ -4493,7 +4503,17 @@ class TendisadminCommand : public Command {
 
     auto operation = toLower(args[1]);
 
-    if (operation == "sleep" || operation == "lockdb") {
+    if (operation == "sleepmyself") {
+      if (args.size() != 3) {
+        return {ErrorCodes::ERR_PARSEOPT, "args size incorrect!"};
+      }
+
+      auto time = tendisplus::stoull(args[2]);
+      if (!time.ok()) {
+        return time.status();
+      }
+      std::this_thread::sleep_for(std::chrono::seconds(time.value()));
+    } else if (operation == "sleep" || operation == "lockdb") {
       if (args.size() != 3) {
         return {ErrorCodes::ERR_PARSEOPT, "args size incorrect!"};
       }
@@ -4517,7 +4537,7 @@ class TendisadminCommand : public Command {
       if (server->isClusterEnabled() && operation != "lockdb") {
         auto cstate = server->getClusterMgr()->getClusterState();
         if (cstate->getClusterState() == ClusterHealth::CLUSTER_FAIL) {
-          return {ErrorCodes::ERR_CLUSTER_ERR, "cluster is fail"};
+          return {ErrorCodes::ERR_CLUSTER, "cluster is fail"};
         }
         cstate->setGossipBlock(time.value() * 1000);
         std::this_thread::sleep_for(std::chrono::seconds(time.value()));
@@ -5023,6 +5043,36 @@ class JeprofCommand : public Command {
   int32_t keystep() const {
     return 0;
   }
+
+  Expected<std::string> getUsage() {
+    std::vector<std::string> nameList = {"stats.allocated",
+                                         "stats.active",
+                                         "stats.metadata",
+                                         "stats.resident",
+                                         "stats.mapped",
+                                         "stats.retained"};
+
+    // NOTE(takenliu): we need refresh jamalloc statistic data,
+    //   but mallctl("epoch",xxx) maybe have bug and cant refresh,
+    //   so we call malloc_stats_print() to refresh.
+    malloc_stats_print([](void* ctx, const char* s) {}, NULL, NULL);
+
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, nameList.size());
+    for (const auto& name : nameList) {
+      size_t allocated;
+      size_t len = sizeof(allocated);
+
+      if (mallctl(name.c_str(), &allocated, &len, NULL, 0) == 0) {
+      } else {
+        return {ErrorCodes::ERR_UNKNOWN, "mallctl() failed."};
+      }
+      Command::fmtBulk(ss,
+                       name + ": " + std::to_string(allocated) + " (" +
+                         getSizeReadable(allocated) + ")");
+    }
+    return ss.str();
+  }
   Expected<std::string> run(Session* sess) final {
 #ifdef TENDIS_JEMALLOC
     const std::vector<std::string>& args = sess->getArgs();
@@ -5035,9 +5085,11 @@ class JeprofCommand : public Command {
       mallctl("prof.active", NULL, NULL, &active, sizeof(active));
     } else if (action == "dump") {
       mallctl("prof.dump", NULL, NULL, NULL, 0);
+    } else if (action == "stats") {
+      return getUsage();
     } else {
       return {ErrorCodes::ERR_UNKNOWN,
-              "args wrong, only support: jeprof [on/off/dump]"};
+              "args wrong, only support: jeprof [on/off/dump/stats]"};
     }
     return Command::fmtOK();
 #else

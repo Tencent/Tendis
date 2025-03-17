@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-#include "asio.hpp"
+#include "asio.hpp"  // NOLINT(build/include_subdir)
 
 #include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/network/network.h"

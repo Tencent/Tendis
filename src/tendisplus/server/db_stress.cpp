@@ -423,8 +423,8 @@ class KeyBuffer {
     assert(std::size_t(FLAGS_key_prefix) < sizeof(buffer_));
     memset(buffer_, 'a', FLAGS_key_prefix);
   }
-  KeyBuffer& operator=(KeyBuffer& other) = delete;
-  KeyBuffer(KeyBuffer& other) = delete;
+  KeyBuffer& operator=(const KeyBuffer& other) = delete;
+  KeyBuffer(const KeyBuffer& other) = delete;
 
   void Set(int k) {
     std::snprintf(buffer_ + FLAGS_key_prefix,

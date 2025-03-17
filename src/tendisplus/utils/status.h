@@ -40,7 +40,6 @@ enum class ErrorCodes {
   ERR_STORE_NOT_OPEN,
   ERR_LOCK_TIMEOUT,
   ERR_UNKNOWN,
-  ERR_CLUSTER,
   ERR_CONNECT_TRY,
   ERR_MEMORY_LIMIT,
   // special error code for `ChunkMigrateReceiver::receiveSnapshot()`
@@ -62,7 +61,7 @@ enum class ErrorCodes {
   ERR_NO_KEY,
   ERR_OUT_OF_RANGE,
   ERR_WRONG_VERSION_EP,
-  ERR_CLUSTER_ERR,
+  ERR_CLUSTER,
   ERR_MOVED,
   ERR_CLUSTER_REDIR_CROSS_SLOT,
   ERR_CLUSTER_REDIR_DOWN_STATE,
@@ -105,8 +104,7 @@ class Expected {
 
   // here we ignore "explicit" to make return two types
   // Status/T possible. It's more convinent to use
-  Expected(const Status& other)  // NOLINT(runtime/explicit)
-    : _status(other) {
+  Expected(const Status& other) : _status(other) {  // NOLINT(runtime/explicit)
     if (_status.ok()) {
 #ifndef _WIN32
       static const char* s =

@@ -118,15 +118,93 @@ std::list<SlowlogEntry> SlowlogStat::getSlowlogData(uint64_t count) {
   return result;
 }
 
-Status SlowlogStat::initSlowlogFile(std::string logPath) {
-  _slowLog.open(logPath, std::ofstream::app);
+Status SlowlogStat::initSlowlogFile(const std::shared_ptr<ServerParams>& cfg) {
+  if (cfg->slowlogFileSplitEnabled) {
+    return newSlowlogFile(cfg);
+  }
+  _slowLog.open(cfg->slowlogPath, std::ofstream::app);
   if (!_slowLog.is_open()) {
     std::stringstream ss;
-    ss << "open:" << logPath << " failed";
+    ss << "open:" << cfg->slowlogPath << " failed";
     return {ErrorCodes::ERR_INTERNAL, ss.str()};
   }
+  _filesize = std::filesystem::file_size(cfg->slowlogPath);
+  _waitingFlush = false;
 
   return {ErrorCodes::ERR_OK, ""};
+}
+
+// must in lock
+Status SlowlogStat::newSlowlogFile(const std::shared_ptr<ServerParams>& cfg) {
+  std::filesystem::path fpath{cfg->slowlogPath};
+  std::error_code ec;
+  if (std::filesystem::exists(fpath, ec)) {
+    if (std::filesystem::is_symlink(fpath, ec)) {
+      // unlink slowlog
+      std::filesystem::remove(fpath, ec);
+    } else {
+      // mv slowlog slowlog.old
+      std::filesystem::rename(
+        fpath, std::filesystem::path{cfg->slowlogPath + ".old"}, ec);
+    }
+  }
+
+  // filename format: slowlog-timestamp
+  std::filesystem::path realpath = {
+    cfg->slowlogPath + "-" +
+    std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
+                     std::chrono::system_clock::now().time_since_epoch())
+                     .count())};
+  // touch file if not exist
+  _slowLog.open(realpath, std::ios_base::app);
+  _slowLog.close();
+  _filesize = std::filesystem::file_size(realpath, ec);
+  _waitingFlush = false;
+  // ln -s slowlog-timestamp slowlog
+  std::filesystem::create_symlink(realpath.filename(), fpath, ec);
+  _slowLog.open(realpath, std::ios_base::app);
+  if (_slowLog.is_open()) {
+    return {};
+  } else {
+    return {ErrorCodes::ERR_INTERNAL,
+            "open slowlog file failed. " + realpath.string()};
+  }
+}
+
+Status SlowlogStat::recycleSlowlogFile(
+  const std::shared_ptr<ServerParams>& cfg) {
+  std::lock_guard<std::mutex> lk(_fileMutex);
+  std::filesystem::path pathPrefix{cfg->slowlogPath + "-"};
+  if (!std::filesystem::exists(pathPrefix.parent_path())) {
+    // when startup
+    return {};
+  }
+  std::string expectPrefix = pathPrefix.filename();
+  std::vector<std::pair<Tsys_time_point, std::filesystem::directory_entry>>
+    files{};
+  for (const auto& entry :
+       std::filesystem::directory_iterator{pathPrefix.parent_path()}) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    auto filename = entry.path().filename();
+    if (starts_with(filename.string(), expectPrefix)) {
+      files.emplace_back(to_sys(entry.last_write_time()), entry);
+    }
+  }
+
+  std::error_code ec;
+  if (files.size() > cfg->slowlogFileKeepNum) {
+    std::sort(files.begin(), files.end(), [](const auto& l, const auto& r) {
+      return l.first < r.first;
+    });
+    size_t deleted = files.size() - cfg->slowlogFileKeepNum;
+    for (size_t i = 0; i < deleted; ++i) {
+      std::filesystem::remove(files[i].second.path(), ec);
+    }
+  }
+
+  return {};
 }
 
 void SlowlogStat::closeSlowlogFile() {
@@ -134,10 +212,14 @@ void SlowlogStat::closeSlowlogFile() {
 }
 
 void SlowlogStat::slowlogFlush() {
+  if (!_waitingFlush) {
+    return;
+  }
   std::lock_guard<std::mutex> lk(_fileMutex);
   if (_slowLog.is_open()) {
     _slowLog.flush();
   }
+  _waitingFlush = false;
 }
 
 void SlowlogStat::slowlogDataPushEntryIfNeeded(
@@ -152,6 +234,17 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(
   size_t max_string = SLOWLOG_ENTRY_MAX_STRING;
 
   if (cfgs->slowlogFileEnabled) {
+    if (cfgs->slowlogFileSplitEnabled &&
+        (_filesize >> 20) >= cfgs->slowlogFileMaxSizeMb) {
+      std::lock_guard<std::mutex> lk(_fileMutex);
+      if (_slowLog.is_open())
+        _slowLog.flush();
+      _slowLog.close();
+      auto s = newSlowlogFile(cfgs);
+      if (!s.ok()) {
+        LOG(ERROR) << s.getErrmsg();
+      }
+    }
     std::stringstream slowLog;
     slowLog << "# Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";
     slowLog << "# Timestamp: " << time << "\n";
@@ -196,9 +289,12 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(
       }
     }
     slowLog << "\n\n";
-    {
-      std::lock_guard<std::mutex> lk(_fileMutex);
-      _slowLog << slowLog.str();
+    std::string slowlogstr = slowLog.str();
+    std::lock_guard<std::mutex> lk(_fileMutex);
+    if (_slowLog.is_open()) {
+      _slowLog << slowlogstr;
+      _filesize += slowlogstr.size();
+      _waitingFlush = true;
     }
   }
 
@@ -271,11 +367,12 @@ ServerEntry::ServerEntry()
     _dbNum(CONFIG_DEFAULT_DBNUM),
     _scheduleNum(0),
     _cfg(nullptr),
+    _backupRunning(false),
+    _lastBackupSuccess(true),
     _lastBackupTime(0),
     _backupTimes(0),
     _lastBackupFailedTime(0),
     _backupFailedTimes(0),
-    _backupRunning(0),
     _internalErrorCnt(0),
     _lastBackupFailedErr("") {}
 
@@ -299,6 +396,9 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     jemallocBgThreadConf();
   });
 #endif
+  _cfg->serverParamsVar("rocks.rate_limiter_rate_bytes_per_sec")
+    ->setUpdate(
+      [this]() { updateRateLimiter(_cfg->rocksRateLimiterRateBytesPerSec); });
 }
 
 ServerEntry::~ServerEntry() {
@@ -412,10 +512,6 @@ uint32_t ServerEntry::getKVStoreCount() const {
   return _catalog->getKVStoreCount();
 }
 
-void ServerEntry::setBackupRunning() {
-  _backupRunning.fetch_add(1, std::memory_order_relaxed);
-}
-
 Status ServerEntry::adaptSomeThreadNumByCpuNum(
   const std::shared_ptr<ServerParams>& cfg) {
   // request executePool
@@ -458,6 +554,19 @@ Status ServerEntry::adaptSomeThreadNumByCpuNum(
               << cfg->netIoThreadNum;
   }
   return {ErrorCodes::ERR_OK, ""};
+}
+
+void ServerEntry::updateRateLimiter(uint64_t bytesPerSecond) {
+  if (bytesPerSecond == 0) {
+    LOG(WARNING) << "updateRateLimiter ignore, bytesPerSecond is 0.";
+    return;
+  }
+  if (_rateLimiter != NULL) {
+    _rateLimiter->SetBytesPerSecond(bytesPerSecond);
+  } else {
+    LOG(WARNING) << "updateRateLimiter ignore, _rateLimiter is null.";
+    return;
+  }
 }
 
 extern std::string gRenameCmdList;
@@ -750,7 +859,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   });
 
   // init slowlog
-  _slowlogStat.initSlowlogFile(cfg->slowlogPath);
+  _slowlogStat.initSlowlogFile(cfg);
 
   _lastJeprofDumpMemoryGB = 0;
 
@@ -898,34 +1007,37 @@ Status ServerEntry::cancelSession(uint64_t connId) {
 }
 //
 void ServerEntry::endSession(uint64_t connId) {
-  std::lock_guard<std::mutex> lk(_mutex_session);
-  if (!_isRunning.load(std::memory_order_relaxed)) {
-    return;
-  }
-  auto it = _sessions.find(connId);
-  if (it == _sessions.end()) {
-    // NOTE(vinchen): ServerEntry::endSession() is called by
-    // NetSession::endSession(), but it is not holding NetSession::_mutex
-    // So here is possible now.
-    LOG(ERROR) << "destroy conn:" << connId << ",not exists";
-    return;
-  }
+  {
+    std::lock_guard<std::mutex> lk(_mutex_session);
+    if (!_isRunning.load(std::memory_order_relaxed)) {
+      return;
+    }
+    auto it = _sessions.find(connId);
+    if (it == _sessions.end()) {
+      // NOTE(vinchen): ServerEntry::endSession() is called by
+      // NetSession::endSession(), but it is not holding NetSession::_mutex
+      // So here is possible now.
+      LOG(ERROR) << "destroy conn:" << connId << ",not exists";
+      return;
+    }
 
-  INVARIANT_D(it->second->getType() != Session::Type::LOCAL);
+    INVARIANT_D(it->second->getType() != Session::Type::LOCAL);
 
-  SessionCtx* pCtx = it->second->getCtx();
-  INVARIANT(pCtx != nullptr);
-  if (pCtx->getIsMonitor()) {
-    DelMonitorNoLock(connId);
-  }
+    SessionCtx* pCtx = it->second->getCtx();
+    INVARIANT(pCtx != nullptr);
+    if (pCtx->getIsMonitor()) {
+      DelMonitorNoLock(connId);
+    }
 #ifdef TENDIS_DEBUG
-  if (it->second->getType() != Session::Type::LOCAL) {
-    DLOG(INFO) << "ServerEntry endSession id:" << connId
-               << " addr:" << it->second->getRemote()
-               << " type:" << it->second->getTypeStr();
-  }
+    if (it->second->getType() != Session::Type::LOCAL) {
+      DLOG(INFO) << "ServerEntry endSession id:" << connId
+                 << " addr:" << it->second->getRemote()
+                 << " type:" << it->second->getTypeStr();
+    }
 #endif
-  _sessions.erase(it);
+    _sessions.erase(it);
+  }
+  DelSubSession(connId);
 }
 
 std::list<std::shared_ptr<Session>> ServerEntry::getAllSessions() const {
@@ -964,6 +1076,26 @@ void ServerEntry::DelMonitorNoLock(uint64_t connId) {
     if (it->get()->id() == connId) {
       _monitors.erase(it);
       break;
+    }
+  }
+}
+
+void ServerEntry::DelSubSession(uint64_t connId) {
+  std::lock_guard<std::mutex> pubsublk(_mutex_pubsubChannels);
+  for (auto it = _pubsubChannels.begin(); it != _pubsubChannels.end();) {
+    it->second.erase(connId);
+    if (it->second.empty()) {
+      it = _pubsubChannels.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  for (auto it = _pubsubPatterns.begin(); it != _pubsubPatterns.end();) {
+    it->second.erase(connId);
+    if (it->second.empty()) {
+      it = _pubsubPatterns.erase(it);
+    } else {
+      ++it;
     }
   }
 }
@@ -1083,6 +1215,184 @@ void ServerEntry::replyMonitors(Session* sess) {
       ++iter;
     }
   }
+}
+
+int ServerEntry::PublishMessage(Session* sess) {
+  SessionCtx* pCtx = sess->getCtx();
+  INVARIANT(pCtx != nullptr);
+
+  const auto& args = sess->getArgs();
+
+  const std::string& channel = args[1];
+  const std::string& message = args[2];
+
+  std::vector<std::shared_ptr<Session>> to_publish_session;
+  std::vector<std::shared_ptr<Session>> to_publish_pattern_session;
+  std::vector<std::string> to_publish_pattern;
+  {
+    std::lock_guard<std::mutex> lk(_mutex_pubsubChannels);
+    if (auto iter = _pubsubChannels.find(channel);
+        iter != _pubsubChannels.end()) {
+      for (const auto& [_, sess] : iter->second) {
+        to_publish_session.emplace_back(sess);
+      }
+    }
+
+    for (const auto& [curPattern, curSessionList] : _pubsubPatterns) {
+      if (redis_port::stringmatchlen(curPattern.c_str(),
+                                     curPattern.size(),
+                                     channel.c_str(),
+                                     channel.size(),
+                                     0)) {
+        for (const auto& [_, curSession] : curSessionList) {
+          to_publish_pattern_session.emplace_back(curSession);
+          to_publish_pattern.emplace_back(curPattern);
+        }
+      }
+    }
+  }
+
+  std::stringstream channel_reply;
+  Command::fmtMultiBulkLen(channel_reply, 3);
+  Command::fmtBulk(channel_reply, "message");
+  Command::fmtBulk(channel_reply, channel);
+  Command::fmtBulk(channel_reply, message);
+
+  int cnt = 0;
+  for (auto& pubSess : to_publish_session) {
+    auto s = pubSess->setResponse(channel_reply.str());
+    if (!s.ok()) {
+      LOG(WARNING) << "Failed to publish message. channel:" << channel
+                   << " err: " << s.toString();
+    } else {
+      pubSess->drainRsp();
+      ++cnt;
+    }
+  }
+
+  int index = 0;
+  for (const auto& pubSess : to_publish_pattern_session) {
+    std::stringstream pattern_reply;
+    Command::fmtMultiBulkLen(pattern_reply, 4);
+    Command::fmtBulk(pattern_reply, "pmessage");
+    Command::fmtBulk(pattern_reply, to_publish_pattern[index++]);
+    Command::fmtBulk(pattern_reply, channel);
+    Command::fmtBulk(pattern_reply, message);
+    auto s = pubSess->setResponse(pattern_reply.str());
+    if (!s.ok()) {
+      LOG(WARNING) << "Failed to publish pattern message. channel:" << channel
+                   << "err: " << s.toString();
+    } else {
+      pubSess->drainRsp();
+      ++cnt;
+    }
+  }
+
+  return cnt;
+}
+
+void ServerEntry::SubscribeChannel(uint64_t sessId,
+                                   const std::string& channel) {
+  auto sess = getSession(sessId);
+  INVARIANT(sess != nullptr);
+
+  std::lock_guard<std::mutex> lk(_mutex_pubsubChannels);
+  _pubsubChannels[channel].emplace(sessId, sess);
+}
+
+void ServerEntry::UnsubscribeChannel(Session* sess,
+                                     const std::string& channel) {
+  auto sessId = sess->id();
+  std::lock_guard<std::mutex> lk(_mutex_pubsubChannels);
+
+  auto iter = _pubsubChannels.find(channel);
+  if (iter == _pubsubChannels.end()) {
+    return;
+  }
+
+  iter->second.erase(sessId);
+  if (iter->second.empty()) {
+    _pubsubChannels.erase(iter);
+  }
+}
+
+void ServerEntry::SubscribePattern(uint64_t sessId,
+                                   const std::string& pattern) {
+  auto sess = getSession(sessId);
+  INVARIANT(sess != nullptr);
+
+  std::lock_guard<std::mutex> lk(_mutex_pubsubChannels);
+  _pubsubPatterns[pattern].emplace(sessId, sess);
+}
+
+void ServerEntry::UnsubscribePattern(Session* sess,
+                                     const std::string& pattern) {
+  auto sessId = sess->id();
+  std::lock_guard<std::mutex> lk(_mutex_pubsubChannels);
+
+  auto iter = _pubsubPatterns.find(pattern);
+  if (iter == _pubsubPatterns.end()) {
+    return;
+  }
+
+  iter->second.erase(sessId);
+  if (iter->second.empty()) {
+    _pubsubPatterns.erase(iter);
+  }
+}
+
+void ServerEntry::ListChannelSubscribeNum(
+  std::vector<std::pair<std::string, int>>* channelSubNum) {
+  std::lock_guard<std::mutex> lk(_mutex_pubsubChannels);
+  for (auto& [channel, num] : *channelSubNum) {
+    auto iter = _pubsubChannels.find(channel);
+    if (iter != _pubsubChannels.end()) {
+      num = iter->second.size();
+    }
+  }
+}
+
+void ServerEntry::ListChannelByPattern(const std::string& pattern,
+                                       std::vector<std::string>* channels) {
+  std::lock_guard<std::mutex> lk(_mutex_pubsubChannels);
+  bool isPatternEmpty = pattern.empty();
+  for (const auto& [curChannel, _] : _pubsubChannels) {
+    if (isPatternEmpty ||
+        redis_port::stringmatchlen(pattern.c_str(),
+                                   pattern.size(),
+                                   curChannel.c_str(),
+                                   curChannel.size(),
+                                   0)) {
+      (*channels).emplace_back(curChannel);
+    }
+  }
+}
+
+void ServerEntry::CloseChannelBySlot(SlotsBitmap slots) {
+  if (!getParams()->enableClosePubSubConnection) {
+    return;
+  }
+  std::unordered_set<std::shared_ptr<tendisplus::Session>> sessions;
+  {
+    std::lock_guard<std::mutex> lk(_mutex_pubsubChannels);
+    for (const auto& [channel, sessionMap] : _pubsubChannels) {
+      auto slot = redis_port::keyHashSlot(channel.data(), channel.length());
+      if (slots[slot]) {
+        for (auto sess : sessionMap) {
+          sessions.insert(sess.second);
+        }
+      }
+    }
+  }
+  for (const auto& sess : sessions) {
+    dynamic_cast<NetSession*>(sess.get())->endSession();
+  }
+}
+
+void ServerEntry::CloseAllChannel() {
+  SlotsBitmap slots;
+  slots.set();
+  CloseChannelBySlot(slots);
 }
 
 bool ServerEntry::processRequest(Session* sess) {
@@ -1726,6 +2036,11 @@ void ServerEntry::serverCron() {
     if (_cfg->slowlogFileEnabled) {
       run_with_period(1000) {
         _slowlogStat.slowlogFlush();
+      }
+      if (_cfg->slowlogFileSplitEnabled && _cfg->slowlogFileKeepNum != 0) {
+        run_with_period(1000) {
+          _slowlogStat.recycleSlowlogFile(_cfg);
+        }
       }
     }
     cronLoop++;

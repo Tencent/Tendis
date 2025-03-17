@@ -115,6 +115,7 @@ func testReplMatch2(kvstore_count int, m *util.RedisServer, s *util.RedisServer)
 
 	cli1 := createClient(m)
 	cli2 := createClient(s)
+	log.Infof("add data num %v", <-channel)
 
 	for i := 0; i < kvstore_count; i++ {
 		mPos, err := cli1.Cmd("binlogpos", fmt.Sprintf("%d", i)).Int64()
@@ -136,7 +137,6 @@ func testReplMatch2(kvstore_count int, m *util.RedisServer, s *util.RedisServer)
 		}
 	}
 
-	log.Infof("add data num %v", <-channel)
 	util.CompareDataWithAuth(m.Addr(), *auth, s.Addr(), *auth, kvstore_count)
 	checkScripts(m, s, scripts)
 

@@ -1477,7 +1477,7 @@ class IncrbyCommand : public IncrDecrGeneral {
     const std::string& val = sess->getArgs()[2];
 
     // INCRBY only support integer, or use INCRBYFLOAT
-    long long inc{0};  // NOLINT
+    long long inc{0};  // NOLINT(runtime/int)
     if (!redis_port::string2ll(val.c_str(), val.size(), &inc)) {
       return {ErrorCodes::ERR_INTERGER, ""};
     }
@@ -1615,7 +1615,7 @@ class DecrbyCommand : public IncrDecrGeneral {
     const std::string& val = sess->getArgs()[2];
 
     // DECRBY only support integer, or use DECRBY
-    long long inc{0};  // NOLINT
+    long long inc{0};  // NOLINT(runtime/int)
     if (!redis_port::string2ll(val.c_str(), val.size(), &inc)) {
       return {ErrorCodes::ERR_INTERGER, ""};
     }
@@ -1781,9 +1781,8 @@ class BitopCommand : public Command {
       return {ErrorCodes::ERR_PARSEPKT, "syntax error"};
     }
     if (op == Op::BITOP_NOT && args.size() != 4) {
-      return {
-        ErrorCodes::ERR_PARSEPKT,
-        "BITOP NOT must be called with a single source key."};  // NOLINT(whitespace/line_length)
+      return {ErrorCodes::ERR_PARSEPKT,
+              "BITOP NOT must be called with a single source key."};
     }
 
     SessionCtx* pCtx = sess->getCtx();
@@ -1984,8 +1983,7 @@ class MSetGenericCommand : public Command {
             failed = true;
             break;
           }
-        } else if (result.status().code() !=
-                   ErrorCodes::ERR_COMMIT_RETRY) {  // NOLINT
+        } else if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
           failed = true;
           break;
         } else {

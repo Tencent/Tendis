@@ -47,11 +47,13 @@ std::shared_ptr<ServerParams> makeServerParam(
     myfile << "dir ./" << dir << "/db\n";
     myfile << "dumpdir ./" << dir << "/dump\n";
     myfile << "pidfile ./" << dir << "/tendisplus.pid\n";
+    myfile << "slowlog ./" << dir << "/log/slowlog\n";
   } else {
     myfile << "logdir ./log\n";
     myfile << "dir ./db\n";
     myfile << "dumpdir ./dump\n";
     myfile << "pidfile ./tendisplus.pid\n";
+    myfile << "slowlog ./log/slowlog\n";
   }
   myfile << "storage rocks\n";
   myfile << "rocks.blockcachemb 4096\n";
@@ -1222,7 +1224,9 @@ void testZset2(std::shared_ptr<ServerEntry> svr) {
   for (uint32_t i = 0; i < 100; i++) {
     keys.push_back(i);
   }
-  std::random_shuffle(keys.begin(), keys.end());
+  std::random_device rd;
+  std::mt19937_64 g(rd());
+  std::shuffle(keys.begin(), keys.end(), g);
   for (uint32_t i = 0; i < 100; i++) {
     sess.setArgs(
       {"zadd", "tzk2", std::to_string(keys[i]), std::to_string(keys[i])});
@@ -1395,7 +1399,9 @@ void testZset3(std::shared_ptr<ServerEntry> svr) {
   for (uint32_t i = 0; i < 100; i++) {
     keys.push_back(i);
   }
-  std::random_shuffle(keys.begin(), keys.end());
+  std::random_device rd;
+  std::mt19937_64 g(rd());
+  std::shuffle(keys.begin(), keys.end(), g);
   for (uint32_t i = 0; i < 100; i++) {
     sess.setArgs(
       {"zadd", "tzk3.2", std::to_string(keys[i]), std::to_string(keys[i])});
@@ -1958,8 +1964,7 @@ void testPf(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(),
-              Command::fmtBulk(
-                "Z:7292 v:1,1 Z:1143 v:1,1 Z:7343 v:1,1 Z:603"));  // NOLINT
+              Command::fmtBulk("Z:7292 v:1,1 Z:1143 v:1,1 Z:7343 v:1,1 Z:603"));
 
     sess.setArgs({"pfdebug", "todense", "pfxxx"});
     expect = Command::runSessionCmd(&sess);

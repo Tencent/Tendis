@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-#include "asio.hpp"
+#include "asio.hpp"  // NOLINT(build/include_subdir)
 
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/atomic_utility.h"

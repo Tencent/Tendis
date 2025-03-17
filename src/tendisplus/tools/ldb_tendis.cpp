@@ -7,6 +7,7 @@
 #include "rocksdb/utilities/ttl/db_ttl_impl.h"
 
 #include "tendisplus/storage/record.h"
+#include "tendisplus/utils/time.h"
 
 using namespace ROCKSDB_NAMESPACE;
 using namespace tendisplus;
@@ -256,6 +257,32 @@ void TScanCommand::printLog(const std::string& value) {
   }
 }
 
+std::string escapeNonPrintableAndNonAscii(const std::string& input) {
+  std::ostringstream oss;
+  for (const char c : input) {
+    unsigned char uc = static_cast<unsigned char>(c);
+    if (uc == '\a') {
+      oss << "\\a";
+    } else if (uc == '\b') {
+      oss << "\\b";
+    } else if (uc == '\t') {
+      oss << "\\t";
+    } else if (uc == '\n') {
+      oss << "\\n";
+    } else if (uc == '\r') {
+      oss << "\\r";
+    } else if (uc == '\\') {
+      oss << "\\\\";
+    } else if (uc >= 32 && uc <= 126) {
+      oss << c;
+    } else {
+      oss << "\\x" << std::hex << std::setw(2) << std::setfill('0')
+          << static_cast<int>(uc);
+    }
+  }
+  return oss.str();
+}
+
 void TScanCommand::DoCommand() {
   if (!db_) {
     assert(GetExecuteState().IsFailed());
@@ -321,6 +348,12 @@ void TScanCommand::DoCommand() {
         keyType != RecordType::RT_BINLOG) {
       continue;
     }
+    uint64_t currentTs = msSinceEpoch();
+    uint64_t targetTtl = rv.getTtl();
+    if (targetTtl != 0 && currentTs >= targetTtl) {
+      continue;
+    }
+
     // value length of string
     uint64_t vallen = 0;
     // num of value of secondary key
@@ -376,13 +409,16 @@ void TScanCommand::DoCommand() {
       auto pt = reinterpret_cast<uint64_t*>(const_cast<char*>(pKey.data()));
       pKey = std::to_string(htobe64(*pt));
     }
+
+    auto hexKey = escapeNonPrintableAndNonAscii(pKey);
+
     // type dbid PrimaryKey ttl value(kv) subKeysCount(list/set/zset/hash)
     fprintf(stdout,
             "%c %" PRIu32 " %.*s %" PRIu64 " %" PRIu64 " %" PRIu64 "\n",
             type,
             rk.getDbId(),
-            static_cast<int>(pKey.size()),
-            pKey.data(),
+            static_cast<int>(hexKey.size()),
+            hexKey.data(),
             rv.getTtl(),
             vallen,
             fieldlen);

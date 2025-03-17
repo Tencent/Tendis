@@ -96,7 +96,6 @@ Status ReplManager::receiveFile(const std::string& fullFileName,
   if (!myfile.is_open()) {
     LOG(ERROR) << "open file:" << fullFileName << " for write failed";
     return {ErrorCodes::ERR_INTERNAL, "open file failed"};
-    ;
   }
   size_t fileBatch = (_cfg->binlogRateLimitMB * 1024 * 1024) / 10;
   while (remain) {
@@ -114,14 +113,12 @@ Status ReplManager::receiveFile(const std::string& fullFileName,
       LOG(ERROR) << "write file:" << fullFileName
                  << " failed:" << strerror(errno);
       return {ErrorCodes::ERR_INTERNAL, "write file failed"};
-      ;
     }
     Status s = client->writeLine("+OK");
     if (!s.ok()) {
       LOG(ERROR) << "write file:" << fullFileName
                  << " reply failed:" << s.toString();
       return {ErrorCodes::ERR_INTERNAL, "write client failed"};
-      ;
     }
   }
   return {ErrorCodes::ERR_OK, ""};
@@ -142,7 +139,6 @@ Status ReplManager::receiveFileDirectio(
   if (writable_file == nullptr) {
     LOG(ERROR) << "openWritableFile failed:" << fullFileName;
     return {ErrorCodes::ERR_INTERNAL, "openWritableFile failed."};
-    ;
   }
   while (remain) {
     size_t curSize = std::min(remain, alignedBuf->bufSize);
@@ -169,7 +165,6 @@ Status ReplManager::receiveFileDirectio(
       if (writable_file == nullptr) {
         LOG(ERROR) << "openWritableFile failed:" << fullFileName;
         return {ErrorCodes::ERR_INTERNAL, "openWritableFile failed."};
-        ;
       }
 
       auto rS = writable_file->Append(slice);
@@ -213,12 +208,26 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     _syncStatus[metaSnapshot.id]->lastSyncTime = SCLOCK::time_point::min();
     _syncStatus[metaSnapshot.id]->lastBinlogTs = 0;
   }
+
+
+  // 1) require a blocking-client and auth
+  std::shared_ptr<BlockingTcpClient> client;
+  client = std::move(createClient(
+      metaSnapshot, _connectMasterTimeoutMs.load(std::memory_order_relaxed),
+      CLIENT_MASTER));
+  if (client == nullptr) {
+    LOG(WARNING) << "startFullSync storeid:" << metaSnapshot.id
+                 << " with: " << metaSnapshot.syncFromHost << ":"
+                 << metaSnapshot.syncFromPort << " failed, no valid client";
+    return;
+  }
+
   LocalSessionGuard sg(_svr.get());
   // NOTE(deyukong): there is no need to setup a guard to clean the temp ctx
   // since it's on stack
   sg.getSession()->setArgs({"slavefullsync", std::to_string(metaSnapshot.id)});
 
-  // 1) stop store and clean it's directory
+  // 2) stop store and clean it's directory
   auto expdb = _svr->getSegmentMgr()->getDb(
     sg.getSession(), metaSnapshot.id, mgl::LockMode::LOCK_X);
   if (!expdb.ok()) {
@@ -243,8 +252,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
                << " failed:" << clearStatus.toString();
   }
 
-  std::shared_ptr<BlockingTcpClient> client;
-  // 2) necessary pre-conditions all ok, startup a guard to rollback
+  // 3) necessary pre-conditions all ok, startup a guard to rollback
   // state if failed
   bool rollback = true;
   auto guard = MakeGuard([this, &rollback, &metaSnapshot, &store, &client] {
@@ -270,18 +278,6 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
       }
     }
   });
-
-  // 3) require a blocking-client
-  client = std::move(
-    createClient(metaSnapshot,
-                 _connectMasterTimeoutMs.load(std::memory_order_relaxed),
-                 CLIENT_MASTER));
-  if (client == nullptr) {
-    LOG(WARNING) << "startFullSync storeid:" << metaSnapshot.id
-                 << " with: " << metaSnapshot.syncFromHost << ":"
-                 << metaSnapshot.syncFromPort << " failed, no valid client";
-    return;
-  }
 
   auto newMeta = metaSnapshot.copy();
   newMeta->replState = ReplState::REPL_TRANSFER;
@@ -671,6 +667,7 @@ Status ReplManager::applyRepllogV2(Session* sess,
        * tendisplus version before 2.0.6 */
       binlogTs = msSinceEpoch();
     }
+    sess->getServerEntry()->getStores()[storeId]->setBinlogTime(binlogTs);
   } else {
     auto binlog = applySingleTxnV2(
       sess, storeId, logKey, logValue, BinlogApplyMode::KEEP_BINLOG_ID);
@@ -736,17 +733,6 @@ std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
     v->needNewFile = false;
   }
   return fs;
-}
-
-// ref https://en.cppreference.com/w/cpp/chrono/file_clock/to_from_sys
-// NOTE(raffertyyu) std::chrono::file_clock::to_sys/from_sys is not available
-// until c++20. There is no choice but copying these codes from std library.
-// Remove to_sys function when using c++20
-using Tsys_time_point =
-  std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds>;
-static Tsys_time_point to_sys(const filesystem::file_time_type& tp) noexcept {
-  static constexpr std::chrono::seconds epochDiff{6437664000};
-  return Tsys_time_point{tp.time_since_epoch()} + epochDiff;  // NOLINT
 }
 
 void ReplManager::recycDumpFile(uint32_t storeid) {

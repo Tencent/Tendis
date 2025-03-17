@@ -652,7 +652,7 @@ class ScanCommand : public Command {
      * @brief set filter _type
      * @param type TYPE "type" (after toLower() operation)
      */
-    void setType(std::string& type) {  // NOLINT
+    void setType(const std::string& type) {
       if (recordTypeMap.count(type)) {
         _type = recordTypeMap[type];
       } else if (!type.empty()) {

@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-#include "asio.hpp"
+#include "asio.hpp"  // NOLINT(build/include_subdir)
 #include "gtest/gtest.h"
 
 #include "tendisplus/network/blocking_tcp_client.h"
@@ -106,17 +106,23 @@ class NetworkAsio {
 
  private:
   Status startThread();
-  Status startAcceptThread(std::shared_ptr<std::thread>& acceptThd,
-                           std::shared_ptr<asio::io_context>& acceptCtx);
+  Status startAcceptThread(
+    std::shared_ptr<std::thread>& acceptThd,  // NOLINT(runtime/references)
+    std::shared_ptr<asio::io_context>&
+      acceptCtx);  // NOLINT(runtime/references)
   // we envolve a single-thread accept, mutex is not needed.
-  Status prepareAccept(const std::string& ip,
-                       const uint16_t port,
-                       std::shared_ptr<asio::io_context>& acceptCtx,
-                       std::shared_ptr<asio::ip::tcp::acceptor>& acceptor);
+  Status prepareAccept(
+    const std::string& ip,
+    const uint16_t port,
+    std::shared_ptr<asio::io_context>& acceptCtx,  // NOLINT(runtime/references)
+    std::shared_ptr<asio::ip::tcp::acceptor>&
+      acceptor);  // NOLINT(runtime/references)
   template <typename T>
-  void doAccept(std::shared_ptr<asio::ip::tcp::acceptor>& acceptor);
+  void doAccept(std::shared_ptr<asio::ip::tcp::acceptor>&
+                  acceptor);  // NOLINT(runtime/references)
   std::shared_ptr<asio::io_context> getRwCtx();
-  std::shared_ptr<asio::io_context> getRwCtx(asio::ip::tcp::socket& socket);
+  std::shared_ptr<asio::io_context> getRwCtx(
+    asio::ip::tcp::socket& socket);  // NOLINT(runtime/references)
 
   std::atomic<uint64_t> _connCreated;
   std::shared_ptr<ServerEntry> _server;

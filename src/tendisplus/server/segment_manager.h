@@ -32,6 +32,8 @@ class SegmentMgr {
   virtual ~SegmentMgr() = default;
   SegmentMgr(const SegmentMgr&) = delete;
   SegmentMgr(SegmentMgr&&) = delete;
+  virtual Expected<bool> handleRedirectByKey(Session* sess,
+                                             const std::string& key) = 0;
   virtual Expected<DbWithLock> getDbWithKeyLock(Session* sess,
                                                 const std::string& key,
                                                 mgl::LockMode keyLockMode) = 0;
@@ -62,6 +64,8 @@ class SegmentMgrFnvHash64 : public SegmentMgr {
   virtual ~SegmentMgrFnvHash64() = default;
   SegmentMgrFnvHash64(const SegmentMgrFnvHash64&) = delete;
   SegmentMgrFnvHash64(SegmentMgrFnvHash64&&) = delete;
+  Expected<bool> handleRedirectByKey(Session* sess,
+                                     const std::string& key) final;
   Expected<DbWithLock> getDbWithKeyLock(Session* sess,
                                         const std::string& key,
                                         mgl::LockMode keyLockMode) final;

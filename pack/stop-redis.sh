@@ -4,7 +4,6 @@
 
 #switch to current dir
 CDIR=`dirname $0`
-cd $CDIR
 
 function usage () {
 	echo "usage:"
@@ -18,16 +17,45 @@ PASS_OPT=""
 PASS=""
 if [ $# -eq 2 ]
 then
-    PASS_OPT=" -a "
-    PASS="$2"
+	PASS_OPT=" -a "
+	PASS="$2"
 fi
 
 if [ ! -n "$PORT"  ];then
 	echo "PORT not set, exit"
-	usage;
-	exit;
+	usage
+	exit
 fi
 
 shift
 
-$CDIR/redis-cli -p $PORT $PASS_OPT $PASS shutdown
+DISKROOT="$REDIS_DATA_DIR"
+if [ -z $DISKROOT ]
+then
+	if [ -d "/data1/redis" ]
+	then
+		DISKROOT="/data1"
+	elif [ -d "/data/redis" ]
+	then
+		DISKROOT="/data"
+	else
+		echo "cannot find data directory"
+		exit -1
+	fi
+fi
+
+rootdir="${DISKROOT}/redis/$PORT"
+datadir="${rootdir}/data"
+confpath="${rootdir}/redis.conf"
+
+address=$(grep 'bind' $confpath|awk '{print $2}'|xargs)
+
+opt=""
+version=$($CDIR/redis-cli --version|awk '{print $2}')
+if [[ $version > "6.0.0" ]]
+then
+	opt="--no-auth-warning"
+fi
+
+echo "$CDIR/redis-cli $opt -h $address -p $PORT $PASS_OPT $PASS shutdown"
+$CDIR/redis-cli $opt -h $address -p $PORT $PASS_OPT $PASS shutdown

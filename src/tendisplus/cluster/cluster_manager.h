@@ -512,7 +512,7 @@ class ClusterSession : public NetSession {
 
   Status clusterProcessPacket();
   Status clusterReadHandler();
-  Status clusterSendMessage(ClusterMsg& msg);  // NOLINT
+  Status clusterSendMessage(ClusterMsg& msg);  // NOLINT(runtime/references)
 
   void setNode(const CNodePtr& node);
   CNodePtr getNode() const {
@@ -570,6 +570,9 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void clusterAddNode(CNodePtr node, bool save = false);
   void clusterDelNode(CNodePtr node, bool save = false);
   void clusterRenameNode(CNodePtr node,
+                         const std::string& newname,
+                         bool save = false);
+  void clusterRenameNodeNoLock(CNodePtr node,
                          const std::string& newname,
                          bool save = false);
 
@@ -649,7 +652,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void clusterBroadcastPong(int target, uint64_t offset);
   void clusterSendFail(CNodePtr node, uint64_t offset);
   // TODO(vinchen): make it const reference
-  void clusterBroadcastMessage(ClusterMsg& msg);  // NOLINT
+  void clusterBroadcastMessage(ClusterMsg& msg);  // NOLINT(runtime/references)
 
   // if update == true, _currentEpoch should be updated
   uint64_t clusterGetOrUpdateMaxEpoch(bool update = false);
