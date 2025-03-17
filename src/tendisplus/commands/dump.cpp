@@ -7,10 +7,13 @@
 #include <algorithm>
 #include <limits>
 #include <list>
+#include <map>
+#include <memory>
 #include <numeric>
 #include <string>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/record.h"
@@ -2193,8 +2196,8 @@ class IncrMetaCommand : public Command {
         easyCopy(&buf, &pos, key._type);
         easyCopy(&buf, &pos, key._op);
 #ifdef TENDIS_DEBUG
-        LOG(INFO) << "Add primary key:"
-                  << "key: " << key._key << " version:" << key._version
+        LOG(INFO) << "Add primary key:" << "key: " << key._key
+                  << " version:" << key._version
                   << "type:" << static_cast<int>((key._type >> 4) & 0x0f)
                   << " op:" << static_cast<int>(key._op);
 #endif

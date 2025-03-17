@@ -6,11 +6,15 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <list>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
+#include <unordered_set>
 #include <utility>
+#include <vector>
 
 #ifndef _WIN32
 #ifdef TENDIS_JEMALLOC
@@ -532,8 +536,8 @@ Status ServerEntry::adaptSomeThreadNumByCpuNum(
 
   if (cfg->executorThreadNum == 0) {
     uint32_t threadnum = static_cast<uint32_t>(cpuNum * 1.5);
-    threadnum = std::max(uint32_t(8), threadnum);
-    threadnum = std::min(uint32_t(56), threadnum);
+    threadnum = std::max(static_cast<uint32_t>(8), threadnum);
+    threadnum = std::min(static_cast<uint32_t>(56), threadnum);
 
     if (threadnum % cfg->executorWorkPoolSize != 0) {
       threadnum =
@@ -547,8 +551,8 @@ Status ServerEntry::adaptSomeThreadNumByCpuNum(
 
   if (cfg->netIoThreadNum == 0) {
     uint32_t threadnum = static_cast<uint32_t>(cpuNum / 4);
-    threadnum = std::max(uint32_t(2), threadnum);
-    threadnum = std::min(uint32_t(12), threadnum);
+    threadnum = std::max(static_cast<uint32_t>(2), threadnum);
+    threadnum = std::min(static_cast<uint32_t>(12), threadnum);
     cfg->netIoThreadNum = threadnum;
     LOG(INFO) << "adaptSomeThreadNumByCpuNum netIoThreadNum:"
               << cfg->netIoThreadNum;
@@ -618,7 +622,8 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
       // two-column db, we need to transfer binlog from default_CF to
       // binlog_CF
       LOG(INFO) << "binlogVersion is "
-                << std::to_string((uint64_t)_catalog->getBinlogVersion())
+                << std::to_string(
+                     static_cast<uint64_t>(_catalog->getBinlogVersion()))
                 << ", binlogUsingDefaultCF is false, we start transfering "
                    "binlog from default_CF to binlog_CF";
       // INVARIANT(0);
@@ -627,7 +632,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   } else if (_catalog->getBinlogVersion() == BinlogVersion::BINLOG_VERSION_2) {
     if (cfg->binlogUsingDefaultCF == true) {
       LOG(FATAL) << "binlogVersion is "
-                 << (uint64_t)_catalog->getBinlogVersion()
+                 << static_cast<uint64_t>(_catalog->getBinlogVersion())
                  << ",we need to set binlogUsingDefaultCF to false";
       exit(-1);
     }

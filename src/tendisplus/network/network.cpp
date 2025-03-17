@@ -5,9 +5,12 @@
 #include "tendisplus/network/network.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/storage/varint.h"
@@ -567,8 +570,7 @@ Status NetSession::setResponse(std::string&& s) {
   // when writing response to socket, check memory limit first.
   // memory used = content(will be in sendbuffer)
   //             + sendbuffer(current) + _sendBufferBack(maybe not empty)
-  _commandUsedMemory =
-    s.size() + _sendBufferBytes + _sendBufferBackBytes;
+  _commandUsedMemory = s.size() + _sendBufferBytes + _sendBufferBackBytes;
   auto status = checkMemLimit();
   if (!status.ok()) {
     if (_server) {
@@ -608,11 +610,11 @@ Status NetSession::setResponse(std::string&& s) {
 #define NET_SEND_RSP_BATCH_SIZE 1400
   if (_isSendRunning) {
     _sendBufferBackBytes += s.size();
-    //Afterwards, s is an empty string, content is moved to vector
+    // Afterwards, s is an empty string, content is moved to vector
     _sendBufferBack.push_back(std::move(s));
   } else {
     _sendBufferBytes += s.size();
-    //Afterwards, s is an empty string, content is moved to vector
+    // Afterwards, s is an empty string, content is moved to vector
     _sendBuffer.push_back(std::move(s));
     if (_sendBufferBytes > NET_SEND_RSP_BATCH_SIZE) {
       drainRspWithoutLock();
@@ -1047,7 +1049,7 @@ void NetSession::drainRspWithoutLock() {
                  << _sendBufferBytes;
   }
   std::vector<asio::const_buffer> buffers;
-  for (auto &buffer : _sendBuffer) {
+  for (auto& buffer : _sendBuffer) {
     buffers.push_back(asio::buffer(buffer.c_str(), buffer.size()));
   }
   asio::async_write(

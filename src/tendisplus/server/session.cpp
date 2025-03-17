@@ -5,7 +5,10 @@
 #include "tendisplus/server/session.h"
 
 #include <algorithm>
+#include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "tendisplus/commands/command.h"
 #include "tendisplus/network/session_ctx.h"
@@ -63,7 +66,7 @@ std::string Session::getTypeStr() const {
 
   INVARIANT_D((int32_t)_type <= 2);
 
-  return ts[(int32_t)_type];
+  return ts[static_cast<int32_t>(_type)];
 }
 
 std::string Session::getCmdStr(size_t lengthLimit) const {

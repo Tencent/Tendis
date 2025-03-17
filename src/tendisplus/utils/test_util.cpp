@@ -7,8 +7,10 @@
 #include <algorithm>
 #include <fstream>
 #include <limits>
+#include <map>
 #include <memory>
 #include <random>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -672,7 +674,7 @@ std::string WorkLoad::getWaitingJobs() {
 
 int genRand() {
   int grand = 0;
-  uint32_t ms = (uint32_t)nsSinceEpoch();
+  uint32_t ms = static_cast<uint32_t>(nsSinceEpoch());
   grand = rand_r(reinterpret_cast<unsigned int*>(&ms));
   return grand;
 }

@@ -32,7 +32,7 @@ class Session : public std::enable_shared_from_this<Session> {
   Session(ServerEntry* svr, Type type);
   virtual ~Session();
   uint64_t id() const;
-  //Caution: Implements move semantics, s will be empty afterwards
+  // Caution: Implements move semantics, s will be empty afterwards
   virtual Status setResponse(std::string&& s) = 0;
   // only for unittest
   virtual std::vector<std::string> getResponse() {

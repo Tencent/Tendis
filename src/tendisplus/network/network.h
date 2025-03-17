@@ -167,7 +167,7 @@ class NetSession : public Session {
   virtual std::string getLocalRepr() const;
   asio::ip::tcp::socket borrowConn();
   asio::ip::tcp::socket* getSock();
-  //Implements move semantics, s will be empty afterwards
+  // Implements move semantics, s will be empty afterwards
   virtual Status setResponse(std::string&& s);
   void setCloseAfterRsp();
   virtual void start();

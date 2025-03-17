@@ -68,16 +68,16 @@ func testMemoryLimit() {
 		// soft limit work correctly
 		cliSoft := createClientWithTimeout(&m1, 80)
 		// exceed soft limit first time
-		if _, err := cliSoft.Cmd("lrange", "l1", "0", "30000").Array(); err != nil {
+		if _, err := cliSoft.Cmd("lrange", "l1", "0", "60000").Array(); err != nil {
 			log.Fatalf("lrange failed! err:%v", err)
 		}
 		// no enough time
-		if _, err := cliSoft.Cmd("lrange", "l1", "0", "30000").Array(); err != nil {
+		if _, err := cliSoft.Cmd("lrange", "l1", "0", "60000").Array(); err != nil {
 			log.Fatalf("lrange failed! err:%v", err)
 		}
 		time.Sleep(15 * time.Second)
 		// should be closed
-		_, err := cliSoft.Cmd("lrange", "l1", "0", "30000").Array()
+		_, err := cliSoft.Cmd("lrange", "l1", "0", "60000").Array()
 		if pw.softLimit != 0 && pw.softSecond != 0 {
 			if err == nil {
 				log.Fatalf("soft limit failed!, current limit : %d %d %d", pw.hardLimit, pw.softLimit, pw.softSecond)
@@ -90,7 +90,7 @@ func testMemoryLimit() {
 
 		// hard limit work correctly
 		cliHard := createClientWithTimeout(&m1, 80)
-		_, err = cliHard.Cmd("lrange", "l1", "0", "60000").Array()
+		_, err = cliHard.Cmd("lrange", "l1", "0", "120000").Array()
 		if pw.hardLimit != 0 {
 			if err == nil {
 				log.Fatal("hard limit failed!")
@@ -104,7 +104,7 @@ func testMemoryLimit() {
 		// normal command should reset soft limit state
 		cliSoft1 := createClientWithTimeout(&m1, 80)
 		// exceed soft limit first time
-		if _, err := cliSoft1.Cmd("lrange", "l1", "0", "30000").Array(); err != nil {
+		if _, err := cliSoft1.Cmd("lrange", "l1", "0", "60000").Array(); err != nil {
 			log.Fatalf("lrange failed! err:%v", err)
 		}
 		// run normal command
@@ -113,7 +113,7 @@ func testMemoryLimit() {
 		}
 		time.Sleep(15 * time.Second)
 		// should not be closed
-		if _, err := cliSoft1.Cmd("lrange", "l1", "0", "30000").Array(); err != nil {
+		if _, err := cliSoft1.Cmd("lrange", "l1", "0", "60000").Array(); err != nil {
 			log.Fatalf("reset soft limit failed! err:%v", err)
 		}
 		log.Infof("current limit %d %d %d, end", pw.hardLimit, pw.softLimit, pw.softSecond)
