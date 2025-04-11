@@ -7,9 +7,15 @@
 #include <bitset>
 #include <cmath>
 #include <cstring>
+#include <list>
+#include <memory>
 #include <set>
 #include <sstream>
+#include <string>
 #include <thread>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/varint.h"
@@ -782,8 +788,7 @@ void ClusterNode::setSession(std::shared_ptr<ClusterSession> sess) {
   INVARIANT_D(!_nodeSession);
   _nodeSession = sess;
   if (sess) {
-    LOG(INFO) << "ClusterNode setSession,"
-              << " node name:" << _nodeName
+    LOG(INFO) << "ClusterNode setSession," << " node name:" << _nodeName
               << " node addr:" << sess->getRemoteRepr()
               << " session id:" << sess->id();
   } else {
@@ -1101,7 +1106,7 @@ void ClusterState::clusterHandleConfigEpochCollision(CNodePtr sender) {
             "WARNING: configEpoch collision with node %.40s."
             " configEpoch set to %lu",
             sender->getNodeName().c_str(),
-            (uint64_t)_currentEpoch);
+            static_cast<uint64_t>(_currentEpoch));
 }
 
 uint64_t ClusterState::getCurrentEpoch() const {
@@ -1277,10 +1282,8 @@ Expected<CNodePtr> ClusterState::clusterHandleRedirect(uint32_t slot,
 
   if (node != _myself) {
     std::stringstream ss;
-    ss << "-"
-       << "MOVED"
-       << " " << slot << " " << node->getNodeIp() << ":" << node->getPort()
-       << "\r\n";
+    ss << "-" << "MOVED" << " " << slot << " " << node->getNodeIp() << ":"
+       << node->getPort() << "\r\n";
     return {ErrorCodes::ERR_MOVED, ss.str()};
   }
   return node;
@@ -1489,8 +1492,7 @@ Expected<std::string> ClusterState::getNodeInfo(CNodePtr n) {
     if (emigrStr.ok()) {
       stream << "migrateSlots:" << emigrStr.value() << "\n";
     } else {
-      stream << "migrateSlots:null"
-             << "\n";
+      stream << "migrateSlots:null" << "\n";
     }
   }
   stream << "flag:" << flags << "\n"
@@ -1891,9 +1893,8 @@ Status ClusterState::clusterSetMaster(CNodePtr node,
   }
 
   LOG(INFO) << "replication set node:" << node->getNodeName()
-            << " as my master,"
-            << "ip:" << node->getNodeIp() << " port:" << node->getPort()
-            << ",ignoreRepl:" << ignoreRepl;
+            << " as my master," << "ip:" << node->getNodeIp()
+            << " port:" << node->getPort() << ",ignoreRepl:" << ignoreRepl;
 
   resetManualFailover();
 
@@ -3510,8 +3511,8 @@ std::string ClusterMsg::msgEncode() {  // NOLINT
   setTotlen(static_cast<uint32_t>(head.size() + data.size() + sigLen));
 
   CopyUint(&key, _totlen);
-  CopyUint(&key, (uint16_t)_type);
-  CopyUint(&key, (uint32_t)_mflags);
+  CopyUint(&key, static_cast<uint16_t>(_type));
+  CopyUint(&key, static_cast<uint32_t>(_mflags));
 
   key.insert(key.end(), head.begin(), head.end());
 
@@ -4379,9 +4380,8 @@ Status ClusterManager::startup() {
     auto name = _clusterState->getMyselfNode()->getNodeName();
     auto state = _clusterState->getClusterState();
     std::string clusterState = (unsigned(state) > 0) ? "OK" : "FAIL";
-    LOG(INFO) << "cluster init success:"
-              << " myself node name " << name << " cluster state is "
-              << clusterState;
+    LOG(INFO) << "cluster init success:" << " myself node name " << name
+              << " cluster state is " << clusterState;
   }
 
   std::shared_ptr<ServerParams> params = _svr->getParams();
@@ -4813,7 +4813,7 @@ void ClusterState::cronCheckFailState() {
             "*** NODE %.40s possibly failing, myself:%s, _pingSent delay:%u",
             node->getNodeName().c_str(),
             _myself->getNodeName().c_str(),
-            (uint32_t)delay);
+            static_cast<uint32_t>(delay));
           node->setNodePfail();
           updateState = true;
         }
@@ -5350,6 +5350,7 @@ void ClusterSession::drainReqNet() {
   _sock.async_read_some(
     asio::buffer(_queryBuf.data() + _queryBufPos, readlen),
     [this, self, curr](const std::error_code& ec, size_t actualLen) {
+      _reqMatrix->readed += 1;
       drainReqCallback(ec, actualLen);
     });
 }
@@ -5386,6 +5387,8 @@ void ClusterSession::drainReqCallback(const std::error_code& ec,
 
 void ClusterSession::processReq() {
   _ctx->setProcessPacketStart(nsSinceEpoch());
+  _reqMatrix->waitCost +=
+    _ctx->getProcessPacketStart() - _ctx->getReadPacketTs();
   auto status = clusterProcessPacket();
   _reqMatrix->processed += 1;
   _reqMatrix->processCost += nsSinceEpoch() - _ctx->getProcessPacketStart();
@@ -5555,7 +5558,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
   auto hdr = msg.getHeader();
   auto type = msg.getType();
 
-  _statsMessagesReceived[(uint16_t)type]++;
+  _statsMessagesReceived[static_cast<uint16_t>(type)]++;
 
   uint16_t flags = hdr->_flags;
   uint64_t senderCurrentEpoch = 0, senderConfigEpoch = 0;
@@ -5722,7 +5725,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
                   "About node %.40s added %d ms ago, having flags %d,"
                   " addr %s:%lu",
                   sessNode->getNodeName().c_str(),
-                  (uint32_t)(msSinceEpoch() - sessNode->getCtime()),
+                  static_cast<uint32_t>(msSinceEpoch() - sessNode->getCtime()),
                   sessNode->getFlags(),
                   sessNode->getNodeIp().c_str(),
                   sessNode->getPort());
@@ -6075,7 +6078,7 @@ Status ClusterSession::clusterProcessPacket() {
   serverLog(LL_DEBUG,
             "--- Processing packet of type %s, %u bytes",
             ClusterMsg::clusterGetMessageTypeString(type).c_str(),
-            (uint32_t)totlen);
+            static_cast<uint32_t>(totlen));
 
   if (totlen < 16 || totlen > _pkgSize) {
     return {ErrorCodes::ERR_DECODE, "invalid message len"};
@@ -6103,7 +6106,7 @@ Status ClusterState::clusterSendUpdate(std::shared_ptr<ClusterSession> sess,
                                        uint64_t offset) {
   ClusterMsg msg(
     ClusterMsg::Type::UPDATE, shared_from_this(), _server, offset, node);
-  _statsMessagesSent[uint16_t(ClusterMsg::Type::UPDATE)]++;
+  _statsMessagesSent[static_cast<uint16_t>(ClusterMsg::Type::UPDATE)]++;
   return sess->clusterSendMessage(msg);
 }
 
@@ -6257,7 +6260,7 @@ Status ClusterState::clusterSendPingNoLock(std::shared_ptr<ClusterSession> sess,
   }
   INVARIANT_D(gossipcount == msg.getEntryCount());
 
-  _statsMessagesSent[uint16_t(type)]++;
+  _statsMessagesSent[static_cast<uint16_t>(type)]++;
   return sess->clusterSendMessage(msg);
 }
 

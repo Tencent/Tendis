@@ -46,8 +46,10 @@ class Command {
   const std::string& getName() const;
   void incrCallTimes();
   void incrNanos(uint64_t);
+  void incrNanosFromRead(uint64_t);
   uint64_t getCallTimes() const;
   uint64_t getNanos() const;
+  uint64_t getNanosFromRead() const;
   void resetStatInfo();
   bool isReadOnly() const;
   bool isMultiKey() const;
@@ -179,6 +181,7 @@ class Command {
 
   std::atomic<uint64_t> _callTimes;
   std::atomic<uint64_t> _totalNanoSecs;
+  std::atomic<uint64_t> _totalNanoSecsFromRead;
 };
 
 std::unordered_map<std::string, Command*>& commandMap();

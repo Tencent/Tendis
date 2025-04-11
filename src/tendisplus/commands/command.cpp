@@ -4,11 +4,13 @@
 
 #include "tendisplus/commands/command.h"
 
+#include <iostream>
 #include <limits>
 #include <list>
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -65,9 +67,14 @@ void Command::incrNanos(uint64_t v) {
   _totalNanoSecs.fetch_add(v, std::memory_order_relaxed);
 }
 
+void Command::incrNanosFromRead(uint64_t v) {
+  _totalNanoSecsFromRead.fetch_add(v, std::memory_order_relaxed);
+}
+
 void Command::resetStatInfo() {
   _callTimes = 0;
   _totalNanoSecs = 0;
+  _totalNanoSecsFromRead = 0;
 }
 
 uint64_t Command::getCallTimes() const {
@@ -76,6 +83,10 @@ uint64_t Command::getCallTimes() const {
 
 uint64_t Command::getNanos() const {
   return _totalNanoSecs.load(std::memory_order_relaxed);
+}
+
+uint64_t Command::getNanosFromRead() const {
+  return _totalNanoSecsFromRead.load(std::memory_order_relaxed);
 }
 
 bool Command::isReadOnly() const {
@@ -287,6 +298,7 @@ Expected<std::string> Command::runSessionCmd(Session* sess) {
     auto duration = end - startTs;
     auto executeTime = end - now;
     it->second->incrNanos(executeTime);
+    it->second->incrNanosFromRead(duration);
     sess->getServerEntry()->slowlogPushEntryIfNeeded(
       now / 1000, duration / 1000, executeTime / 1000, sess);
   });

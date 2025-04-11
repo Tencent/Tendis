@@ -3,10 +3,15 @@
 // project for additional information.
 
 #include <algorithm>
+#include <cstdio>
 #include <fstream>
+#include <iostream>
 #include <limits>
+#include <list>
+#include <map>
 #include <memory>
 #include <random>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -53,7 +58,7 @@ void testSetRetry(std::shared_ptr<ServerEntry> svr) {
 
   sess.setArgs({"set", "a", "1"});
   auto expect = Command::runSessionCmd(&sess);
-  EXPECT_EQ(cnt, uint32_t(6));
+  EXPECT_EQ(cnt, static_cast<uint32_t>(6));
   EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_COMMIT_RETRY);
 }
 
@@ -1975,6 +1980,7 @@ TEST(Command, info) {
     {"info", "binloginfo"},
     {"info", "cpu"},
     {"info", "commandstats"},
+    {"info", "commandstats", "showExe"},
     {"info", "cluster"},
     {"info", "keyspace"},
     {"info", "backup"},
@@ -2015,7 +2021,7 @@ TEST(Command, info) {
   };
 
   std::vector<std::vector<std::string>> wrongArr = {
-    {"info", "all", "1"},
+    {"info", "all", "1", "1"},
     {"rocksproperty", "rocks.base_level", "100"},
     {"rocksproperty", "all1", "0"},
     {"rocksproperty", "rocks.base_level1"},

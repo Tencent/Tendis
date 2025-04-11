@@ -452,6 +452,31 @@ class EchoCommand : public Command {
   }
 } echoCmd;
 
+class EchoKeyCommand : public Command {
+ public:
+  EchoKeyCommand() : Command("echokey", "F") {}
+
+  ssize_t arity() const {
+    return 2;
+  }
+
+  int32_t firstkey() const {
+    return 0;
+  }
+
+  int32_t lastkey() const {
+    return 0;
+  }
+
+  int32_t keystep() const {
+    return 0;
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    return Command::fmtBulk(sess->getArgs()[1]);
+  }
+} echokeyCmd;
+
 class TimeCommand : public Command {
  public:
   TimeCommand() : Command("time", "RF") {}
@@ -2025,7 +2050,7 @@ class InfoCommand : public Command {
     }
     section = toLower(section);
 
-    if (sess->getArgs().size() > 2) {
+    if (sess->getArgs().size() > 3) {
       return {ErrorCodes::ERR_PARSEOPT, "invalid args size"};
     }
 
@@ -2343,13 +2368,23 @@ class InfoCommand : public Command {
       ss << "# CommandStats\r\n";
       for (const auto& kv : commandMap()) {
         auto calls = kv.second->getCallTimes();
-        auto usec = kv.second->getNanos() / 1000;
+        // include wait time in the NetSession::_queryBuf
+        auto usecFromRead = kv.second->getNanosFromRead() / 1000;
+        // only exe time
+        auto usecExe = kv.second->getNanos() / 1000;
         if (calls == 0)
           continue;
 
-        ss << "cmdstat_" << kv.first << ":calls=" << calls << ",usec=" << usec
-           << ",usec_per_call="
-           << ((calls == 0) ? 0 : (static_cast<float>(usec) / calls)) << "\r\n";
+        ss << "cmdstat_" << kv.first << ":calls=" << calls
+           << ",usec=" << usecFromRead << ",usec_per_call="
+           << ((calls == 0) ? 0 : (static_cast<float>(usecFromRead) / calls));
+
+        auto& args = sess->getArgs();
+        if (args.size() == 3 && toLower("showExe") == toLower(args[2])) {
+          ss << ",usec_exe=" << usecExe << ",usec_exe_per_call="
+             << ((calls == 0) ? 0 : (static_cast<float>(usecExe) / calls));
+        }
+        ss << "\r\n";
       }
       uint32_t unseenCmdNum = 0;
       uint64_t unseenCmdCalls = 0;

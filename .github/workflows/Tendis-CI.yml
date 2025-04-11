@@ -19,6 +19,7 @@ jobs:
           pip3 install cpplint
           export PATH=$PATH:~/.local/bin/
           cpplint --version
+          clang-format --version
       - name: Lint
         run: |
           export PATH=$PATH:~/.local/bin/

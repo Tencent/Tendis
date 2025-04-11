@@ -1327,38 +1327,55 @@ void ServerEntry::getStatInfo(std::stringstream& ss) const {
      << "\r\n";
   ss << "total_connections_released:" << _netMatrix->connReleased.get()
      << "\r\n";
+  auto readed = _reqMatrix->readed.get();
   auto executed = _reqMatrix->processed.get();
+  ss << "total_package_readed:" << readed << "\r\n";
   ss << "total_commands_processed:" << executed << "\r\n";
   ss << "instantaneous_ops_per_sec:"
      << _serverStat.getInstantaneousMetric(STATS_METRIC_COMMAND) << "\r\n";
 
-  auto allCost = _poolMatrix->executeTime.get() + _poolMatrix->queueTime.get() +
+  // auto allCost = _poolMatrix->executeTime.get()
+  //   + _poolMatrix->queueTime.get()
+  //   + _reqMatrix->sendPacketCost.get();
+  auto allCost = _reqMatrix->waitCost.get() + _reqMatrix->processCost.get() +
     _reqMatrix->sendPacketCost.get();
   ss << "total_commands_cost(ns):" << allCost << "\r\n";
-  ss << "total_commands_workpool_queue_cost(ns):"
-     << _poolMatrix->queueTime.get() << "\r\n";
-  ss << "total_commands_workpool_execute_cost(ns):"
-     << _poolMatrix->executeTime.get() << "\r\n";
-  ss << "total_commands_send_packet_cost(ns):"
-     << _reqMatrix->sendPacketCost.get() << "\r\n";
+  ss << "total_commands_wait_in_read_buffer_cost(ns):"
+     << _reqMatrix->waitCost.get() << "\r\n";
   ss << "total_commands_execute_cost(ns):" << _reqMatrix->processCost.get()
      << "\r\n";
+  ss << "total_commands_send_packet_cost(ns):"
+     << _reqMatrix->sendPacketCost.get() << "\r\n";
+  // The following two indicators can only count the time-costing of the
+  //   task in workpool, but cannot count the time-costing of the request.
+  ss << "total_task_workpool_queue_cost(ns):" << _poolMatrix->queueTime.get()
+     << "\r\n";
+  ss << "total_task_workpool_execute_cost(ns):"
+     << _poolMatrix->executeTime.get() << "\r\n";
 
   if (executed == 0)
     executed = 1;
   ss << "avg_commands_cost(ns):" << allCost / executed << "\r\n";
-  ss << "avg_commands_workpool_queue_cost(ns):"
-     << _poolMatrix->queueTime.get() / executed << "\r\n";
-  ss << "avg_commands_workpool_execute_cost(ns):"
-     << _poolMatrix->executeTime.get() / executed << "\r\n";
-  ss << "avg_commands_send_packet_cost(ns):"
-     << _reqMatrix->sendPacketCost.get() / executed << "\r\n";
+  ss << "avg_commands_wait_in_read_buffer_cost(ns):"
+     << _reqMatrix->waitCost.get() / executed << "\r\n";
   ss << "avg_commands_execute_cost(ns):"
      << _reqMatrix->processCost.get() / executed << "\r\n";
+  ss << "avg_commands_send_packet_cost(ns):"
+     << _reqMatrix->sendPacketCost.get() / executed << "\r\n";
+  // The following two indicators can only count the time-costing of the
+  //   task in workpool, but cannot count the time-costing of the request.
+  //   This is because a single request may be queued multiple times in
+  //   the queue,and a task that is queued once may process multiple requests.
+  auto taskExecuted = _poolMatrix->executed.get();
+  if (taskExecuted != 0) {
+    ss << "avg_task_workpool_queue_cost(ns):"
+       << _poolMatrix->queueTime.get() / taskExecuted << "\r\n";
+    ss << "avg_task_workpool_execute_cost(ns):"
+       << _poolMatrix->executeTime.get() / taskExecuted << "\r\n";
+  }
 
-  ss << "commands_in_queue:" << _poolMatrix->inQueue.get() << "\r\n";
-  ss << "commands_executed_in_workpool:" << _poolMatrix->executed.get()
-     << "\r\n";
+  ss << "task_in_queue:" << _poolMatrix->inQueue.get() << "\r\n";
+  ss << "task_executed_in_workpool:" << _poolMatrix->executed.get() << "\r\n";
 
   ss << "total_stricky_packets:" << _netMatrix->stickyPackets.get() << "\r\n";
   ss << "total_invalid_packets:" << _netMatrix->invalidPackets.get() << "\r\n";
@@ -1410,8 +1427,12 @@ void ServerEntry::appendJSONStat(
   if (sections.find("request") != sections.end()) {
     w.Key("request");
     w.StartObject();
+    w.Key("readed");
+    w.Uint64(_reqMatrix->readed.get());
     w.Key("processed");
     w.Uint64(_reqMatrix->processed.get());
+    w.Key("wait_cost");
+    w.Uint64(_reqMatrix->waitCost.get());
     w.Key("process_cost");
     w.Uint64(_reqMatrix->processCost.get());
     w.Key("send_packet_cost");
@@ -1782,7 +1803,9 @@ void ServerEntry::serverCron() {
           }
         }
       }
+    }
 
+    run_with_period(1000) {
       // full-time matrix collect
       if (_ftmcEnabled.load(std::memory_order_relaxed)) {
         auto tmpNetMatrix = *_netMatrix - oldNetMatrix;

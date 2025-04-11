@@ -6,8 +6,10 @@
 
 #include <cstdlib>
 #include <functional>
+#include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/scopeguard.h"
@@ -16,17 +18,17 @@ namespace tendisplus {
 
 std::string PoolMatrix::toString() const {
   std::stringstream ss;
-  ss << "\ninQueue\t" << inQueue << "\nexecuting\t" << executing
-     << "\nexecuted\t" << executed << "\nqueueTime\t" << queueTime << "ns"
-     << "\nexecuteTime\t" << executeTime << "ns";
+  ss << " inQueue:" << inQueue << " executing:" << executing
+     << " executed:" << executed << " queueTime:" << queueTime << "ns"
+     << " executeTime:" << executeTime << "ns";
   return ss.str();
 }
 
 std::string PoolMatrix::getInfoString() const {
   std::stringstream ss;
   ss << "inQueue " << inQueue << ",executing " << executing << ",executed "
-     << executed << ",queueTime " << queueTime << "ns"
-     << ",executeTime " << executeTime << "ns";
+     << executed << ",queueTime " << queueTime << "ns" << ",executeTime "
+     << executeTime << "ns";
   return ss.str();
 }
 

@@ -57,20 +57,25 @@ const int BUFFER_LONG_SIZE = 10 * 1024 * 1024;
 
 std::string RequestMatrix::toString() const {
   std::stringstream ss;
-  ss << "\nprocessed\t" << processed << "\nprocessCost\t" << processCost << "ns"
-     << "\nsendPacketCost\t" << sendPacketCost << "ns";
+  ss << " readed:" << readed << " processed:" << processed
+     << " waitCost:" << waitCost << "ns" << " processCost:" << processCost
+     << "ns" << " sendPacketCost:" << sendPacketCost << "ns";
   return ss.str();
 }
 
 void RequestMatrix::reset() {
+  readed = 0;
   processed = 0;
+  waitCost = 0;
   processCost = 0;
   sendPacketCost = 0;
 }
 
 RequestMatrix RequestMatrix::operator-(const RequestMatrix& right) {
   RequestMatrix result;
+  result.readed = readed - right.readed;
   result.processed = processed - right.processed;
+  result.waitCost = waitCost - right.waitCost;
   result.processCost = processCost - right.processCost;
   result.sendPacketCost = sendPacketCost - right.sendPacketCost;
   return result;
@@ -78,9 +83,9 @@ RequestMatrix RequestMatrix::operator-(const RequestMatrix& right) {
 
 std::string NetworkMatrix::toString() const {
   std::stringstream ss;
-  ss << "\nstickyPackets\t" << stickyPackets << "\nconnCreated\t" << connCreated
-     << "\nconnReleased\t" << connReleased << "\ninvalidPackets\t"
-     << invalidPackets;
+  ss << " stickyPackets:" << stickyPackets << " connCreated:" << connCreated
+     << " connReleased:" << connReleased
+     << " invalidPackets:" << invalidPackets;
   return ss.str();
 }
 
@@ -984,6 +989,7 @@ void NetSession::drainReqNet() {
     asio::buffer(_queryBuf.data() + _queryBufPos, wantLen),
     [this, self](const std::error_code& ec, size_t actualLen) {
       _ctx->setReadPacketTs(nsSinceEpoch());
+      _reqMatrix->readed += 1;
       drainReqCallback(ec, actualLen);
     });
 }
@@ -992,6 +998,8 @@ void NetSession::processReq() {
   bool continueSched = true;
   if (_args.size()) {
     _ctx->setProcessPacketStart(nsSinceEpoch());
+    _reqMatrix->waitCost +=
+      _ctx->getProcessPacketStart() - _ctx->getReadPacketTs();
     continueSched = _server->processRequest(reinterpret_cast<Session*>(this));
     _reqMatrix->processed += 1;
     _reqMatrix->processCost += nsSinceEpoch() - _ctx->getProcessPacketStart();

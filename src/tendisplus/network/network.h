@@ -52,7 +52,9 @@ class NetworkMatrix {
 
 class RequestMatrix {
  public:
+  Atom<uint64_t> readed{0};          // number of async_read
   Atom<uint64_t> processed{0};       // number of commands
+  Atom<uint64_t> waitCost{0};        // waiting time in NetSession::_queryBuf
   Atom<uint64_t> processCost{0};     // time cost for commands (ns)
   Atom<uint64_t> sendPacketCost{0};  //
   RequestMatrix operator-(const RequestMatrix& right);
