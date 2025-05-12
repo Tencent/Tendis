@@ -175,6 +175,10 @@ Status SlowlogStat::recycleSlowlogFile(
   const std::shared_ptr<ServerParams>& cfg) {
   std::lock_guard<std::mutex> lk(_fileMutex);
   std::filesystem::path pathPrefix{cfg->slowlogPath + "-"};
+  if (!std::filesystem::exists(pathPrefix.parent_path())) {
+    // when startup
+    return {};
+  }
   std::string expectPrefix = pathPrefix.filename();
   std::vector<std::pair<Tsys_time_point, std::filesystem::directory_entry>>
     files{};
