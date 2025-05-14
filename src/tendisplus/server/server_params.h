@@ -551,8 +551,6 @@ class ServerParams {
   bool rocksStrictCapacityLimit = false;
   std::string rocksWALDir = "";
   std::string rocksCompressType = "snappy";
-  int32_t rocksMaxOpenFiles = -1;
-  int32_t rocksMaxBackgroundJobs = 2;
   uint32_t rocksCompactOnDeletionWindow = 0;
   uint32_t rocksCompactOnDeletionTrigger = 0;
   double rocksCompactOnDeletionRatio = 0;
