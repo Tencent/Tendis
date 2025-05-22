@@ -28,7 +28,7 @@
 
 namespace tendisplus {
 
-using funptr = std::function<void()>;
+using funptr = std::function<Status()>;
 using checkfunptr =
   std::function<bool(const std::string&, bool startup, std::string* errinfo)>;
 using preProcess = std::function<std::string(const std::string&)>;
@@ -130,8 +130,10 @@ class StringVar : public BaseVar {
 
     *reinterpret_cast<std::string*>(value) = v;
 
-    if (Onupdate != NULL)
-      Onupdate();
+    if (Onupdate != NULL) {
+      return Onupdate();
+    }
+
     return {ErrorCodes::ERR_OK, ""};
   }
   std::string _defaultValue;
@@ -176,8 +178,9 @@ class IntVar : public BaseVar {
     }
     *reinterpret_cast<int*>(value) = valTemp;
 
-    if (Onupdate != NULL)
-      Onupdate();
+    if (Onupdate != NULL) {
+      return Onupdate();
+    }
 
     return {ErrorCodes::ERR_OK, ""};
   }
@@ -225,8 +228,9 @@ class Int64Var : public BaseVar {
     }
     *reinterpret_cast<int64_t*>(value) = valTemp;
 
-    if (Onupdate != NULL)
-      Onupdate();
+    if (Onupdate != NULL) {
+      return Onupdate();
+    }
 
     return {ErrorCodes::ERR_OK, ""};
   }
@@ -265,8 +269,9 @@ class FloatVar : public BaseVar {
     }
     *reinterpret_cast<float*>(value) = static_cast<float>(eFloat.value());
 
-    if (Onupdate != NULL)
-      Onupdate();
+    if (Onupdate != NULL) {
+      return Onupdate();
+    }
     return {ErrorCodes::ERR_OK, ""};
   }
   float _defaultValue;
@@ -302,8 +307,9 @@ class DoubleVar : public BaseVar {
     }
     *reinterpret_cast<double*>(value) = static_cast<double>(eDouble.value());
 
-    if (Onupdate != NULL)
-      Onupdate();
+    if (Onupdate != NULL) {
+      return Onupdate();
+    }
     return {ErrorCodes::ERR_OK, ""};
   }
   double _defaultValue;
@@ -335,8 +341,9 @@ class BoolVar : public BaseVar {
 
     *reinterpret_cast<bool*>(value) = isOptionOn(v);
 
-    if (Onupdate != NULL)
-      Onupdate();
+    if (Onupdate != NULL) {
+      return Onupdate();
+    }
     return {ErrorCodes::ERR_OK, ""};
   }
   bool _defaultValue;
@@ -406,6 +413,8 @@ class ServerParams {
   bool showVar(const std::string& key, std::string* info) const;
   bool showVar(const std::string& key, std::vector<std::string>* info) const;
   Status setRocksOption(const std::string& name, const std::string& value);
+  Status setRocksOptionDynamic(const std::string& argname,
+                               const std::string& value);
   Status setVar(const std::string& name,
                 const std::string& value,
                 bool startup = true);
@@ -551,8 +560,6 @@ class ServerParams {
   bool rocksStrictCapacityLimit = false;
   std::string rocksWALDir = "";
   std::string rocksCompressType = "snappy";
-  int32_t rocksMaxOpenFiles = -1;
-  int32_t rocksMaxBackgroundJobs = 2;
   uint32_t rocksCompactOnDeletionWindow = 0;
   uint32_t rocksCompactOnDeletionTrigger = 0;
   double rocksCompactOnDeletionRatio = 0;

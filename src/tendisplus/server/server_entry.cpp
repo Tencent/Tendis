@@ -22,6 +22,8 @@
 #endif
 #endif
 
+#include "rocksdb/tendis_extension.h"
+
 #include "tendisplus/commands/command.h"
 #include "tendisplus/lock/lock.h"
 #include "tendisplus/network/latency_record.h"
@@ -382,6 +384,22 @@ ServerEntry::ServerEntry()
     _internalErrorCnt(0),
     _lastBackupFailedErr("") {}
 
+Status ServerEntry::updateCompactDeletion(
+  std::string name, std::shared_ptr<tendisplus::ServerParams> cfg) {
+  auto server = getGlobalServer();
+  LocalSessionGuard sg(server.get());
+  for (uint64_t i = 0; i < server->getKVStoreCount(); i++) {
+    auto expStore = server->getSegmentMgr()->getDb(
+      sg.getSession(), i, mgl::LockMode::LOCK_IS);
+    RET_IF_ERR_EXPECTED(expStore);
+    Status s;
+    // change rockdb options.CompactOnDeletionTableFactory
+    s = expStore.value().store->setCompactOnDeletionCollectorFactory(name, cfg);
+    RET_IF_ERR(s);
+  }
+  return {ErrorCodes::ERR_OK, ""};
+}
+
 ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
   : ServerEntry() {
   _requirepass = cfg->requirepass;
@@ -391,20 +409,42 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
   _dbNum = cfg->dbNum;
   _cfg = cfg;
   // set callback function when dynamically changing option
-  _cfg->serverParamsVar("executorThreadNum")->setUpdate([this]() {
+  _cfg->serverParamsVar("executorThreadNum")->setUpdate([this]() -> Status {
     if (_cfg->executorThreadNum !=
         _executorList.size() * _executorList.back()->size()) {
       _newExecutorThreadNum.store(_cfg->executorThreadNum);
     }
+    return {ErrorCodes::ERR_OK, ""};
   });
 #ifdef TENDIS_JEMALLOC
-  _cfg->serverParamsVar("enable-jemalloc-bgthread")->setUpdate([this]() {
-    jemallocBgThreadConf();
-  });
+  _cfg->serverParamsVar("enable-jemalloc-bgthread")
+    ->setUpdate([this]() -> Status {
+      jemallocBgThreadConf();
+      return {ErrorCodes::ERR_OK, ""};
+    });
 #endif
   _cfg->serverParamsVar("rocks.rate_limiter_rate_bytes_per_sec")
-    ->setUpdate(
-      [this]() { updateRateLimiter(_cfg->rocksRateLimiterRateBytesPerSec); });
+    ->setUpdate([this]() -> Status {
+      updateRateLimiter(_cfg->rocksRateLimiterRateBytesPerSec);
+      return {ErrorCodes::ERR_OK, ""};
+    });
+
+  _cfg->serverParamsVar("rocks.latency-limit")->setUpdate([this]() -> Status {
+    rocksdb::G_ROCKSDB_LATENCY_LIMIT = _cfg->rocksdbLatencyLimit;
+    return {ErrorCodes::ERR_OK, ""};
+  });
+  _cfg->serverParamsVar("rocks.compaction_deletes_window")
+    ->setUpdate([this]() -> Status {
+      return updateCompactDeletion("rocks.compaction_deletes_window", _cfg);
+    });
+  _cfg->serverParamsVar("rocks.compaction_deletes_trigger")
+    ->setUpdate([this]() -> Status {
+      return updateCompactDeletion("rocks.compaction_deletes_trigger", _cfg);
+    });
+  _cfg->serverParamsVar("rocks.compaction_deletes_ratio")
+    ->setUpdate([this]() -> Status {
+      return updateCompactDeletion("rocks.compaction_deletes_ratio", _cfg);
+    });
 }
 
 ServerEntry::~ServerEntry() {

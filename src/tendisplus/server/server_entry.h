@@ -418,6 +418,8 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   void serverCron();
   void jeprofCron();
   void jemallocBgThreadConf();
+  Status updateCompactDeletion(std::string name,
+                               std::shared_ptr<tendisplus::ServerParams> cfg);
   void replyMonitors(Session* sess);
   void DelMonitorNoLock(uint64_t connId);
   void DelSubSession(uint64_t connId);

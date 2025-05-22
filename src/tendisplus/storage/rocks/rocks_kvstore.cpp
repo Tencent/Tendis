@@ -5,12 +5,15 @@
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 
 #include <algorithm>
+#include <iostream>
 #include <limits>
 #include <list>
 #include <map>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -1027,19 +1030,19 @@ Status rocksdbOptionsSet(
   } else if (key == "level0_stop_writes_trigger") {
     options.level0_stop_writes_trigger = static_cast<int>(value);
   } else if (key == "target_file_size_base") {
-    options.target_file_size_base = (uint64_t)value;
+    options.target_file_size_base = static_cast<uint64_t>(value);
   } else if (key == "target_file_size_multiplier") {
     options.target_file_size_multiplier = static_cast<int>(value);
   } else if (key == "level_compaction_dynamic_level_bytes") {
     options.level_compaction_dynamic_level_bytes = static_cast<bool>(value);
   } else if (key == "max_compaction_bytes") {
-    options.max_compaction_bytes = (uint64_t)value;
+    options.max_compaction_bytes = static_cast<uint64_t>(value);
   } else if (key == "soft_pending_compaction_bytes_limit") {
-    options.soft_pending_compaction_bytes_limit = (uint64_t)value;
+    options.soft_pending_compaction_bytes_limit = static_cast<uint64_t>(value);
   } else if (key == "hard_pending_compaction_bytes_limit") {
-    options.hard_pending_compaction_bytes_limit = (uint64_t)value;
+    options.hard_pending_compaction_bytes_limit = static_cast<uint64_t>(value);
   } else if (key == "max_sequential_skip_in_iterations") {
-    options.max_sequential_skip_in_iterations = (uint64_t)value;
+    options.max_sequential_skip_in_iterations = static_cast<uint64_t>(value);
   } else if (key == "max_successive_merges") {
     options.max_successive_merges = static_cast<size_t>(value);
   } else if (key == "optimize_filters_for_hits") {
@@ -1052,14 +1055,14 @@ Status rocksdbOptionsSet(
     options.report_bg_io_stats = static_cast<bool>(value);
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
   } else if (key == "ttl") {
-    options.ttl = (uint64_t)value;
+    options.ttl = static_cast<uint64_t>(value);
 #endif
   } else if (key == "write_buffer_size") {
     options.write_buffer_size = static_cast<size_t>(value);
   } else if (key == "level0_file_num_compaction_trigger") {
     options.level0_file_num_compaction_trigger = static_cast<int>(value);
   } else if (key == "max_bytes_for_level_base") {
-    options.max_bytes_for_level_base = (uint64_t)value;
+    options.max_bytes_for_level_base = static_cast<uint64_t>(value);
   } else if (key == "disable_auto_compactions") {
     options.disable_auto_compactions = static_cast<bool>(value);
   } else if (key == "create_if_missing") {
@@ -1077,11 +1080,11 @@ Status rocksdbOptionsSet(
   } else if (key == "max_file_opening_threads") {
     options.max_file_opening_threads = static_cast<int>(value);
   } else if (key == "max_total_wal_size") {
-    options.max_total_wal_size = (uint64_t)value;
+    options.max_total_wal_size = static_cast<uint64_t>(value);
   } else if (key == "use_fsync") {
     options.use_fsync = static_cast<bool>(value);
   } else if (key == "delete_obsolete_files_period_micros") {
-    options.delete_obsolete_files_period_micros = (uint64_t)value;
+    options.delete_obsolete_files_period_micros = static_cast<uint64_t>(value);
   } else if (key == "max_background_jobs") {
     options.max_background_jobs = static_cast<int>(value);
   } else if (key == "max_subcompactions") {
@@ -1095,13 +1098,13 @@ Status rocksdbOptionsSet(
   } else if (key == "recycle_log_file_num") {
     options.recycle_log_file_num = static_cast<size_t>(value);
   } else if (key == "max_manifest_file_size") {
-    options.max_manifest_file_size = (uint64_t)value;
+    options.max_manifest_file_size = static_cast<uint64_t>(value);
   } else if (key == "table_cache_numshardbits") {
     options.table_cache_numshardbits = static_cast<int>(value);
   } else if (key == "wal_ttl_seconds") {
-    options.WAL_ttl_seconds = (uint64_t)value;
+    options.WAL_ttl_seconds = static_cast<uint64_t>(value);
   } else if (key == "wal_size_limit_mb") {
-    options.WAL_size_limit_MB = (uint64_t)value;
+    options.WAL_size_limit_MB = static_cast<uint64_t>(value);
   } else if (key == "manifest_preallocation_size") {
     options.manifest_preallocation_size = static_cast<size_t>(value);
   } else if (key == "allow_mmap_reads") {
@@ -1137,13 +1140,13 @@ Status rocksdbOptionsSet(
   } else if (key == "use_adaptive_mutex") {
     options.use_adaptive_mutex = static_cast<bool>(value);
   } else if (key == "bytes_per_sync") {
-    options.bytes_per_sync = (uint64_t)value;
+    options.bytes_per_sync = static_cast<uint64_t>(value);
   } else if (key == "wal_bytes_per_sync") {
-    options.wal_bytes_per_sync = (uint64_t)value;
+    options.wal_bytes_per_sync = static_cast<uint64_t>(value);
   } else if (key == "enable_thread_tracking") {
     options.enable_thread_tracking = static_cast<bool>(value);
   } else if (key == "delayed_write_rate") {
-    options.delayed_write_rate = (uint64_t)value;
+    options.delayed_write_rate = static_cast<uint64_t>(value);
   } else if (key == "enable_pipelined_write") {
     options.enable_pipelined_write = static_cast<bool>(value);
   } else if (key == "allow_concurrent_memtable_write") {
@@ -1151,9 +1154,9 @@ Status rocksdbOptionsSet(
   } else if (key == "enable_write_thread_adaptive_yield") {
     options.enable_write_thread_adaptive_yield = static_cast<bool>(value);
   } else if (key == "write_thread_max_yield_usec") {
-    options.write_thread_max_yield_usec = (uint64_t)value;
+    options.write_thread_max_yield_usec = static_cast<uint64_t>(value);
   } else if (key == "write_thread_slow_yield_usec") {
-    options.write_thread_slow_yield_usec = (uint64_t)value;
+    options.write_thread_slow_yield_usec = static_cast<uint64_t>(value);
   } else if (key == "skip_stats_update_on_db_open") {
     options.skip_stats_update_on_db_open = static_cast<bool>(value);
   } else if (key == "allow_2pc") {
@@ -1259,7 +1262,7 @@ Status rocksdbTableOptionsSet(
   } else if (key == "index_block_restart_interval") {
     options.index_block_restart_interval = static_cast<int>(value);
   } else if (key == "metadata_block_size") {
-    options.metadata_block_size = (uint64_t)value;
+    options.metadata_block_size = static_cast<uint64_t>(value);
   } else if (key == "partition_filters") {
     options.partition_filters = static_cast<bool>(value);
   } else if (key == "use_delta_encoding") {
@@ -1372,7 +1375,7 @@ rocksdb::Options RocksKVStore::options(const std::string cf) {
   options.statistics = _stats;
   options.create_if_missing = true;
 
-  options.max_total_wal_size = uint64_t(4294967296);  // 4GB
+  options.max_total_wal_size = static_cast<uint64_t>(4294967296);  // 4GB
 
   if (_cfg->rocksWALDir != "") {
     options.wal_dir = _cfg->rocksWALDir + "/" + dbId() + "/";
@@ -2510,7 +2513,7 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
   }
   result.setFileList(flist);
   result.setEndTimeSec(sinceEpoch());
-  result.setBackupMode((uint32_t)mode);
+  result.setBackupMode(static_cast<uint32_t>(mode));
   result.setBinlogVersion(binlogVersion);
   auto saveret = saveBackupMeta(dir, &result);
   if (!saveret.ok()) {
@@ -2536,7 +2539,7 @@ Expected<std::string> RocksKVStore::saveBackupMeta(const std::string& dir,
   writer.Key("useTimeSec");
   writer.Uint64(backup->getEndTimeSec() - backup->getStartTimeSec());
   writer.Key("binlogVersion");
-  writer.Uint64((uint64_t)backup->getBinlogVersion());
+  writer.Uint64(static_cast<uint64_t>(backup->getBinlogVersion()));
   writer.EndObject();
   std::string data = sb.GetString();
 
@@ -2625,9 +2628,9 @@ Expected<std::string> RocksKVStore::restoreBackup(const std::string& dir) {
   }
 
   uint32_t mode = backup_meta.value().getBackupMode();
-  if (mode == (uint32_t)KVStore::BackupMode::BACKUP_CKPT) {
+  if (mode == static_cast<uint32_t>(KVStore::BackupMode::BACKUP_CKPT)) {
     return copyCkpt(dir);
-  } else if (mode == (uint32_t)KVStore::BackupMode::BACKUP_COPY) {
+  } else if (mode == static_cast<uint32_t>(KVStore::BackupMode::BACKUP_COPY)) {
     return loadCopy(dir);
   }
   LOG(ERROR) << "restoreBackup mode failed:" << dir << " mode:" << mode;
@@ -3272,8 +3275,7 @@ Status RocksKVStore::setOptionDynamic(const std::string& option,
     "rocks.periodic_compaction_seconds",
     "rocks.level0_file_num_compaction_trigger",
     "rocks.level0_slowdown_writes_trigger",
-    "rocks.level0_stop_writes_trigger"
-  };
+    "rocks.level0_stop_writes_trigger"};
   // option, example: "rocks.binlogcf.enable_blob_files"
   // new_option, example: "rocks.enable_blob_files"
   // short_option, example: "enable_blob_files"
@@ -3348,11 +3350,7 @@ const rocksdb::Snapshot* RocksKVStore::getSnapshot() {
 }
 
 Status RocksKVStore::setCompactOnDeletionCollectorFactory(
-  const std::string& option, const std::string& value) {
-  if (option.substr(0, 25) != "rocks.compaction_deletes_") {
-    return {ErrorCodes::ERR_INTERNAL, option + " is not rocksdb option"};
-  }
-
+  const std::string& option, std::shared_ptr<tendisplus::ServerParams> cfg) {
 #if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 11)
   auto table_properties_collector_factories =
     getBaseDB()->GetOptions().table_properties_collector_factories;
@@ -3363,35 +3361,13 @@ Status RocksKVStore::setCompactOnDeletionCollectorFactory(
       auto compactOnDel =
         static_cast<rocksdb::CompactOnDeletionCollectorFactory*>(factory.get());
       if (table_factory_option == "window") {
-        auto ed = tendisplus::stoul(value);
-        if (!ed.ok()) {
-          errinfo = "invalid CompactOnDeletionCollector window value:" + value +
-            " " + ed.status().toString();
-          return {ErrorCodes::ERR_PARSEOPT, errinfo};
-        }
-
-        compactOnDel->SetWindowSize(ed.value());
+        compactOnDel->SetWindowSize(cfg->rocksCompactOnDeletionWindow);
         return {ErrorCodes::ERR_OK, ""};
       } else if (table_factory_option == "trigger") {
-        auto ed = tendisplus::stoul(value);
-        if (!ed.ok()) {
-          errinfo =
-            "invalid CompactOnDeletionCollector trigger value:" + value + " " +
-            ed.status().toString();
-          return {ErrorCodes::ERR_PARSEOPT, errinfo};
-        }
-
-        compactOnDel->SetDeletionTrigger(ed.value());
+        compactOnDel->SetDeletionTrigger(cfg->rocksCompactOnDeletionTrigger);
         return {ErrorCodes::ERR_OK, ""};
       } else if (table_factory_option == "ratio") {
-        auto ed = tendisplus::stod(value);
-        if (!ed.ok()) {
-          errinfo = "invalid CompactOnDeletionCollector ratio value:" + value +
-            " " + ed.status().toString();
-          return {ErrorCodes::ERR_PARSEOPT, errinfo};
-        }
-
-        compactOnDel->SetDeletionRatio(ed.value());
+        compactOnDel->SetDeletionRatio(cfg->rocksCompactOnDeletionRatio);
         return {ErrorCodes::ERR_OK, ""};
       } else {
         return {ErrorCodes::ERR_INTERNAL,
