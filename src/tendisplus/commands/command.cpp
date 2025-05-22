@@ -299,6 +299,7 @@ Expected<std::string> Command::runSessionCmd(Session* sess) {
     auto executeTime = end - now;
     it->second->incrNanos(executeTime);
     it->second->incrNanosFromRead(duration);
+    sess->getServerEntry()->recordLatency(commandName, duration / 1000);
     sess->getServerEntry()->slowlogPushEntryIfNeeded(
       now / 1000, duration / 1000, executeTime / 1000, sess);
   });

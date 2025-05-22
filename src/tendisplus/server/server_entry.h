@@ -27,6 +27,7 @@
 #include "tendisplus/replication/repl_manager.h"
 #include "tendisplus/script/script_manager.h"
 #include "tendisplus/server/index_manager.h"
+#include "tendisplus/server/latency_monitor.h"
 #include "tendisplus/server/segment_manager.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/storage/catalog.h"
@@ -274,12 +275,16 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
     return (ServerStat&)_serverStat;
   }
   void resetServerStat();
+  void resetLatencyStat();
   void resetRocksdbStats(Session* sess);
   CompactionStat& getCompactionStat() const {
     return (CompactionStat&)_compactionStat;
   }
   SlowlogStat& getSlowlogStat() const {
     return (SlowlogStat&)_slowlogStat;
+  }
+  LatencyMonitorSet& getLatencyMonitorSet() const {
+    return (LatencyMonitorSet&)_latencyMonitorSet;
   }
   void logGeneral(Session* sess);
   void handleShutdownCmd();
@@ -295,6 +300,9 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
     uint64_t duration, /* including the queue time */
     uint64_t execTime,
     Session* sess);
+  void recordLatency(const std::string commandName, uint64_t duration) {
+    _latencyMonitorSet.addLatencyInfo(commandName, duration);
+  }
   bool setBackupRunning() {
     std::lock_guard<std::mutex> lk(_mutex);
     bool expected = false;
@@ -509,6 +517,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   ServerStat _serverStat;
   CompactionStat _compactionStat;
   SlowlogStat _slowlogStat;
+  LatencyMonitorSet _latencyMonitorSet;
   uint32_t _lastJeprofDumpMemoryGB;
 };
 }  // namespace tendisplus
