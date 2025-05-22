@@ -4,6 +4,7 @@
 
 #include <fstream>
 #include <memory>
+#include <string>
 
 #include "gtest/gtest.h"
 
@@ -15,8 +16,9 @@
 namespace tendisplus {
 
 int paramUpdateValue = 0;
-void paramOnUpdate() {
+Status paramOnUpdate() {
   paramUpdateValue = 1;
+  return {ErrorCodes::ERR_OK, ""};
 }
 
 TEST(ServerParams, Common) {

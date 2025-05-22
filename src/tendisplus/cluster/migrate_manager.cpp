@@ -5,6 +5,8 @@
 #include "tendisplus/cluster/migrate_manager.h"
 
 #include <algorithm>
+#include <list>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -105,13 +107,17 @@ MigrateManager::MigrateManager(std::shared_ptr<ServerEntry> svr,
     _workload(0),
     _rateLimiter(
       std::make_unique<RateLimiter>(_cfg->migrateRateLimitMB * 1024 * 1024)) {
-  _cfg->serverParamsVar("migrateSenderThreadnum")->setUpdate([this]() {
-    migrateSenderResize(_cfg->migrateSenderThreadnum);
-  });
+  _cfg->serverParamsVar("migrateSenderThreadnum")
+    ->setUpdate([this]() -> Status {
+      migrateSenderResize(_cfg->migrateSenderThreadnum);
+      return {ErrorCodes::ERR_OK, ""};
+    });
 
-  _cfg->serverParamsVar("migrateReceiveThreadnum")->setUpdate([this]() {
-    migrateReceiverResize(_cfg->migrateReceiveThreadnum);
-  });
+  _cfg->serverParamsVar("migrateReceiveThreadnum")
+    ->setUpdate([this]() -> Status {
+      migrateReceiverResize(_cfg->migrateReceiveThreadnum);
+      return {ErrorCodes::ERR_OK, ""};
+    });
 }
 
 Status MigrateManager::startup() {
@@ -720,12 +726,12 @@ bool MigrateManager::containSlot(const SlotsBitmap& smallMap,
   return true;
 }
 
-void MigrateManager::requestRateLimit(uint64_t bytes) {
+void MigrateManager::requestRateLimit(uint64_t bytes) {  // NOLINT
   /* *
    * Set migration rate limit periodically
    */
-  _rateLimiter->SetBytesPerSecond((uint64_t)_cfg->migrateRateLimitMB * 1024 *
-                                  1024);
+  _rateLimiter->SetBytesPerSecond(
+    static_cast<uint64_t>(_cfg->migrateRateLimitMB) * 1024 * 1024);
   _rateLimiter->Request(bytes);
 }
 
@@ -1557,14 +1563,12 @@ Expected<std::string> MigrateManager::getMigrateInfoStrSimple(
   }
   if (importSlots.size()) {
     for (const auto& x : importSlots) {
-      stream1 << "[" << bitsetStrEncode(x.second) << "-<-" << x.first << "]"
-              << " ";
+      stream1 << "[" << bitsetStrEncode(x.second) << "-<-" << x.first << "]" << " ";
     }
   }
   if (migrateSlots.size()) {
     for (const auto& x : migrateSlots) {
-      stream2 << "[" << bitsetStrEncode(x.second) << "->-" << x.first << "]"
-              << " ";
+      stream2 << "[" << bitsetStrEncode(x.second) << "->-" << x.first << "]" << " ";
     }
   }
   return stream1.str() + " " + stream2.str();
