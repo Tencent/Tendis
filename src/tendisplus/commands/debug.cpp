@@ -2086,6 +2086,7 @@ class InfoCommand : public Command {
     infoLevelStats(allsections, defsections, section, sess, result);
     infoRocksdbStats(allsections, defsections, section, sess, result);
     infoRocksdbPerfStats(allsections, defsections, section, sess, result);
+    infoLatencyMonitor(allsections, defsections, section, sess, result);
     infoRocksdbBgError(allsections, defsections, section, sess, result);
 
     return Command::fmtBulk(result.str());
@@ -2713,6 +2714,20 @@ class InfoCommand : public Command {
     }
   }
 
+  static void infoLatencyMonitor(bool allsections,
+                                 bool defsections,
+                                 const std::string& section,
+                                 Session* sess,
+                                 std::stringstream& result) {
+    if (allsections || defsections || section == "latencymonitor") {
+      auto server = sess->getServerEntry();
+
+      result << "# LatencyMonitor\r\n";
+      result << server->getLatencyMonitorSet().getLatencyInfo();
+      result << "\r\n";
+    }
+  }
+
   static void infoRocksdbBgError(bool allsections,
                                  bool defsections,
                                  const std::string& section,
@@ -2976,6 +2991,15 @@ class ConfigCommand : public Command {
       LOG(INFO) << ss.str();
       auto svr = sess->getServerEntry();
       svr->resetRocksdbStats(sess);
+    }
+    if (reset_all || configName == "latency") {
+      LOG(INFO) << "reset latencymonitor";
+      std::stringstream ss;
+      InfoCommand::infoLatencyMonitor(true, true, "latencymonitor", sess, ss);
+      LOG(INFO) << ss.str();
+
+      auto svr = sess->getServerEntry();
+      svr->resetLatencyStat();
     }
   }
 
