@@ -2,13 +2,16 @@ add_library(session session.cpp)
 target_link_libraries(session status glog commands)
 
 add_library(server server_entry.cpp)
-target_link_libraries(server status network nwp time_util rocks_kvstore segment_mgr catalog repl_manager migrate gc_mgr index_mgr cluster_mgr pessimistic server_params script)
+target_link_libraries(server status network nwp time_util rocks_kvstore segment_mgr catalog repl_manager migrate gc_mgr index_mgr cluster_mgr pessimistic server_params script latency_monitor)
 
 add_library(server_params server_params.cpp)
 target_link_libraries(server_params status glog server gtest_main)
 
 add_library(segment_mgr segment_manager.cpp)
 target_link_libraries(segment_mgr status session lock)
+
+add_library(latency_monitor latency_monitor.cpp)
+target_link_libraries(latency_monitor commands ${SYS_LIBS})
 
 add_library(index_mgr index_manager.cpp)
 target_link_libraries(index_mgr status session lock glog ${SYS_LIBS})

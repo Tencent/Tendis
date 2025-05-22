@@ -419,6 +419,7 @@ void ServerEntry::resetServerStat() {
   _reqMatrix->reset();
 
   _serverStat.reset();
+  // _latencyMonitorSet.reset();
 }
 
 void ServerEntry::installPessimisticMgrInLock(
@@ -864,6 +865,8 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     INVARIANT(!pthread_setname_np(pthread_self(), "tx-bgcom-cron"));
     bgCompactCron();
   });
+
+  _latencyMonitorSet.init();
 
   // init slowlog
   _slowlogStat.initSlowlogFile(cfg);

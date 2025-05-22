@@ -873,6 +873,60 @@ void testSlowLog(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(expect.ok());
 }
 
+void testLatencyMonitor(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  sess.setArgs({"set", "ss1", "a"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"set", "ss2", "b"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"set", "ss3", "c"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"get", "ss1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"get", "ss2"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"get", "ss3"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  sess.setArgs({"info"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"set", "ss4", "d"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"set", "ss5", "e"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"get", "ss4"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"get", "ss5"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"info", "latencymonitor"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  expect.value();
+}
+
 void testGlobStylePattern(std::shared_ptr<ServerEntry> svr) {
   asio::io_context ioContext;
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
@@ -1235,6 +1289,25 @@ TEST(Command, slowlog) {
   ptr = fgets(line, sizeof(line) - 1, fp);
   EXPECT_STRCASEEQ(line, "[] set ss2 b \n");
   pclose(fp);
+}
+#endif  // !
+
+#ifndef _WIN32
+TEST(Command, latency) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  {
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
+
+    testLatencyMonitor(server);
+
+#ifndef _WIN32
+    server->stop();
+    EXPECT_EQ(server.use_count(), 1);
+#endif
+  }
 }
 #endif  // !
 
