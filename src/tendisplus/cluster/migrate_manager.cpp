@@ -5,6 +5,8 @@
 #include "tendisplus/cluster/migrate_manager.h"
 
 #include <algorithm>
+#include <list>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -105,13 +107,17 @@ MigrateManager::MigrateManager(std::shared_ptr<ServerEntry> svr,
     _workload(0),
     _rateLimiter(
       std::make_unique<RateLimiter>(_cfg->migrateRateLimitMB * 1024 * 1024)) {
-  _cfg->serverParamsVar("migrateSenderThreadnum")->setUpdate([this]() {
-    migrateSenderResize(_cfg->migrateSenderThreadnum);
-  });
+  _cfg->serverParamsVar("migrateSenderThreadnum")
+    ->setUpdate([this]() -> Status {
+      migrateSenderResize(_cfg->migrateSenderThreadnum);
+      return {ErrorCodes::ERR_OK, ""};
+    });
 
-  _cfg->serverParamsVar("migrateReceiveThreadnum")->setUpdate([this]() {
-    migrateReceiverResize(_cfg->migrateReceiveThreadnum);
-  });
+  _cfg->serverParamsVar("migrateReceiveThreadnum")
+    ->setUpdate([this]() -> Status {
+      migrateReceiverResize(_cfg->migrateReceiveThreadnum);
+      return {ErrorCodes::ERR_OK, ""};
+    });
 }
 
 Status MigrateManager::startup() {
@@ -720,12 +726,12 @@ bool MigrateManager::containSlot(const SlotsBitmap& smallMap,
   return true;
 }
 
-void MigrateManager::requestRateLimit(uint64_t bytes) {
+void MigrateManager::requestRateLimit(uint64_t bytes) {  // NOLINT
   /* *
    * Set migration rate limit periodically
    */
-  _rateLimiter->SetBytesPerSecond((uint64_t)_cfg->migrateRateLimitMB * 1024 *
-                                  1024);
+  _rateLimiter->SetBytesPerSecond(
+    static_cast<uint64_t>(_cfg->migrateRateLimitMB) * 1024 * 1024);
   _rateLimiter->Request(bytes);
 }
 
@@ -1505,13 +1511,11 @@ Expected<std::string> MigrateManager::getMigrateInfoStr(
   std::lock_guard<myMutex> lk(_mutex);
   for (auto iter = _migrateNodes.begin(); iter != _migrateNodes.end(); ++iter) {
     if (slots.test(iter->first)) {
-      stream1 << "[" << iter->first << "->-" << iter->second << "]"
-              << " ";
+      stream1 << "[" << iter->first << "->-" << iter->second << "]" << " ";
     }
   }
   for (auto iter = _importNodes.begin(); iter != _importNodes.end(); ++iter) {
-    stream2 << "[" << iter->first << "-<-" << iter->second << "]"
-            << " ";
+    stream2 << "[" << iter->first << "-<-" << iter->second << "]" << " ";
   }
   if (stream1.str().size() == 0 && stream2.str().size() == 0) {
     return {ErrorCodes::ERR_CLUSTER, "no migrate or import slots"};

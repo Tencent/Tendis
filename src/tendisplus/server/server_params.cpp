@@ -793,6 +793,23 @@ Status ServerParams::setRocksOption(const std::string& argname,
     return {ErrorCodes::ERR_OK, ""};
   }
 }
+
+Status ServerParams::setRocksOptionDynamic(const std::string& argname,
+                                           const std::string& value) {
+  auto server = getGlobalServer();
+  LocalSessionGuard sg(server.get());
+  for (uint64_t i = 0; i < server->getKVStoreCount(); i++) {
+    auto expStore = server->getSegmentMgr()->getDb(
+      sg.getSession(), i, mgl::LockMode::LOCK_IS);
+    RET_IF_ERR_EXPECTED(expStore);
+
+    Status s;
+    // change rocksdb options dynamically
+    s = expStore.value().store->setOptionDynamic(argname, value);
+    RET_IF_ERR(s);
+  }
+  return {ErrorCodes::ERR_OK, ""};
+}
 Status ServerParams::setVar(const std::string& name,
                             const std::string& value,
                             bool startup) {
@@ -805,54 +822,17 @@ Status ServerParams::setVar(const std::string& name,
     if (iter == _mapServerParams.end()) {
       return setRocksOption(argname, value);
     } else {
-      if (argname == "rocks.latency-limit") {
-        auto ed = tendisplus::stoll(value);
-        if (!ed.ok()) {
-          errinfo = "invalid rocksdb options:" + argname + " value:" + value +
-            " " + ed.status().toString();
-          return {ErrorCodes::ERR_PARSEOPT, errinfo};
-        }
-        rocksdb::G_ROCKSDB_LATENCY_LIMIT = ed.value();
-      }
       return iter->second->setVar(value, startup);
     }
   } else {
     // change serverparam and rocksoptions when running
-    if (argname.substr(0, 6) == "rocks.") {
-      if (argname == "rocks.latency-limit") {
-        auto ed = tendisplus::stoll(value);
-        if (!ed.ok()) {
-          errinfo = "invalid rocksdb options:" + argname + " value:" + value +
-            " " + ed.status().toString();
-          return {ErrorCodes::ERR_PARSEOPT, errinfo};
-        }
-        rocksdb::G_ROCKSDB_LATENCY_LIMIT = ed.value();
-        return {ErrorCodes::ERR_OK, ""};
-      }
-      // make sure changed RocksdbOptions take effect when KVstore is running
-      auto server = getGlobalServer();
-      LocalSessionGuard sg(server.get());
-      for (uint64_t i = 0; i < server->getKVStoreCount(); i++) {
-        auto expStore = server->getSegmentMgr()->getDb(
-          sg.getSession(), i, mgl::LockMode::LOCK_IS);
-        RET_IF_ERR_EXPECTED(expStore);
-
-        Status s;
-        // change rocksdb options dynamically
-        if (argname.substr(0, 25) == "rocks.compaction_deletes_") {
-          // change rockdb options.CompactOnDeletionTableFactory
-          s = expStore.value().store->setCompactOnDeletionCollectorFactory(
-            argname, value);
-        } else {
-          s = expStore.value().store->setOptionDynamic(argname, value);
-        }
-        RET_IF_ERR(s);
-      }
-    }
-
     LOG(INFO) << "ServerParams setVar dynamic, " << argname << ": " << value;
     if (iter == _mapServerParams.end()) {
-      return setRocksOption(argname, value);
+      if (argname.substr(0, 6) == "rocks.") {
+        Status s = setRocksOptionDynamic(argname, value);
+        RET_IF_ERR(s);
+        return setRocksOption(argname, value);
+      }
     } else {
       return iter->second->setVar(value, startup);
     }
