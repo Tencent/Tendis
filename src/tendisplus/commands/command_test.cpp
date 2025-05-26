@@ -3,6 +3,7 @@
 // project for additional information.
 
 #include <algorithm>
+#include <cassert>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -11,6 +12,7 @@
 #include <map>
 #include <memory>
 #include <random>
+#include <regex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -873,6 +875,70 @@ void testSlowLog(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(expect.ok());
 }
 
+void testLatencyMonitor(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  for (int i = 0; i < 100; i++) {
+    std::string key = "key" + std::to_string(i);
+    std::string value = "value" + std::to_string(i);
+    sess.setArgs({"set", key.c_str(), value.c_str()});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+  }
+  for (int i = 0; i < 100; i++) {
+    std::string key = "key" + std::to_string(i);
+    sess.setArgs({"get", key.c_str()});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+  }
+  std::regex pattern(R"(LatencyMonitorName:[^\n]+\n((?:[<=|>|T].*\n)+))");
+  std::smatch matches;
+  bool found = false;
+  for (int i = 0; i < 100; i++) {
+    sess.setArgs({"info"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    found = std::regex_search(expect.value(), matches, pattern);
+    if (found) {
+      assert(matches.size() > 2);
+      std::string res = matches[1];
+      assert(res.size() > 10);
+      auto v = res.substr(res.size() - 10, res.size());
+      EXPECT_EQ(std::stoi(v), 200 + i);
+    }
+    EXPECT_EQ(found, true);
+  }
+  sess.setArgs({"info", "latencymonitor"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  found = std::regex_search(expect.value(), matches, pattern);
+  if (found) {
+    assert(matches.size() > 2);
+    std::string res = matches[1];
+    assert(res.size() > 10);
+    auto v = res.substr(res.size() - 10, res.size());
+    EXPECT_EQ(std::stoi(v), 300);
+  }
+  EXPECT_EQ(found, true);
+  sess.setArgs({"config", "resetStat", "latency"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  sess.setArgs({"info", "latencymonitor"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  found = std::regex_search(expect.value(), matches, pattern);
+  if (found) {
+    assert(matches.size() > 2);
+    std::string res = matches[1];
+    assert(res.size() > 10);
+    auto v = res.substr(res.size() - 10, res.size());
+    EXPECT_EQ(std::stoi(v), 1);
+  }
+  EXPECT_EQ(found, true);
+}
+
 void testGlobStylePattern(std::shared_ptr<ServerEntry> svr) {
   asio::io_context ioContext;
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
@@ -1235,6 +1301,25 @@ TEST(Command, slowlog) {
   ptr = fgets(line, sizeof(line) - 1, fp);
   EXPECT_STRCASEEQ(line, "[] set ss2 b \n");
   pclose(fp);
+}
+#endif  // !
+
+#ifndef _WIN32
+TEST(Command, latency) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  {
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
+
+    testLatencyMonitor(server);
+
+#ifndef _WIN32
+    server->stop();
+    EXPECT_EQ(server.use_count(), 1);
+#endif
+  }
 }
 #endif  // !
 
