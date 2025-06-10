@@ -140,6 +140,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   void setNodeCport(uint64_t cport);
 
   std::bitset<CLUSTER_SLOTS> getSlots() const;
+  std::vector<uint16_t> getSlotsVec();
 
   uint32_t getSlavesCount() const;
 
@@ -246,7 +247,8 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   std::shared_ptr<BlockingTcpClient> _nodeClient;
   // slots handled by this node
   std::bitset<CLUSTER_SLOTS> _mySlots;
-  std::string _slotsInfo;  // string info of _mySlots
+  std::vector<uint16_t> _mySlotsVec;  // vector of slots for fast access
+  std::string _slotsInfo;             // string info of _mySlots
   bool _slotsInfoIsOutOfDate;
   uint16_t _numSlaves;
   uint32_t _numSlots;
@@ -573,8 +575,8 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
                          const std::string& newname,
                          bool save = false);
   void clusterRenameNodeNoLock(CNodePtr node,
-                         const std::string& newname,
-                         bool save = false);
+                               const std::string& newname,
+                               bool save = false);
 
   bool clusterSetNodeAsMaster(CNodePtr node);
   bool clusterSetNodeAsMasterNoLock(CNodePtr node);

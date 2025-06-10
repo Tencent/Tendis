@@ -259,6 +259,7 @@ Status ClusterNode::addSlot(uint32_t slot, uint32_t masterSlavesCount) {
     return {ErrorCodes::ERR_INTERNAL, ""};
   }
   _mySlots.set(slot);
+  _mySlotsVec.clear();
   _slotsInfoIsOutOfDate = true;
   _numSlots++;
   if (_numSlots == 1 && masterSlavesCount) {
@@ -271,6 +272,7 @@ bool ClusterNode::setSlotBit(uint32_t slot, uint32_t masterSlavesCount) {
   std::lock_guard<myMutex> lk(_mutex);
   bool old = _mySlots.test(slot);
   _mySlots.set(slot);
+  _mySlotsVec.clear();
   _slotsInfoIsOutOfDate = true;
   if (!old) {
     _numSlots++;
@@ -299,6 +301,7 @@ bool ClusterNode::clearSlotBit(uint32_t slot) {
   std::lock_guard<myMutex> lk(_mutex);
   bool old = _mySlots.test(slot);
   _mySlots.reset(slot);
+  _mySlotsVec.clear();
   _slotsInfoIsOutOfDate = true;
   if (old)
     _numSlots--;
@@ -554,6 +557,14 @@ void ClusterNode::setOrphanedTime(uint64_t t) {
 std::bitset<CLUSTER_SLOTS> ClusterNode::getSlots() const {
   std::lock_guard<myMutex> lk(_mutex);
   return _mySlots;
+}
+// Now the function is only called by ClusterState::clusterSaveNodes()
+std::vector<uint16_t> ClusterNode::getSlotsVec() {
+  std::lock_guard<myMutex> lk(_mutex);
+  if (_mySlotsVec.empty()) {
+    _mySlotsVec = std::move(bitsetEncodeVec(_mySlots));
+  }
+  return _mySlotsVec;
 }
 
 uint32_t ClusterNode::getSlavesCount() const {
@@ -1680,9 +1691,7 @@ Status ClusterState::clusterSaveNodes() {
     std::string masterName =
       (node->getMaster()) ? node->getMaster()->getNodeName() : "-";
 
-    std::bitset<CLUSTER_SLOTS> slots = node->getSlots();
-
-    auto slotBuff = std::move(bitsetEncodeVec(slots));
+    auto slotBuff = node->getSlotsVec();
 
     auto meta = std::make_unique<ClusterMeta>(node->getNodeName(),
                                               node->getNodeIp(),
