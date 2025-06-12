@@ -6,4 +6,4 @@ build
 .vscode
 home*
 pgo
-*cache
+.cache
