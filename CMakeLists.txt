@@ -1,6 +1,12 @@
 cmake_minimum_required (VERSION 3.13.0)
 project (TENDIS_PLUS)
+option(DWARF4_COMPAT "Use DWARF4 for older debuggers" OFF)
 
+if(DWARF4_COMPAT)
+    message("force DWARF4 format for compatibility with older GDB versions")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -gdwarf-4")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -gdwarf-4")
+endif()
 execute_process(COMMAND ./mkreleasehdr.sh WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
@@ -137,6 +143,8 @@ if(CMAKE_COMPILER_IS_GNUCC)
 
 		if(COM_OPT_LTO)
 			message("COM_OPT_LTO is ON, we need jemalloc prof be false, otherwise the process will be hanged")
+            execute_process(COMMAND git reset --hard HEAD
+                WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR})
 		else()
 			set(patchCommand "cd ${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc\; git apply ../patch/jemalloc_patch.diff")
 			message("jemalloc git patch, we force set jemalloc  prof:true")
@@ -145,11 +153,20 @@ if(CMAKE_COMPILER_IS_GNUCC)
 
 		set(WITH_JEMALLOC ON)
 
-		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
+        set(JEMALLOC_COMPILE_FLAGS "-Wno-missing-attributes")
+        if(DWARF4_COMPAT)
+            set(JEMALLOC_COMPILE_FLAGS "${JEMALLOC_COMPILE_FLAGS} -gdwarf-4")
+            execute_process(
+                COMMAND bash -c "git show origin/dev:autogen.sh > ${JEMALLOC_ROOT_DIR}/autogen.sh"
+                WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR}
+            )
+        endif()
+        add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
                 # NOTE(takenliu) support jemalloc profile, before start tendisplus need export as below:
                 #     export MALLOC_CONF="prof:true,prof_prefix:jeprof.out"
-				COMMAND ./autogen.sh --enable-prof --disable-shared CFLAGS=-Wno-missing-attributes CXXFLAGS=-Wno-missing-attributes
-				WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR})
+				COMMAND ./autogen.sh --enable-prof --disable-shared CFLAGS=${JEMALLOC_COMPILE_FLAGS} CXXFLAGS=${JEMALLOC_COMPILE_FLAGS}
+				WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR}
+                )
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/lib/libjemalloc_pic.a"
 				COMMAND make -j16
 				DEPENDS "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
