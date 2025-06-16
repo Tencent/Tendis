@@ -1,5 +1,12 @@
 cmake_minimum_required (VERSION 3.13.0)
 project (TENDIS_PLUS)
+option(DWARF4_COMPAT "Use DWARF4 for older debuggers" ON)
+
+if(DWARF4_COMPAT)
+    message("force DWARF4 format for compatibility with older GDB versions")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -gdwarf-4")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -gdwarf-4")
+endif()
 
 execute_process(COMMAND ./mkreleasehdr.sh WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
@@ -140,11 +147,22 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		execute_process(COMMAND bash "-c" ${patchCommand} OUTPUT_VARIABLE FOO)
 
 		set(WITH_JEMALLOC ON)
+		set(JEMALLOC_COMPILE_FLAGS "-Wno-missing-attributes")
+
+		if(DWARF4_COMPAT)
+			set(JEMALLOC_COMPILE_FLAGS "${JEMALLOC_COMPILE_FLAGS} -gdwarf-4")
+			execute_process(
+				COMMAND sed -i
+				-e "s|echo \"./configure --enable-autogen \\$@|echo \"./configure --enable-autogen \\\\\\\"\\$@\\\\\\\"|"
+				-e "s|^\\./configure --enable-autogen \\$@|./configure --enable-autogen \\\"\\$@\\\"|"
+				${JEMALLOC_ROOT_DIR}/autogen.sh
+				WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+		endif()
 
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
                 # NOTE(takenliu) support jemalloc profile, before start tendisplus need export as below:
                 #     export MALLOC_CONF="prof:true,prof_prefix:jeprof.out"
-				COMMAND ./autogen.sh --enable-prof --disable-shared CFLAGS=-Wno-missing-attributes CXXFLAGS=-Wno-missing-attributes
+				COMMAND ./autogen.sh --enable-prof --disable-shared CFLAGS=${JEMALLOC_COMPILE_FLAGS} CXXFLAGS=${JEMALLOC_COMPILE_FLAGS}
 				WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR})
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/lib/libjemalloc_pic.a"
 				COMMAND make -j16
