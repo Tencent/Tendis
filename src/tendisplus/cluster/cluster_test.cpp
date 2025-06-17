@@ -981,7 +981,9 @@ bool compareNodeName(std::shared_ptr<ServerEntry> svr1,
 }
 
 // if slot set successfully , return ture
-bool checkSlotInfo(std::shared_ptr<ClusterNode> node, std::string slots) {
+bool checkSlotInfo(std::shared_ptr<ClusterNode> node,
+                   std::string slots,
+                   bool del) {
   auto slotInfo = node->getSlots();
   if ((slots.find('{') != std::string::npos) &&
       (slots.find('}') != std::string::npos)) {
@@ -995,8 +997,11 @@ bool checkSlotInfo(std::shared_ptr<ClusterNode> node, std::string slots) {
     auto end = endSlot.value();
     if (start < end) {
       for (size_t i = start; i < end; i++) {
-        if (!slotInfo.test(i)) {
+        if (!del && !slotInfo.test(i)) {
           LOG(ERROR) << "set slot" << i << "fail";
+          return false;
+        } else if (del && slotInfo.test(i)) {
+          LOG(ERROR) << "del slot" << i << "fail";
           return false;
         }
       }
@@ -1237,7 +1242,7 @@ TEST(Cluster, Random_Meet) {
   servers.clear();
 }
 
-TEST(Cluster, AddSlot) {
+void ChangeSlotsTest() {
   std::vector<std::string> dirs = {"node1", "node2"};
   uint32_t startPort = 16300;
 
@@ -1264,26 +1269,26 @@ TEST(Cluster, AddSlot) {
   WorkLoad work1(node1, sess1);
   work1.init();
 
+  auto ctx2 = std::make_shared<asio::io_context>();
+  auto sess2 = makeSession(node2, ctx2);
+  WorkLoad work2(node2, sess2);
+  work2.init();
+
   work1.clusterMeet(node2->getParams()->bindIp, node2->getParams()->port);
   waitClusterMeetEnd(servers);
-
+  // addslots test
   std::vector<std::string> slots = {"{0..8000}", "{8001..16383}"};
 
   work1.addSlots(slots[0]);
   std::this_thread::sleep_for(std::chrono::seconds(10));
 
-  auto ctx2 = std::make_shared<asio::io_context>();
-  auto sess2 = makeSession(node2, ctx2);
-  WorkLoad work2(node2, sess2);
-  work2.init();
   work2.addSlots(slots[1]);
-
   std::this_thread::sleep_for(std::chrono::seconds(10));
 
   for (size_t i = 0; i < slots.size(); i++) {
     auto nodePtr =
       servers[i]->getClusterMgr()->getClusterState()->getMyselfNode();
-    bool s = checkSlotInfo(nodePtr, slots[i]);
+    bool s = checkSlotInfo(nodePtr, slots[i], false);
     EXPECT_TRUE(s);
   }
 
@@ -1291,6 +1296,19 @@ TEST(Cluster, AddSlot) {
   for (auto svr : servers) {
     compareClusterInfo(svr, node1);
   }
+  // delslots test
+  std::vector<std::string> delslots = {"{4000..8000}", "{15000..16383}"};
+  work1.delSlots(delslots[0]);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+  work2.delSlots(delslots[1]);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+  for (size_t i = 0; i < delslots.size(); i++) {
+    auto nodePtr =
+      servers[i]->getClusterMgr()->getClusterState()->getMyselfNode();
+    bool s = checkSlotInfo(nodePtr, delslots[i], true);
+    EXPECT_TRUE(s);
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
 #ifndef _WIN32
   for (auto svr : servers) {
@@ -1299,6 +1317,93 @@ TEST(Cluster, AddSlot) {
   }
 #endif
   servers.clear();
+}
+
+void RangeChangeSlotsTest() {
+  std::vector<std::string> dirs = {"node1", "node2"};
+  uint32_t startPort = 17300;
+
+  const auto guard = MakeGuard([dirs] {
+    for (auto dir : dirs) {
+      destroyEnv(dir);
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+
+  std::vector<std::shared_ptr<ServerEntry>> servers;
+
+  uint32_t index = 0;
+  for (auto dir : dirs) {
+    uint32_t nodePort = startPort + index++;
+    servers.emplace_back(std::move(makeClusterNode(dir, nodePort, storeCnt)));
+  }
+
+  auto& node1 = servers[0];
+  auto& node2 = servers[1];
+
+  auto ctx1 = std::make_shared<asio::io_context>();
+  auto sess1 = makeSession(node1, ctx1);
+  WorkLoad work1(node1, sess1);
+  work1.init();
+  auto ctx2 = std::make_shared<asio::io_context>();
+  auto sess2 = makeSession(node2, ctx2);
+  WorkLoad work2(node2, sess2);
+  work2.init();
+
+  work1.clusterMeet(node2->getParams()->bindIp, node2->getParams()->port);
+  waitClusterMeetEnd(servers);
+
+  // addslotsrange test
+  std::vector<std::pair<uint32_t, uint32_t>> slots = {{0, 8000}, {8001, 16383}};
+  work1.addSlotsRange(slots[0].first, slots[0].second);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+
+  work2.addSlotsRange(slots[1].first, slots[1].second);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+  for (size_t i = 0; i < slots.size(); i++) {
+    auto nodePtr =
+      servers[i]->getClusterMgr()->getClusterState()->getMyselfNode();
+    bool s = checkSlotInfo(nodePtr,
+                           "{" + std::to_string(slots[i].first) + ".." +
+                             std::to_string(slots[i].second) + "}",
+                           false);
+    EXPECT_TRUE(s);
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+  for (auto svr : servers) {
+    compareClusterInfo(svr, node1);
+  }
+  // delslotsrange test
+  std::vector<std::pair<uint32_t, uint32_t>> delslots = {{4000, 8000},
+                                                         {15000, 16383}};
+  work1.delSlotsRange(delslots[0].first, delslots[0].second);
+
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+
+  work2.delSlotsRange(delslots[1].first, delslots[1].second);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+  for (size_t i = 0; i < delslots.size(); i++) {
+    auto nodePtr =
+      servers[i]->getClusterMgr()->getClusterState()->getMyselfNode();
+    bool s = checkSlotInfo(nodePtr,
+                           "{" + std::to_string(delslots[i].first) + ".." +
+                             std::to_string(delslots[i].second) + "}",
+                           true);
+    EXPECT_TRUE(s);
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+#ifndef _WIN32
+  for (auto svr : servers) {
+    svr->stop();
+    LOG(INFO) << "stop " << svr->getParams()->port << " success";
+  }
+#endif
+  servers.clear();
+}
+
+TEST(Cluster, ChangeSlot) {
+  ChangeSlotsTest();
+  RangeChangeSlotsTest();
 }
 
 bool nodeIsMySlave(std::shared_ptr<ServerEntry> svr1,

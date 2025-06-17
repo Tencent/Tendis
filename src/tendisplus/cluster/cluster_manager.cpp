@@ -555,7 +555,7 @@ std::bitset<CLUSTER_SLOTS> ClusterNode::getSlots() const {
   std::lock_guard<myMutex> lk(_mutex);
   return _mySlots;
 }
-// Now the function is only called by ClusterState::clusterSaveNodes()
+
 std::vector<uint16_t> ClusterNode::getSlotsVec() {
   std::lock_guard<myMutex> lk(_mutex);
   if (_slotsInfoIsOutOfDate) {

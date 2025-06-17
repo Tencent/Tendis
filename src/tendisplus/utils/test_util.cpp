@@ -615,6 +615,28 @@ void WorkLoad::addSlots(const std::string& slotsBuff) {
   EXPECT_TRUE(expect.ok());
 }
 
+void WorkLoad::delSlots(const std::string& slotsBuff) {
+  _session->setArgs({"cluster", "delslots", slotsBuff});
+
+  auto expect = Command::runSessionCmd(_session.get());
+  EXPECT_TRUE(expect.ok());
+}
+
+void WorkLoad::addSlotsRange(uint32_t start, uint32_t end) {
+  _session->setArgs(
+    {"cluster", "addslotsrange", std::to_string(start), std::to_string(end)});
+
+  auto expect = Command::runSessionCmd(_session.get());
+  EXPECT_TRUE(expect.ok());
+}
+void WorkLoad::delSlotsRange(uint32_t start, uint32_t end) {
+  _session->setArgs(
+    {"cluster", "delslotsrange", std::to_string(start), std::to_string(end)});
+
+  auto expect = Command::runSessionCmd(_session.get());
+  EXPECT_TRUE(expect.ok());
+}
+
 void WorkLoad::replicate(const std::string& nodeName) {
   _session->setArgs({"cluster", "replicate", nodeName});
 

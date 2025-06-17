@@ -136,7 +136,7 @@ class ClusterCommand : public Command {
             Expected<int64_t> exptSlot = ::tendisplus::stoll(vs);
             RET_IF_ERR_EXPECTED(exptSlot);
 
-            int32_t slot = (int32_t)exptSlot.value();
+            int32_t slot = static_cast<int32_t>(exptSlot.value());
 
             if (slot > CLUSTER_SLOTS - 1 || slot < 0) {
               LOG(ERROR) << "slot" << slot
@@ -335,48 +335,17 @@ class ClusterCommand : public Command {
         return {ErrorCodes::ERR_CLUSTER, "Invalid cluster nodes info"};
       }
     } else if ((arg1 == "addslots" || arg1 == "delslots") && argSize >= 3) {
-      if (myself->nodeIsSlave()) {
-        return {ErrorCodes::ERR_CLUSTER,
-                "slave node can not be addslot or delslot"};
+      Status s = processSlotRange(args, 2, arg1, svr, clusterState, myself);
+      if (!s.ok()) {
+        return s;
       }
-      if (myself->nodeIsArbiter()) {
-        return {ErrorCodes::ERR_CLUSTER, "Can not add/del slots on arbiter."};
+      return Command::fmtOK();
+    } else if ((arg1 == "addslotsrange" || arg1 == "delslotsrange") &&
+               argSize >= 4) {
+      Status s = processSlotRange(args, 2, arg1, svr, clusterState, myself);
+      if (!s.ok()) {
+        return s;
       }
-      for (size_t i = 2; i < argSize; ++i) {
-        if ((args[i].find('{') != std::string::npos) &&
-            (args[i].find('}') != std::string::npos)) {
-          auto eRange = getSlotRange(args[i]);
-
-          RET_IF_ERR_EXPECTED(eRange);
-          uint32_t start = eRange.value().first;
-          uint32_t end = eRange.value().second;
-
-          if (svr->getParams()->clusterSingleNode &&
-              (end - start) != (CLUSTER_SLOTS - 1)) {
-            return {
-              ErrorCodes::ERR_CLUSTER,
-              "You can only addslot 0..16383 when cluster-single-node is on"};
-          }
-
-          Status s = changeSlots(start, end, arg1, svr, clusterState, myself);
-          if (!s.ok()) {
-            LOG(ERROR) << "addslots fail from:" << start << "to:" << end;
-            return s;
-          }
-        } else {
-          auto slotInfo = ::tendisplus::stoul(args[i]);
-
-          RET_IF_ERR_EXPECTED(slotInfo);
-          uint32_t slot = static_cast<uint32_t>(slotInfo.value());
-          Status s = changeSlot(slot, arg1, svr, clusterState, myself);
-          if (!s.ok()) {
-            LOG(ERROR) << "addslots:" << slot << "fail";
-            return s;
-          }
-        }
-      }
-      clusterState->clusterSaveNodes();
-      clusterState->clusterUpdateState();
       return Command::fmtOK();
     } else if (arg1 == "replicate" && argSize == 3) {
       if (!svr->getParams()->binlogEnabled) {
@@ -445,7 +414,7 @@ class ClusterCommand : public Command {
         return {ErrorCodes::ERR_CLUSTER, "keyslot invalid!"};
       }
       uint32_t hash =
-        uint32_t(redis_port::keyHashSlot(key.c_str(), key.size()));
+        static_cast<int32_t>(redis_port::keyHashSlot(key.c_str(), key.size()));
       return Command::fmtBulk(std::to_string(hash));
     } else if (arg1 == "info" && argSize == 2) {
       std::string clusterInfo = clusterState->clusterGenStateDescription();
@@ -687,7 +656,7 @@ class ClusterCommand : public Command {
     if (start < end) {
       for (size_t i = start; i < end + 1; i++) {
         uint32_t index = static_cast<uint32_t>(i);
-        if (arg == "addslots") {
+        if (arg == "addslots" || arg == "addslotsrange") {
           if (clusterState->_allSlots[index] != nullptr) {
             LOG(ERROR) << "slot" << index << "already busy";
             continue;
@@ -713,7 +682,7 @@ class ClusterCommand : public Command {
                  << "to:" << end;
       return {ErrorCodes::ERR_CLUSTER, "ERR Invalid or out of range slot"};
     }
-    return {ErrorCodes::ERR_OK, "finish addslots"};
+    return {ErrorCodes::ERR_OK, "finish change slots"};
   }
 
   Status changeSlot(uint32_t slot,
@@ -742,7 +711,113 @@ class ClusterCommand : public Command {
     if (result == false) {
       return {ErrorCodes::ERR_CLUSTER, "del or add slot fail"};
     }
-    return {ErrorCodes::ERR_OK, "finish add sigle slot"};
+    return {ErrorCodes::ERR_OK, "finish change sigle slot"};
+  }
+
+  Status processSlotRange(const std::vector<std::string>& args,
+                          size_t startIndex,
+                          const std::string& cmd,
+                          ServerEntry* svr,
+                          const std::shared_ptr<ClusterState> clusterState,
+                          const CNodePtr myself) {
+    // Check node role
+    if (myself->nodeIsSlave()) {
+      return {ErrorCodes::ERR_CLUSTER, "slave node cannot add or delete slots"};
+    }
+    if (myself->nodeIsArbiter()) {
+      return {ErrorCodes::ERR_CLUSTER, "Cannot add or delete slots on arbiter"};
+    }
+
+    // Parse and process slot ranges or individual slots
+    if (cmd == "addslots" || cmd == "delslots") {
+      for (size_t i = startIndex; i < args.size(); ++i) {
+        if ((args[i].find('{') != std::string::npos) &&
+            (args[i].find('}') != std::string::npos)) {
+          // Handle slot range
+          auto eRange = getSlotRange(args[i]);
+          RET_IF_ERR_EXPECTED(eRange);
+          uint32_t start = eRange.value().first;
+          uint32_t end = eRange.value().second;
+
+          // Validate and process the slot range
+          Status s = processSlotRangeInternal(
+            start, end, cmd, svr, clusterState, myself);
+          if (!s.ok()) {
+            return s;
+          }
+        } else {
+          // Handle single slot
+          auto slotInfo = ::tendisplus::stoul(args[i]);
+          RET_IF_ERR_EXPECTED(slotInfo);
+          uint32_t slot = static_cast<uint32_t>(slotInfo.value());
+
+          // Validate and process the single slot
+          Status s = changeSlot(slot, cmd, svr, clusterState, myself);
+          if (!s.ok()) {
+            LOG(ERROR) << cmd << ":" << slot << " failed";
+            return s;
+          }
+        }
+      }
+    } else if (cmd == "addslotsrange" || cmd == "delslotsrange") {
+      if ((args.size() - startIndex) % 2 != 0) {
+        return {ErrorCodes::ERR_CLUSTER, "Invalid number of arguments"};
+      }
+
+      for (size_t i = startIndex; i < args.size(); i += 2) {
+        auto startInfo = ::tendisplus::stoul(args[i]);
+        RET_IF_ERR_EXPECTED(startInfo);
+        auto endInfo = ::tendisplus::stoul(args[i + 1]);
+        RET_IF_ERR_EXPECTED(endInfo);
+        uint32_t start = static_cast<uint32_t>(startInfo.value());
+        uint32_t end = static_cast<uint32_t>(endInfo.value());
+
+        // Validate and process the slot range
+        Status s =
+          processSlotRangeInternal(start, end, cmd, svr, clusterState, myself);
+        if (!s.ok()) {
+          return s;
+        }
+      }
+    } else {
+      return {ErrorCodes::ERR_CLUSTER, "Invalid command for slot processing"};
+    }
+
+    // Save and update cluster state
+    clusterState->clusterSaveNodes();
+    clusterState->clusterUpdateState();
+
+    return {ErrorCodes::ERR_OK, "All slots processed successfully"};
+  }
+
+  Status processSlotRangeInternal(
+    uint32_t start,
+    uint32_t end,
+    const std::string& cmd,
+    ServerEntry* svr,
+    const std::shared_ptr<ClusterState> clusterState,
+    const CNodePtr myself) {
+    // Validate slot range
+    if (start > CLUSTER_SLOTS - 1 || end > CLUSTER_SLOTS - 1 || start > end) {
+      return {ErrorCodes::ERR_CLUSTER, "Invalid slot range"};
+    }
+
+    // Check cluster-single-node mode
+    if (svr->getParams()->clusterSingleNode &&
+        (end - start) != (CLUSTER_SLOTS - 1)) {
+      return {ErrorCodes::ERR_CLUSTER,
+              "You can only addslots/delslots[range] from 0 to 16383 when "
+              "cluster-single-node is on"};
+    }
+
+    // Use changeSlots to process the range
+    Status s = changeSlots(start, end, cmd, svr, clusterState, myself);
+    if (!s.ok()) {
+      LOG(ERROR) << cmd << " failed for range: " << start << " to " << end;
+      return s;
+    }
+
+    return {ErrorCodes::ERR_OK, "Slot range processed successfully"};
   }
 
   std::string getKeys(ServerEntry* svr, uint32_t slot, uint32_t count) {
