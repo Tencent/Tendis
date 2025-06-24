@@ -35,7 +35,6 @@ using preProcess = std::function<std::string(const std::string&)>;
 
 std::string removeQuotes(const std::string& v);
 std::string removeQuotesAndToLower(const std::string& v);
-void NoUseWarning(const std::string& name);
 
 class BaseVar {
  public:
@@ -356,24 +355,18 @@ class NoUseVar : public BaseVar {
            checkfunptr ptr,
            preProcess preFun,
            bool allowDynamicSet)
-    : BaseVar(name, v, ptr, preFun, allowDynamicSet), _setFlag(false) {}
+    : BaseVar(name, v, ptr, preFun, allowDynamicSet) {}
   virtual std::string show() const {
     return " not supported anymore";
   }
   virtual std::string default_show() const {
-    return "no";
-  }
-  virtual bool need_show() const {
-    return _setFlag;
+    return "NULL";
   }
 
  private:
   TSAN_SUPPRESSION Status set(const std::string& val, bool startup) {
-    _setFlag = true;
-    NoUseWarning(name);
     return {ErrorCodes::ERR_OK, ""};
   }
-  bool _setFlag;
 };
 
 class rewriteConfigState {

@@ -191,10 +191,6 @@ std::string removeQuotesAndToLower(const std::string& v) {
   return tmp;
 }
 
-void NoUseWarning(const std::string& name) {
-  LOG(INFO) << name << "is not supported anymore" << std::endl;
-}
-
 Status rewriteConfigState::rewriteConfigReadOldFile(
   const std::string& confFile) {
   Status s;

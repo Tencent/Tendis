@@ -370,6 +370,24 @@ void waitNodeFail(const std::shared_ptr<ClusterState>& state,
             << (msSinceEpoch() - start) / 1000 << "s";
 }
 
+void waitNodeOK(const std::shared_ptr<ClusterState>& state,
+                const std::string& nodeName) {
+  auto start = msSinceEpoch();
+  LOG(INFO) << "waiting node:" << nodeName << "to be marked ok";
+
+  auto targetNode = state->clusterLookupNode(nodeName);
+  while (targetNode->nodeFailed()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    if (msSinceEpoch() - start > 40 * 1000) {
+      // take too long time
+      INVARIANT_D(0);
+      break;
+    }
+  }
+  LOG(INFO) << "wait node ok state cost time "
+            << (msSinceEpoch() - start) / 1000 << "s";
+}
+
 // Wait node's MigratingCount & ImportingCount is 0
 void waitMigrateEnd(std::shared_ptr<ServerEntry> node, uint32_t timeoutSec) {
   auto start = msSinceEpoch();
@@ -1327,6 +1345,16 @@ bool nodeIsMaster(std::shared_ptr<ServerEntry> svr) {
   return false;
 }
 
+bool nodeIsSlave(std::shared_ptr<ServerEntry> svr) {
+  if (svr->getParams()->clusterEnabled) {
+    CNodePtr myself = svr->getClusterMgr()->getClusterState()->getMyselfNode();
+    if (myself->nodeIsSlave()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void setNodeAsMySlave(std::shared_ptr<ServerEntry> svr1,
                       std::shared_ptr<ServerEntry> svr2) {
   if (svr1->getParams()->clusterEnabled) {
@@ -1430,6 +1458,156 @@ TEST(Cluster, failover) {
   ASSERT_EQ(nodeIsMaster(node4), true);
   // cluster work ok after vote sucessful
   ASSERT_EQ(clusterOk(state), true);
+
+  state.reset();
+#ifndef _WIN32
+  for (auto svr : servers) {
+    svr->stop();
+    LOG(INFO) << "stop " << svr->getParams()->port << " success";
+  }
+#endif
+
+  servers.clear();
+}
+
+TEST(Cluster, failover2) {
+  std::vector<std::string> dirs = {
+    "node1", "node2", "node3", "node4", "node5", "node6", "node7", "node8"};
+  uint32_t startPort = 16400;
+
+  const auto guard = MakeGuard([dirs] {
+    for (auto dir : dirs) {
+      destroyEnv(dir);
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+
+  std::vector<std::shared_ptr<ServerEntry>> servers;
+
+  uint32_t index = 0;
+  for (auto dir : dirs) {
+    uint32_t nodePort = startPort + index++;
+    servers.emplace_back(
+      std::move(makeClusterNode(dir,
+                                nodePort,
+                                storeCnt1,
+                                true,
+                                false,
+                                false,
+                                {{"cluster-allow-replica-migration", "no"}})));
+  }
+  // 3 master and 5 slave *, make one master fail
+  auto& node1 = servers[0];
+  auto& node2 = servers[1];
+  auto& node3 = servers[2];
+  auto& node4 = servers[3];
+  auto& node5 = servers[4];
+  auto& node6 = servers[5];
+  auto& node7 = servers[6];
+  auto& node8 = servers[7];
+
+  auto ctx1 = std::make_shared<asio::io_context>();
+  auto sess1 = makeSession(node1, ctx1);
+  WorkLoad work1(node1, sess1);
+  work1.init();
+
+  work1.clusterMeet(node2->getParams()->bindIp, node2->getParams()->port);
+  work1.clusterMeet(node3->getParams()->bindIp, node3->getParams()->port);
+  work1.clusterMeet(node4->getParams()->bindIp, node4->getParams()->port);
+  work1.clusterMeet(node5->getParams()->bindIp, node5->getParams()->port);
+  work1.clusterMeet(node6->getParams()->bindIp, node6->getParams()->port);
+  work1.clusterMeet(node7->getParams()->bindIp, node7->getParams()->port);
+  work1.clusterMeet(node8->getParams()->bindIp, node8->getParams()->port);
+
+  waitClusterMeetEnd(servers);
+
+  std::vector<std::string> slots = {
+    "{0..5000}", "{9001..16383}", "{5001..9000}"};
+
+  work1.addSlots(slots[0]);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+
+  auto ctx2 = std::make_shared<asio::io_context>();
+  auto sess2 = makeSession(node2, ctx2);
+  WorkLoad work2(node2, sess2);
+  work2.init();
+  work2.addSlots(slots[1]);
+
+  auto ctx5 = std::make_shared<asio::io_context>();
+  auto sess5 = makeSession(node5, ctx5);
+  WorkLoad work5(node5, sess5);
+  work5.init();
+  work5.addSlots(slots[2]);
+  auto nodeName5 = node5->getClusterMgr()->getClusterState()->getMyselfName();
+
+  auto ctx3 = std::make_shared<asio::io_context>();
+  auto sess3 = makeSession(node3, ctx3);
+  WorkLoad work3(node3, sess3);
+  work3.init();
+  auto nodeName1 = node1->getClusterMgr()->getClusterState()->getMyselfName();
+  work3.replicate(nodeName1);
+
+  auto ctx4 = std::make_shared<asio::io_context>();
+  auto sess4 = makeSession(node4, ctx4);
+  WorkLoad work4(node4, sess4);
+  work4.init();
+  auto state = node1->getClusterMgr()->getClusterState();
+  auto nodeName2 = node2->getClusterMgr()->getClusterState()->getMyselfName();
+  work4.replicate(nodeName2);
+  auto nodeName3 = node3->getClusterMgr()->getClusterState()->getMyselfName();
+  auto nodeName4 = node4->getClusterMgr()->getClusterState()->getMyselfName();
+
+  auto ctx6 = std::make_shared<asio::io_context>();
+  auto sess6 = makeSession(node6, ctx6);
+  WorkLoad work6(node6, sess6);
+  work6.init();
+  work6.replicate(nodeName5);
+
+  auto ctx7 = std::make_shared<asio::io_context>();
+  auto sess7 = makeSession(node7, ctx7);
+  WorkLoad work7(node7, sess7);
+  work7.init();
+  work7.replicate(nodeName5);
+
+  auto ctx8 = std::make_shared<asio::io_context>();
+  auto sess8 = makeSession(node8, ctx8);
+  WorkLoad work8(node8, sess8);
+  work8.init();
+  work8.replicate(nodeName5);
+
+  std::this_thread::sleep_for(std::chrono::seconds(15));
+
+  ASSERT_TRUE(nodeIsMySlave(node1, node3));
+  ASSERT_TRUE(nodeIsMySlave(node2, node4));
+  ASSERT_TRUE(nodeIsMySlave(node5, node6));
+  ASSERT_TRUE(nodeIsMySlave(node5, node7));
+  ASSERT_TRUE(nodeIsMySlave(node5, node8));
+
+  // make node5 fail, it is
+  work5.sleep(40);  // sleep 30 seconds, it should marked as fail
+  // master node2 mark fail
+  waitNodeFail(state, nodeName5);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+  // one of slaves (node 6, 7, 8) become master
+  ASSERT_TRUE(nodeIsMaster(node6) || nodeIsMaster(node7) ||
+              nodeIsMaster(node8));
+
+  // cluster work ok after vote sucessful
+  ASSERT_EQ(clusterOk(state), true);
+  waitNodeOK(state, nodeName5);
+  if (nodeIsMaster(node6)) {
+    ASSERT_TRUE(nodeIsSlave(node5) && nodeIsMySlave(node6, node5));
+    ASSERT_TRUE(nodeIsSlave(node7) && nodeIsMySlave(node6, node7));
+    ASSERT_TRUE(nodeIsSlave(node8) && nodeIsMySlave(node6, node8));
+  } else if (nodeIsMaster(node7)) {
+    ASSERT_TRUE(nodeIsSlave(node5) && nodeIsMySlave(node7, node5));
+    ASSERT_TRUE(nodeIsSlave(node6) && nodeIsMySlave(node7, node6));
+    ASSERT_TRUE(nodeIsSlave(node8) && nodeIsMySlave(node7, node8));
+  } else if (nodeIsMaster(node8)) {
+    ASSERT_TRUE(nodeIsSlave(node5) && nodeIsMySlave(node8, node5));
+    ASSERT_TRUE(nodeIsSlave(node6) && nodeIsMySlave(node8, node6));
+    ASSERT_TRUE(nodeIsSlave(node7) && nodeIsMySlave(node8, node7));
+  }
 
   state.reset();
 #ifndef _WIN32
@@ -2377,8 +2555,13 @@ TEST(Cluster, migrateNotAutoReconfSlave) {
     std::this_thread::sleep_for(std::chrono::seconds(5));
   });
   // 2 master & 2 slave
-  auto servers = makeCluster(
-    startPort, nodeNum, 10, true, false, {}, {{"slave-reconf-enabled", "no"}});
+  auto servers = makeCluster(startPort,
+                             nodeNum,
+                             10,
+                             true,
+                             false,
+                             {},
+                             {{"cluster-allow-replica-migration", "no"}});
   SlotsBitmap sbm;
   for (int i = 0; i <= 8192; i++) {
     sbm.set(i);
