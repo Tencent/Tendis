@@ -1002,6 +1002,12 @@ void ClusterState::clusterUpdateSlotsConfigWith(
   CNodePtr newmaster = nullptr;
   uint32_t dirty_slots_count = 0;
 
+  /* We should detect if sender is new master of our shard.
+   * We will know it if all our slots were migrated to sender, and sender
+   * has no slots except ours */
+  int sender_slots = 0;
+  int migrated_our_slots = 0;
+
   /* Here we set curmaster to this node or the node this node
    * replicates to if it's a slave. In the for loop we are
    * interested to check if slots are taken away from curmaster. */
@@ -1019,6 +1025,8 @@ void ClusterState::clusterUpdateSlotsConfigWith(
     }
     for (size_t j = 0; j < CLUSTER_SLOTS; j++) {
       if (slots.test(j)) {
+        sender_slots++;
+
         if (_allSlots[j] == sender)
           continue;
 
@@ -1035,6 +1043,7 @@ void ClusterState::clusterUpdateSlotsConfigWith(
           }
           if (_allSlots[j] == curmaster) {
             newmaster = sender;
+            migrated_our_slots++;
           }
           clusterDelSlotNoLock(j);
           clusterAddSlotNoLock(sender, j);
@@ -1060,7 +1069,9 @@ void ClusterState::clusterUpdateSlotsConfigWith(
    *    master.
    * 2) We are a slave and our master is left without slots. We need
    *    to replicate to the new slots owner. */
-  if (needReconfigure && _server->getParams()->slaveReconfEnabled) {
+  if (needReconfigure &&
+      (_server->getParams()->clusterAllowReplicaMigration ||
+       sender_slots == migrated_our_slots)) {
     serverLog(LL_WARNING,
               "Configuration change detected "
               "Reconfiguring myself as a replica of %.40s",
