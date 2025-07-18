@@ -6197,7 +6197,7 @@ Status ClusterState::clusterSendPingNoLock(std::shared_ptr<ClusterSession> sess,
    * message to). However practically there may be less valid nodes since
    * nodes in handshake state, disconnected, are not considered. */
   uint32_t nodeCount = getNodeCount();
-  uint32_t freshnodes = nodeCount - 2;
+  uint32_t freshnodes = (nodeCount > 2) ? (nodeCount - 2) : 0;
 
   /* How many gossip sections we want to add? 1/10 of the
    * number of nodes
