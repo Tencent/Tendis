@@ -2309,7 +2309,7 @@ void ServerEntry::slowlogPushEntryIfNeeded(
   uint64_t duration, /* including the queue time */
   uint64_t execTime,
   Session* sess) {
-  if (sess && execTime >= _cfg->slowlogLogSlowerThan) {
+  if (sess && duration >= _cfg->slowlogLogSlowerThan) {
     _slowlogStat.slowlogDataPushEntryIfNeeded(time, duration, execTime, sess);
   }
 }
