@@ -270,6 +270,8 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(
           slowLog << "# " << lockRecord << "\n";
         }
       }
+    }
+    if (cfgs->rocksdbLatencyLimit > 0) {
       for (uint8_t i = 0; i < RocksdbLatencyType::MAX_RLT; ++i) {
         auto rocksdbRecord = sess->getCtx()->generateRocksdbRecordLogIfNeeded(
           static_cast<RocksdbLatencyType>(i));
