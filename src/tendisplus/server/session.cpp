@@ -324,7 +324,7 @@ LocalSessionGuard::~LocalSessionGuard() {
       cmds = "null cmd.";
     }
     LOG(WARNING) << "latency too long localsession cmd:" << cmds << " " << s
-                << " threadid:" << getCurThreadId();
+                 << " threadid:" << getCurThreadId();
   }
 }
 
