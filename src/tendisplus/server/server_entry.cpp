@@ -262,21 +262,22 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(
     slowLog << "# Thread_id: " << getCurThreadId() << "\n";
     slowLog << "# Session_id: " << sess->id() << "\n";
     slowLog << "# Read_Pack_ts: " << sess->getCtx()->getReadPacketTs() << "\n";
-    for (uint8_t i = 0; i < LockLatencyType::MAX_LLT; ++i) {
-      auto lockRecord = sess->getCtx()->generateLockRecordLogIfNeeded(
-        static_cast<LockLatencyType>(i));
-      if (!lockRecord.empty()) {
-        slowLog << "# " << lockRecord << "\n";
+    if (cfgs->tendisLatencyLimit > 0) {
+      for (uint8_t i = 0; i < LockLatencyType::MAX_LLT; ++i) {
+        auto lockRecord = sess->getCtx()->generateLockRecordLogIfNeeded(
+          static_cast<LockLatencyType>(i));
+        if (!lockRecord.empty()) {
+          slowLog << "# " << lockRecord << "\n";
+        }
+      }
+      for (uint8_t i = 0; i < RocksdbLatencyType::MAX_RLT; ++i) {
+        auto rocksdbRecord = sess->getCtx()->generateRocksdbRecordLogIfNeeded(
+          static_cast<RocksdbLatencyType>(i));
+        if (!rocksdbRecord.empty()) {
+          slowLog << "# " << rocksdbRecord << "\n";
+        }
       }
     }
-    for (uint8_t i = 0; i < RocksdbLatencyType::MAX_RLT; ++i) {
-      auto rocksdbRecord = sess->getCtx()->generateRocksdbRecordLogIfNeeded(
-        static_cast<RocksdbLatencyType>(i));
-      if (!rocksdbRecord.empty()) {
-        slowLog << "# " << rocksdbRecord << "\n";
-      }
-    }
-
     uint64_t args_total_length = 0;
     uint64_t args_output_length = 0;
     for (size_t i = 0; i < args.size(); ++i) {
@@ -2306,7 +2307,7 @@ void ServerEntry::slowlogPushEntryIfNeeded(
   uint64_t duration, /* including the queue time */
   uint64_t execTime,
   Session* sess) {
-  if (sess && duration >= _cfg->slowlogLogSlowerThan) {
+  if (sess && execTime >= _cfg->slowlogLogSlowerThan) {
     _slowlogStat.slowlogDataPushEntryIfNeeded(time, duration, execTime, sess);
   }
 }
