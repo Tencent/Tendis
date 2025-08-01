@@ -94,17 +94,21 @@ ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr,
     _incrCheckMatrix(std::make_shared<PoolMatrix>()),
     _logRecycleMatrix(std::make_shared<PoolMatrix>()),
     _connectMasterTimeoutMs(1000) {
-  _cfg->serverParamsVar("incrPushThreadnum")->setUpdate([this]() {
+  _cfg->serverParamsVar("incrPushThreadnum")->setUpdate([this]() -> Status {
     incrPusherResize(_cfg->incrPushThreadnum);
+    return {ErrorCodes::ERR_OK, ""};
   });
-  _cfg->serverParamsVar("fullPushThreadnum")->setUpdate([this]() {
+  _cfg->serverParamsVar("fullPushThreadnum")->setUpdate([this]() -> Status {
     fullPusherResize(_cfg->fullPushThreadnum);
+    return {ErrorCodes::ERR_OK, ""};
   });
-  _cfg->serverParamsVar("fullReceiveThreadnum")->setUpdate([this]() {
+  _cfg->serverParamsVar("fullReceiveThreadnum")->setUpdate([this]() -> Status {
     fullReceiverResize(_cfg->fullReceiveThreadnum);
+    return {ErrorCodes::ERR_OK, ""};
   });
-  _cfg->serverParamsVar("logRecycleThreadnum")->setUpdate([this]() {
+  _cfg->serverParamsVar("logRecycleThreadnum")->setUpdate([this]() -> Status {
     logRecyclerResize(_cfg->logRecycleThreadnum);
+    return {ErrorCodes::ERR_OK, ""};
   });
 }
 

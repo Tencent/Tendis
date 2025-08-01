@@ -23,10 +23,10 @@ func testVersion(versions []string) {
 		os.RemoveAll("_version_test_")
 		os.Mkdir("_version_test_", 0750)
 		// copy target version tendisplus
-		r := exec.Command("/bin/sh", "-c", "cp /data/binary/tendisplus-"+v+".tgz _version_test_/; cd _version_test_/; tar -zxvf tendisplus-"+v+".tgz;")
+		r := exec.Command("/bin/sh", "-c", "cp releases/tendisplus-"+v+".tgz _version_test_/; cd _version_test_/; tar -zxvf tendisplus-"+v+".tgz;")
 		_, err := r.CombinedOutput()
 		if err != nil {
-			log.Fatalf("get target version tendisplus failed! check if /data/binary exists.")
+			log.Fatalf("get target version tendisplus failed! check if releases exists.")
 		}
 
 		clusterNodeNum := 3

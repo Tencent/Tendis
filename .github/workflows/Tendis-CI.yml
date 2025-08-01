@@ -251,3 +251,51 @@ jobs:
           chmod +x gotest.sh
           ./gotest.sh normaltest-part3
 
+  test-gotest-versiontest:
+    needs: [cpplint-check]
+    name: Test-gotest-versiontest
+    runs-on: ubuntu-latest
+    env:
+        GH_TOKEN: ${{ github.token }}
+        TEST_DIR: build/bin
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: compile
+        uses: ./.github/actions/compile/
+      - name: GoTest
+        run: |
+          cd src/tendisplus/integrate_test
+          mkdir -p "releases"
+          threshold="2.4.0"
+          version_le() {
+            [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" == "$1" ]]
+          }
+          tags=$(gh api /repos/${{ github.repository }}/releases --jq '.[].tag_name')
+          VERSIONS=""
+          for tag in $tags; do
+            ver=${tag%%-*}
+            if ! [[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                continue
+            fi
+
+            if version_le "$ver" "$threshold"; then
+                continue
+            else
+            patch=${ver##*.}
+            [[ "$patch" == "0" ]] && VERSIONS+="$tag "
+            fi
+          done
+          VERSIONS+="2.4.3-rocksdb-v5.13.4 2.3.1-rocksdb-v5.13.4"
+          for ver in $VERSIONS; do
+            gh release download $ver -D releases
+            echo "downloaded $ver"
+          done
+          chmod +x gotest.sh
+          echo "versiontest start"
+          echo "./gotest.sh versiontest $VERSIONS"
+          ./gotest.sh versiontest $VERSIONS
+          echo "versiontest done"

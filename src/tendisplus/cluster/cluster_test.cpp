@@ -2377,8 +2377,13 @@ TEST(Cluster, migrateNotAutoReconfSlave) {
     std::this_thread::sleep_for(std::chrono::seconds(5));
   });
   // 2 master & 2 slave
-  auto servers = makeCluster(
-    startPort, nodeNum, 10, true, false, {}, {{"slave-reconf-enabled", "no"}});
+  auto servers = makeCluster(startPort,
+                             nodeNum,
+                             10,
+                             true,
+                             false,
+                             {},
+                             {{"cluster-allow-replica-migration", "no"}});
   SlotsBitmap sbm;
   for (int i = 0; i <= 8192; i++) {
     sbm.set(i);

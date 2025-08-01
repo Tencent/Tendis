@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <fstream>
 #include <limits>
 #include <list>
@@ -13,6 +14,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include "rapidjson/document.h"
 #include "rapidjson/error/en.h"
@@ -212,9 +214,10 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
 
   // 1) require a blocking-client and auth
   std::shared_ptr<BlockingTcpClient> client;
-  client = std::move(createClient(
-      metaSnapshot, _connectMasterTimeoutMs.load(std::memory_order_relaxed),
-      CLIENT_MASTER));
+  client = std::move(
+    createClient(metaSnapshot,
+                 _connectMasterTimeoutMs.load(std::memory_order_relaxed),
+                 CLIENT_MASTER));
   if (client == nullptr) {
     LOG(WARNING) << "startFullSync storeid:" << metaSnapshot.id
                  << " with: " << metaSnapshot.syncFromHost << ":"
@@ -445,7 +448,9 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
     }
     if (lastSyncTime + std::chrono::seconds(gBinlogHeartbeatTimeout) <=
         SCLOCK::now()) {
-      LOG(INFO) << "store:" << metaSnapshot.id << " incrSync timeout";
+      LOG(INFO) << "store:" << metaSnapshot.id
+                << " haven't receive binlog more than "
+                << gBinlogHeartbeatTimeout << " seconds, need reconnect.";
       return true;
     }
     return false;
@@ -817,7 +822,8 @@ void ReplManager::updateCurBinlogFs(uint32_t storeId,
   if (ts) {
     v->timestamp = ts;
   }
-  if (v->fileSize >= (uint64_t)_cfg->binlogFileSizeMB * 1024 * 1024 ||
+  if (v->fileSize >=
+        static_cast<uint64_t>(_cfg->binlogFileSizeMB) * 1024 * 1024 ||
       v->fileCreateTime + std::chrono::seconds(_cfg->binlogFileSecs) <=
         SCLOCK::now() ||
       changeNewFile || v->needNewFile) {

@@ -414,7 +414,8 @@ class RocksKVStore : public KVStore {
   Status setOptionDynamic(const std::string& option,
                           const std::string& value) override;
   Status setCompactOnDeletionCollectorFactory(
-    const std::string& option, const std::string& value) override;
+    const std::string& option,
+    std::shared_ptr<tendisplus::ServerParams> cfg) override;
   int64_t getOption(const std::string& option) override;
   const rocksdb::Snapshot* getSnapshot();
   rocksdb::Iterator* newIterator(const rocksdb::ReadOptions& readOptions,
