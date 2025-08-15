@@ -1578,6 +1578,8 @@ bool ServerEntry::processRequest(Session* sess) {
 
   auto expect = Command::runSessionCmd(sess);
   if (!expect.ok()) {
+    if (expect.status().code() == ErrorCodes::ERR_BLOCKCMD)
+      return true;
     auto s = sess->setResponse(Command::fmtErr(expect.status().toString()));
     if (!s.ok()) {
       return false;

@@ -68,6 +68,9 @@ enum class ErrorCodes {
   ERR_CLUSTER_REDIR_DOWN_UNBOUND,
   ERR_LUA,
   ERR_LUA_NOSCRIPT,
+
+  ERR_BLOCKCMD,
+  ERR_FINISHCMD,
 };
 
 class Status {
@@ -184,10 +187,10 @@ Expected<T> makeExpected(Args&&... args) {
     }                                                                  \
   } while (0)
 
-#define RET_IF_MEMORY_REQUEST_FAILED(SESS, SIZE)       \
-  auto tempStatus = (SESS) -> memLimitRequest((SIZE)); \
-  if (!tempStatus.ok()) {                              \
-    return tempStatus;                                 \
+#define RET_IF_MEMORY_REQUEST_FAILED(SESS, SIZE)     \
+  auto tempStatus = (SESS)->memLimitRequest((SIZE)); \
+  if (!tempStatus.ok()) {                            \
+    return tempStatus;                               \
   }
 }  // namespace tendisplus
 

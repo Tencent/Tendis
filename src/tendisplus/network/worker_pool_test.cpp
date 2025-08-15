@@ -1,6 +1,8 @@
 // Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
+#include <memory>
+#include <utility>
 
 #include "gtest/gtest.h"
 
@@ -69,6 +71,36 @@ TEST(Workerpool, schedule) {
   ASSERT_EQ(val.load(), 10);
 
   pool.stop();
+  t.join();
+  auto guard = tendisplus::MakeGuard([]() { tendisplus::destroyEnv(); });
+}
+
+TEST(Workerpool, addTimer) {
+  auto matrix = std::make_shared<tendisplus::PoolMatrix>();
+  auto pool = std::make_shared<tendisplus::WorkerPool>("test-pool", matrix);
+  pool->startup(3);
+
+  std::atomic<int> val{5};
+  pool->timer_add([&val]() { val.store(10, std::memory_order_seq_cst); },
+                  std::chrono::milliseconds(100));
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+  ASSERT_EQ(val.load(std::memory_order_seq_cst), 10);
+  pool->stop();
+  auto guard = tendisplus::MakeGuard([]() { tendisplus::destroyEnv(); });
+}
+
+TEST(Workerpool, cancelTimer) {
+  auto matrix = std::make_shared<tendisplus::PoolMatrix>();
+  auto pool = std::make_shared<tendisplus::WorkerPool>("test-pool", matrix);
+  std::thread t([&pool]() { pool->startup(3); });
+  std::atomic<int> val{1};
+  auto timerId =
+    pool->timer_add([&val]() { val.store(42, std::memory_order_seq_cst); },
+                    std::chrono::seconds(2));
+  pool->timer_cancel(timerId);
+  std::this_thread::sleep_for(std::chrono::seconds(3));
+  ASSERT_EQ(val.load(std::memory_order_seq_cst), 1);
+  pool->stop();
   t.join();
   auto guard = tendisplus::MakeGuard([]() { tendisplus::destroyEnv(); });
 }

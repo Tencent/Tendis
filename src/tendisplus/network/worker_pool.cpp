@@ -126,6 +126,7 @@ void WorkerPool::stop() {
   LOG(INFO) << "workerPool begins to stop...";
   _isRunning.store(false, std::memory_order_relaxed);
   _ioCtx->stop();
+  clear_all_timers();
   for (auto& t : _threads) {
     t.second.join();
   }
@@ -223,6 +224,40 @@ void WorkerPool::resizeDecrease(size_t size) {
     auto exceptionTask = []() { throw IOCtxException(); };
     this->schedule(std::move(exceptionTask));
   }
+}
+
+uint64_t WorkerPool::schedule_timer(std::function<void()> cb,
+                                    std::chrono::microseconds timeout) {
+  if (!_isRunning)
+    return 0;
+
+  const uint64_t timer_id = ++_idGenerator;
+  auto timer_handler = [this, timer_id, cb = std::move(cb), timeout] {
+    auto timer = std::make_shared<Timer>(*_ioCtx);
+    timer->expires_after(timeout);
+    // store timer
+    {
+      std::lock_guard<std::mutex> lock(_timersMutex);
+      _activeTimers[timer_id] = timer;
+    }
+    auto task =
+      [this, timer_id, cb = std::move(cb)](const asio::error_code& ec) mutable {
+        // cancled or stopped
+        if (ec == asio::error::operation_aborted || !_isRunning.load())
+          return;
+        // remove timer
+        {
+          std::lock_guard<std::mutex> lock(_timersMutex);
+          _activeTimers.erase(timer_id);
+        }
+
+        // schedule task
+        schedule([cb = std::move(cb)] { cb(); });
+      };
+    timer->async_wait(std::move(task));
+  };
+  asio::post(*_ioCtx, std::move(timer_handler));
+  return timer_id;
 }
 
 }  // namespace tendisplus
