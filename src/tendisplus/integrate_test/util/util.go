@@ -438,7 +438,6 @@ func (s *Predixy) Start(valgrind bool, cfgFilePath string, logFilePath string) e
 
 func StartSingleServer(dir string, port int, cfg *map[string]string) *RedisServer {
 	m := new(RedisServer)
-	m.WithBinPath("tendisplus")
 	m.Ip = "127.0.0.1"
 	node_port := FindAvailablePort(port)
 	log.Infof("FindAvailablePort:%d", node_port)
