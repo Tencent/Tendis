@@ -141,16 +141,19 @@ if [[ $testcontent == "all" || "${testcontent}" == "normaltest" || "${testconten
 fi
 
 if [[ $testcontent == "all" || "${testcontent}" == "normaltest" || "${testcontent}" == "normaltest-part3" ]]; then
-    rm -rf dts/dts_sync deletefilesinrange memorylimit pubsubtest
-    testNum=4
+    rm -rf dts/dts_sync deletefilesinrange memorylimit pubsubtest testScan
+    testNum=5
     go build -o dts/dts_sync dts/dts_sync.go dts/dts_common.go
     go build deletefilesinrange.go common.go common_cluster.go
     go build memorylimit.go common.go
     go build ./pubsubtest.go common.go common_cluster.go
+    go build testScan.go common.go
     runOne './dts/dts_sync'
     runOne './deletefilesinrange -optype=set'
     runOne ./memorylimit
     runOne './pubsubtest'
+    export MALLOC_CONF="prof:false"
+    runOne './testScan'
     checkPassed $logfile $testNum
 fi
 
