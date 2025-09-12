@@ -2162,8 +2162,12 @@ void ServerEntry::jeprofCron() {
 void ServerEntry::jemallocBgThreadConf() {
 #ifndef _WIN32
 #ifdef TENDIS_JEMALLOC
-  char val = _cfg->enableJemallocBgThread ? 1 : 0;
-  mallctl("background_thread", NULL, NULL, &val, 1);
+  bool val = _cfg->enableJemallocBgThread;
+  int ret = mallctl("background_thread", NULL, NULL, &val, 1);
+  if (ret != 0) {
+    LOG(WARNING) << "background_thread failed, ret:" << ret
+                 << ",errno:" << errno << "," << strerror(errno);
+  }
 #endif  // !TENDIS_JEMALLOC
 #endif  // !_WIN32
 }

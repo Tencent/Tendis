@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [unstable, master]
   push:
-    branches: [unstable, master]
+    branches: []
 jobs:
   cpplint-check:
     name: Lint

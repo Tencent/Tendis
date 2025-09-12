@@ -298,6 +298,7 @@ constexpr bool starts_with(std::string_view s,
 }
 
 std::string getSizeReadable(size_t size);
+std::string getTimeReadable(size_t ns);
 
 }  // namespace tendisplus
 

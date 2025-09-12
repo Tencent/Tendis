@@ -26,9 +26,12 @@
 
 #ifndef WIN32
 #ifdef TENDIS_JEMALLOC
+#include <malloc.h>
+
 #include "jemalloc/jemalloc.h"
 #endif  // !TENDIS_JEMALLOC
 #endif  // !WIN32
+#include "port/jemalloc_helper.h"
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
@@ -5099,12 +5102,26 @@ class JeprofCommand : public Command {
 
   Expected<std::string> getUsage() {
 #ifdef TENDIS_JEMALLOC
-    std::vector<std::string> nameList = {"stats.allocated",
-                                         "stats.active",
-                                         "stats.metadata",
-                                         "stats.resident",
-                                         "stats.mapped",
-                                         "stats.retained"};
+    enum type{
+      UNKOWN = 0,
+      BYTE,
+      TIME,
+    };
+    struct statsInfo {
+      std::string name;
+      int type;
+    };
+    std::vector<statsInfo> nameList = {
+      {"stats.allocated", type::BYTE},
+      {"stats.active", type::BYTE},
+      {"stats.metadata", type::BYTE},
+      {"stats.resident", type::BYTE},
+      {"stats.mapped", type::BYTE},
+      {"stats.retained", type::BYTE},
+      {"stats.background_thread.num_threads", type::UNKOWN},
+      {"stats.background_thread.run_interval", type::TIME},
+      { "stats.background_thread.num_runs",
+        type::UNKOWN }};
 
     // NOTE(takenliu): we need refresh jamalloc statistic data,
     //   but mallctl("epoch",xxx) maybe have bug and cant refresh,
@@ -5113,17 +5130,25 @@ class JeprofCommand : public Command {
 
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, nameList.size());
-    for (const auto& name : nameList) {
+    for (const auto& info : nameList) {
       size_t allocated;
       size_t len = sizeof(allocated);
 
-      if (mallctl(name.c_str(), &allocated, &len, NULL, 0) == 0) {
+      if (mallctl(info.name.c_str(), &allocated, &len, NULL, 0) == 0) {
       } else {
         return {ErrorCodes::ERR_UNKNOWN, "mallctl() failed."};
       }
-      Command::fmtBulk(ss,
-                       name + ": " + std::to_string(allocated) + " (" +
-                         getSizeReadable(allocated) + ")");
+      if (info.type == type::BYTE) {
+        Command::fmtBulk(ss,
+                         info.name + ": " + std::to_string(allocated) + " (" +
+                           getSizeReadable(allocated) + ")");
+      } else if (info.type == type::TIME) {
+        Command::fmtBulk(ss,
+                         info.name + ": " + std::to_string(allocated) + " (" +
+                           getTimeReadable(allocated) + ")");
+      } else {
+        Command::fmtBulk(ss, info.name + ": " + std::to_string(allocated));
+      }
     }
     return ss.str();
 #else
@@ -5142,6 +5167,28 @@ class JeprofCommand : public Command {
       mallctl("prof.active", NULL, NULL, &active, sizeof(active));
     } else if (action == "dump") {
       mallctl("prof.dump", NULL, NULL, NULL, 0);
+    } else if (action == "arena.purge") {
+      unsigned narenas = 0;
+      size_t sz = sizeof(narenas);
+      mallctl("arenas.narenas", &narenas, &sz, NULL, 0);
+      for (size_t arena_index = 0; arena_index < narenas; arena_index++) {
+        char mallctl_path[64];
+        snprintf(
+          mallctl_path, sizeof(mallctl_path), "arena.%ld.purge", arena_index);
+        int ret = mallctl(mallctl_path, NULL, NULL, NULL, 0);
+        if (ret != 0) {
+          const char* err_msg = strerror(errno);
+          return {ErrorCodes::ERR_UNKNOWN,
+                  std::string(err_msg, strlen(err_msg))};
+        }
+      }
+      LOG(INFO) << "Purged arenas success, narenas:" << narenas;
+    } else if (action == "trim") {
+      int ret = malloc_trim(0);
+      if (ret != 0) {
+        const char* err_msg = strerror(errno);
+        return {ErrorCodes::ERR_UNKNOWN, std::string(err_msg, strlen(err_msg))};
+      }
     } else if (action == "stats") {
       return getUsage();
     } else {
@@ -5157,4 +5204,36 @@ class JeprofCommand : public Command {
   }
 } jeprofCommand;
 
+class GlogCommand : public Command {
+ public:
+  GlogCommand() : Command("glog", "as") {}
+
+  ssize_t arity() const {
+    return 2;
+  }
+
+  int32_t firstkey() const {
+    return 0;
+  }
+
+  int32_t lastkey() const {
+    return 0;
+  }
+
+  int32_t keystep() const {
+    return 0;
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    const std::vector<std::string>& args = sess->getArgs();
+    auto action = toLower(args[1]);
+    if (action == "flush") {
+      google::FlushLogFiles(google::GLOG_INFO);
+    } else {
+      return {ErrorCodes::ERR_UNKNOWN,
+              "args wrong, only support: glog [flush]"};
+    }
+    return Command::fmtOK();
+  }
+} glogCommand;
 }  // namespace tendisplus

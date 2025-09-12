@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cinttypes>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -444,19 +445,25 @@ Expected<int64_t> getIntSize(const std::string& str) {
 std::string getSizeReadable(size_t size) {
   char buf[20];
   double KB = 1024;
-  double MB = 1024*1024;
-  double GB = 1024*1024*1024;
+  double MB = 1024 * 1024;
+  double GB = 1024 * 1024 * 1024;
   if (size < KB) {
     return std::to_string(size) + " B";
   } else if (size < MB) {
-    snprintf(buf, sizeof(buf), "%.3f KB", size/KB);
+    snprintf(buf, sizeof(buf), "%.3f KB", size / KB);
     return buf;
   } else if (size < GB) {
-    snprintf(buf, sizeof(buf), "%.3f MB", size/MB);
+    snprintf(buf, sizeof(buf), "%.3f MB", size / MB);
     return buf;
   } else {
-    snprintf(buf, sizeof(buf), "%.3f GB", size/GB);
+    snprintf(buf, sizeof(buf), "%.3f GB", size / GB);
     return buf;
   }
+}
+
+std::string getTimeReadable(size_t ns) {
+  char buf[20];
+  snprintf(buf, sizeof(buf), "%.3f sec", ns / 1000000000.0);
+  return buf;
 }
 }  // namespace tendisplus
