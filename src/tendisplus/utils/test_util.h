@@ -138,7 +138,7 @@ class WorkLoad {
     : _session(session), _max_key_len(32) {}
 
   void init() {
-    std::srand((uint32_t)msSinceEpoch());
+    std::srand(static_cast<uint32_t>(msSinceEpoch()));
   }
   KeysWritten writeWork(RecordType,
                         uint32_t count,
@@ -155,6 +155,9 @@ class WorkLoad {
   void clusterNodes();
   void clusterSlots();
   void addSlots(const std::string& slotsBuff);
+  void delSlots(const std::string& slotsBuff);
+  void addSlotsRange(uint32_t start, uint32_t end);
+  void delSlotsRange(uint32_t start, uint32_t end);
   void replicate(const std::string& nodeName);
   bool manualFailover();
   void lockDb(mstime_t locktime);
