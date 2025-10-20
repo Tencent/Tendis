@@ -558,6 +558,7 @@ start_server {tags {"scripting repl"}} {
         #        fail "Expected 1 in x, but value is '[r -1 get x]'"
         #    }
         #}
+        
         test {Lua scripts using SELECT are replicated correctly} {
             r eval {
                 redis.call("set","foo1","bar1")
@@ -579,8 +580,9 @@ start_server {tags {"scripting repl"}} {
                 fail "Master-Slave desync after Lua script using SELECT."
             }
         }
-        test {lua bit.tohex bug} {
-            set res [run_script {return bit.tohex(65535, -2147483648)} 0]
+
+        test {lua bit.tohex INT32_MIN} {
+            set res [run_script { return string.upper(bit.tohex(65535, -2147483648)) } 0]
             r ping
             set res
         } {0000FFFF}
