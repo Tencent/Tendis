@@ -198,7 +198,6 @@ set(LZ4_LIBRARIES ${CMAKE_BINARY_DIR}/lib/liblz4.a)
 include_directories("src/thirdparty/lz4/lib/")
 list(APPEND THIRDPARTY_LIBS ${LZ4_LIBRARIES})
 
-add_definitions(-DENABLE_CJSON_GLOBAL)
 option(RAPIDJSON_BUILD_TESTS "" OFF)
 set(RAPIDJSON_BUILD_DOC OFF)
 set(RAPIDJSON_BUILD_EXAMPLES OFF)
