@@ -356,7 +356,7 @@ class NoUseVar : public BaseVar {
            checkfunptr ptr,
            preProcess preFun,
            bool allowDynamicSet)
-    : BaseVar(name, v, ptr, preFun, allowDynamicSet), _setFlag(false) {}
+    : BaseVar(name, v, ptr, preFun, allowDynamicSet) {}
   virtual std::string show() const {
     return " not supported anymore";
   }
@@ -364,16 +364,14 @@ class NoUseVar : public BaseVar {
     return "no";
   }
   virtual bool need_show() const {
-    return _setFlag;
+    return false;  // don't show this var
   }
 
  private:
   TSAN_SUPPRESSION Status set(const std::string& val, bool startup) {
-    _setFlag = true;
     NoUseWarning(name);
     return {ErrorCodes::ERR_OK, ""};
   }
-  bool _setFlag;
 };
 
 class rewriteConfigState {
@@ -572,10 +570,7 @@ class ServerParams {
   bool level0Compress = false;
   bool level1Compress = false;
 
-  // TxnOptions
-  // #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 17)
   bool skipConcurrencyControl = false;
-  // #endif
 
   bool bgcompactEnabled = false;
   uint64_t bgcompactInterval = 60;  // s

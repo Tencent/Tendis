@@ -399,18 +399,19 @@ class RocksKVStore : public KVStore {
   bool getIntProperty(
     const std::string& property,
     uint64_t* value,
-    ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_Default) const;
-  bool getProperty(
-    const std::string& property,
-    std::string* value,
-    ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_Default) const;
+    ColumnFamilyNumber cf =
+      ColumnFamilyNumber::ColumnFamily_Default) const override;
+  bool getProperty(const std::string& property,
+                   std::string* value,
+                   ColumnFamilyNumber cf =
+                     ColumnFamilyNumber::ColumnFamily_Default) const override;
   std::string getAllProperty() const override;
   std::string getStatistics() const override;
   uint64_t getStatCountById(uint32_t id) const override;
   uint64_t getStatCountByName(const std::string& name) const override;
   std::string getBgError() const override;
   Status recoveryFromBgError() override;
-  void resetStatistics();
+  void resetStatistics() override;
   Status setOptionDynamic(const std::string& option,
                           const std::string& value) override;
   Status setCompactOnDeletionCollectorFactory(
@@ -557,7 +558,6 @@ class RocksdbEnv {
   }
   std::string getErrorString() const;
   void clear();
-  void resetError();
   void setError(rocksdb::BackgroundErrorReason reason, rocksdb::Status* error);
 
  private:

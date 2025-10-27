@@ -136,7 +136,7 @@ class ClusterCommand : public Command {
             Expected<int64_t> exptSlot = ::tendisplus::stoll(vs);
             RET_IF_ERR_EXPECTED(exptSlot);
 
-            int32_t slot = (int32_t)exptSlot.value();
+            int32_t slot = static_cast<int32_t>(exptSlot.value());
 
             if (slot > CLUSTER_SLOTS - 1 || slot < 0) {
               LOG(ERROR) << "slot" << slot
@@ -146,7 +146,8 @@ class ClusterCommand : public Command {
             slotsMap.set(slot);
           }
         }
-
+        LOG(INFO) << args[0] << " " << args[1] << " " << args[2] << " "
+                  << args[3] << " " << bitsetStrEncode(slotsMap);
         bool needRetry = (arg2 == "restart");
         auto exptTaskid = startAllSlotsTasks(
           slotsMap, svr, nodeId, clusterState, srcNode, myself, needRetry);
@@ -164,6 +165,7 @@ class ClusterCommand : public Command {
           return {ErrorCodes::ERR_CLUSTER, "Invalid migrate info"};
         }
       } else if (arg2 == "clean" && argSize == 3) {
+        LOG(INFO) << sess->getCmdStr();
         if (migrateMgr->existMigrateTask()) {
           return {ErrorCodes::ERR_CLUSTER, "can not clean when migrating"};
         }
@@ -216,6 +218,7 @@ class ClusterCommand : public Command {
         }
         return taskInfo.value();
       } else if (arg2 == "stop" && argSize > 3) {
+        LOG(INFO) << sess->getCmdStr();
         for (size_t i = 3; i < args.size(); i++) {
           LOG(INFO) << "stopping tasks, the parent taskid is:" << args[i];
           auto s = migrateMgr->stopTasks(args[i]);
@@ -238,15 +241,18 @@ class ClusterCommand : public Command {
         return Command::fmtOK();
 #endif
       } else if (arg2 == "stopall" && argSize == 3) {
+        LOG(INFO) << sess->getCmdStr();
         /* NOTE(wayenchen) stop all migrate tasks (save message of stop tasks),
          * work on both srcNode and dstNode */
         migrateMgr->stopAllTasks();
         return Command::fmtOK();
       } else if (arg2 == "cleanall" && argSize == 3) {
+        LOG(INFO) << sess->getCmdStr();
         /* NOTE(wayenchen) clean all migrate tasks, no save message*/
         migrateMgr->stopAllTasks(false);
         return Command::fmtOK();
       } else if (arg2 == "restartall" && argSize == 3) {
+        LOG(INFO) << sess->getCmdStr();
         /* NOTE(wayenchen) it is work on dstNode command */
         std::map<std::string, SlotsBitmap> remainSlotsMap =
           migrateMgr->getStopMap();
@@ -261,7 +267,8 @@ class ClusterCommand : public Command {
           auto taskMap = (*it).second;
           auto srcNode = clusterState->clusterLookupNode(nodeId);
           if (srcNode == nullptr) {
-            return {ErrorCodes::ERR_CLUSTER, "import node not find"};
+            LOG(ERROR) << "node " << nodeId << " not found";
+            return {ErrorCodes::ERR_CLUSTER, "import node not find:" + nodeId};
           }
           auto exptTaskid = startAllSlotsTasks(
             taskMap, svr, nodeId, clusterState, srcNode, myself, true);
@@ -275,6 +282,10 @@ class ClusterCommand : public Command {
           migrateMgr->removeRestartSlots(nodeId, (*it).second);
         }
 
+        return Command::fmtOK();
+      } else if (arg2 == "gc" && argSize == 3) {
+        LOG(INFO) << sess->getCmdStr();
+        gcMgr->gcNow();
         return Command::fmtOK();
       }
     } else if (arg1 == "meet" && (argSize == 4 || argSize == 5)) {
@@ -445,7 +456,7 @@ class ClusterCommand : public Command {
         return {ErrorCodes::ERR_CLUSTER, "keyslot invalid!"};
       }
       uint32_t hash =
-        uint32_t(redis_port::keyHashSlot(key.c_str(), key.size()));
+        static_cast<uint32_t>(redis_port::keyHashSlot(key.c_str(), key.size()));
       return Command::fmtBulk(std::to_string(hash));
     } else if (arg1 == "info" && argSize == 2) {
       std::string clusterInfo = clusterState->clusterGenStateDescription();
@@ -769,6 +780,8 @@ class ClusterCommand : public Command {
     auto ip = srcNode->getNodeIp();
     auto port = srcNode->getPort();
 
+    LOG(INFO) << "startImportingTasks srcIp:" << ip << " srcPort:" << port
+              << " slots:" << bitsetStrEncode(slotsMap);
     std::shared_ptr<BlockingTcpClient> client = createClient(ip, port, svr);
 
     if (client == nullptr) {
@@ -923,7 +936,7 @@ class ClusterCommand : public Command {
           LOG(ERROR) << "slot:" << slot
                      << " ERR being deleting before migration";
           return {ErrorCodes::ERR_CLUSTER,
-                  "slot in deleting task" + dtos(slot)};
+                  "slot in deleting task:" + dtos(slot)};
         }
         if (!svr->getClusterMgr()->emptySlot(slot)) {
           LOG(ERROR) << "slot" << slot << " ERR not empty before migration";

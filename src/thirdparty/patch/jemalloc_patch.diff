@@ -1,5 +1,18 @@
+diff --git a/autogen.sh b/autogen.sh
+index 75f32da..f00a41a 100755
+--- a/autogen.sh
++++ b/autogen.sh
+@@ -10,7 +10,7 @@ for i in autoconf; do
+ done
+ 
+ echo "./configure --enable-autogen $@"
+-./configure --enable-autogen $@
++./configure --enable-autogen "$@"
+ if [ $? -ne 0 ]; then
+     echo "Error $? in ./configure"
+     exit 1
 diff --git a/src/prof.c b/src/prof.c
-index 7a6d5d56..2160ad88 100644
+index 7a6d5d5..2160ad8 100644
 --- a/src/prof.c
 +++ b/src/prof.c
 @@ -23,7 +23,7 @@

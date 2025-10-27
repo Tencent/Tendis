@@ -51,6 +51,10 @@ class GCManager {
                       bool dumpIfError = true);
 
   Status delGarbage();
+  void gcNow() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    _waitTimeAfterMigrate = 0;
+  }
 
  private:
   void controlRoutine();

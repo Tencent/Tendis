@@ -4,8 +4,25 @@
 #     ./gotest.sh [all, normaltest, normaltest-part1, normaltest-part2, normaltest-part3]
 
 testcontent="all"
-if [[ $# == 1 ]]; then
+if [[ $# -ge 1 ]]; then
     testcontent=$1
+    shift
+fi
+
+valid_options=("all" "normaltest" "normaltest-part1" "normaltest-part2" "normaltest-part3" "versiontest")
+
+is_valid=false
+for opt in "${valid_options[@]}"; do
+    if [[ "$testcontent" == "$opt" ]]; then
+        is_valid=true
+        break
+    fi
+done
+
+if ! $is_valid; then
+    echo "Invalid argument: $testcontent"
+    echo "Usage: $0 [all, normaltest, normaltest-part1, normaltest-part2, normaltest-part3, versiontest]"
+    exit 1
 fi
 echo testcontent: $testcontent
 
@@ -84,7 +101,7 @@ if [[ $testcontent == "all" || "${testcontent}" == "versiontest" ]]; then
     testNum=1
     rm -rf versiontest
     go build versiontest.go common.go common_cluster.go
-    #runOne "./versiontest $@"
+    runOne "./versiontest $@"
     checkPassed $logfile $testNum
 fi
 

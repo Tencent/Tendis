@@ -4,13 +4,17 @@ target_link_libraries(status glog)
 add_library(redis_port STATIC lzf_d.cpp redis_port.cpp hyperloglog.cpp)
 target_link_libraries(redis_port glog)
 
+if(TENDIS_WITH_UNIT_TESTS)
 add_executable(status_test status_test.cpp)
 target_link_libraries(status_test status gtest_main ${SYS_LIBS})
+endif()
 
 add_library(time_util STATIC time.cpp)
 
+if(TENDIS_WITH_UNIT_TESTS)
 add_executable(atomic_utility_test atomic_utility_test.cpp)
 target_link_libraries(atomic_utility_test status gtest_main ${SYS_LIBS})
+endif()
 
 add_library(sync_point STATIC sync_point.cpp)
 
@@ -28,6 +32,7 @@ target_link_libraries(utils_common glog varint rocksdb)
 add_library(test_util STATIC test_util.cpp)
 target_link_libraries(test_util utils_common server_params)
 
+if(TENDIS_WITH_UNIT_TESTS)
 add_executable(utils_common_test utils_common_test.cpp)
 target_link_libraries(utils_common_test utils_common gtest_main ${SYS_LIBS})
-
+endif()

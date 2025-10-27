@@ -192,7 +192,7 @@ std::string removeQuotesAndToLower(const std::string& v) {
 }
 
 void NoUseWarning(const std::string& name) {
-  LOG(INFO) << name << "is not supported anymore" << std::endl;
+  std::cout << name << "is not supported anymore" << std::endl;
 }
 
 Status rewriteConfigState::rewriteConfigReadOldFile(
@@ -482,10 +482,8 @@ ServerParams::ServerParams() {
                                   rocksFlushLogAtTrxCommit);
   REGISTER_VARS_DIFF_NAME("rocks.wal_dir", rocksWALDir);
 
-#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 17)
   REGISTER_VARS_DIFF_NAME("rocks.skip_concurrency_control",
                           skipConcurrencyControl);
-#endif
 
   REGISTER_VARS_FULL("rocks.compress_type",
                      rocksCompressType,

@@ -61,6 +61,13 @@ class BackupCommand : public Command {
     auto svr = sess->getServerEntry();
     INVARIANT(svr != nullptr);
 
+    if (!filesystem::exists(dir)) {
+      return {ErrorCodes::ERR_MANUAL, "dir not exist:" + dir};
+    }
+    if (filesystem::equivalent(dir, svr->getParams()->dbPath)) {
+      return {ErrorCodes::ERR_MANUAL, "dir cant be dbPath:" + dir};
+    }
+
     // check whether current user has write permission on dir argument
     try {
       auto tmpDirPath = dir + "/tmpDir";
@@ -68,13 +75,6 @@ class BackupCommand : public Command {
       filesystem::remove(tmpDirPath);
     } catch (const filesystem::filesystem_error& e) {
       return {ErrorCodes::ERR_MANUAL, e.what()};
-    }
-
-    if (!filesystem::exists(dir)) {
-      return {ErrorCodes::ERR_MANUAL, "dir not exist:" + dir};
-    }
-    if (filesystem::equivalent(dir, svr->getParams()->dbPath)) {
-      return {ErrorCodes::ERR_MANUAL, "dir cant be dbPath:" + dir};
     }
 
     if (svr->isClusterEnabled()) {
@@ -209,7 +209,7 @@ class RestoreBackupCommand : public Command {
       if (!exptStoreId.ok()) {
         return exptStoreId.status();
       }
-      uint32_t storeId = (uint32_t)exptStoreId.value();
+      uint32_t storeId = static_cast<uint32_t>(exptStoreId.value());
       if (!isForce && !isEmpty(svr, sess, storeId)) {
         return {ErrorCodes::ERR_INTERNAL, "not empty. use force please"};
       }
@@ -512,7 +512,7 @@ class ApplyBinlogsGeneric : public Command {
                                      eLog.value().getReplLogValue());
       }
       if (!s.ok()) {
-        LOG(ERROR) << "applyRepllog failed,mode:" << (uint32_t)mode
+        LOG(ERROR) << "applyRepllog failed,mode:" << static_cast<uint32_t>(mode)
                    << " err:" << s.toString();
         return s;
       }
@@ -684,7 +684,7 @@ class ApplyBinlogsGeneric : public Command {
     if (!exptStoreId.ok()) {
       return exptStoreId.status();
     }
-    storeId = (uint32_t)exptStoreId.value();
+    storeId = static_cast<uint32_t>(exptStoreId.value());
 
     auto svr = sess->getServerEntry();
     INVARIANT(svr != nullptr);
@@ -926,7 +926,7 @@ class RestoreBinlogCommandV2 : public Command {
     if (!exptStoreId.ok()) {
       return exptStoreId.status();
     }
-    storeId = (uint32_t)exptStoreId.value();
+    storeId = static_cast<uint32_t>(exptStoreId.value());
 
     auto svr = sess->getServerEntry();
     INVARIANT(svr != nullptr);
@@ -992,7 +992,7 @@ class restoreEndCommand : public Command {
     if (!exptStoreId.ok()) {
       return exptStoreId.status();
     }
-    storeId = (uint32_t)exptStoreId.value();
+    storeId = static_cast<uint32_t>(exptStoreId.value());
 
     auto svr = sess->getServerEntry();
     INVARIANT(svr != nullptr);
@@ -1060,7 +1060,7 @@ class BinlogHeartbeatCommand : public Command {
     if (exptStoreId.value() >= svr->getKVStoreCount()) {
       return {ErrorCodes::ERR_PARSEOPT, "invalid storeId"};
     }
-    storeId = (uint32_t)exptStoreId.value();
+    storeId = static_cast<uint32_t>(exptStoreId.value());
 
     auto replMgr = svr->getReplManager();
     INVARIANT(replMgr != nullptr);
@@ -1109,7 +1109,7 @@ class MigateHeartbeatCommand : public Command {
     if (exptStoreId.value() >= svr->getKVStoreCount()) {
       return {ErrorCodes::ERR_PARSEOPT, "invalid storeId"};
     }
-    storeId = (uint32_t)exptStoreId.value();
+    storeId = static_cast<uint32_t>(exptStoreId.value());
 
     auto migMgr = svr->getMigrateManager();
     INVARIANT(migMgr != nullptr);
@@ -1303,7 +1303,7 @@ class ReplStatusCommand : public Command {
     if (exptStoreId.value() >= svr->getKVStoreCount()) {
       return {ErrorCodes::ERR_PARSEOPT, "invalid storeId"};
     }
-    storeId = (uint32_t)exptStoreId.value();
+    storeId = static_cast<uint32_t>(exptStoreId.value());
 
     auto catalog = svr->getCatalog();
     INVARIANT(catalog != nullptr);

@@ -43,6 +43,8 @@ if(CMAKE_COMPILER_IS_GNUCC)
         you may remove CMakeCache.txt and run export CXX=/path/to/your/prefered/cxx_compiler before run cmake \
         to solve this problem")
     endif()
+    SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g3 -ggdb3 -gdwarf-4 -fvar-tracking-assignments -fno-omit-frame-pointer")
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g3 -ggdb3 -gdwarf-4 -fvar-tracking-assignments -fno-omit-frame-pointer")
 elseif(MSVC AND MSVC_VERSION GREATER_EQUAL 1900)
 	message("using MSVC ${MSVC_VERSION}")
 	# TODO: check msvc version
@@ -61,29 +63,29 @@ else()
     message(FATAL_ERROR "gcc or vs2015(update 2)+ is required")
 endif()
 
-if(CMAKE_COMPILER_IS_GNUCC)
-	set(STDFS_LIB "stdc++fs")
-    option(NEW_ROCKSDB "new rocksdb version" ON)
-    if(NEW_ROCKSDB)
-        message("using rocksdb-v8.5.3")
-        set(patchCommand
-            "cd ${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb/rocksdb\;
-             git am --abort\;
-             git am -s ../../patch/0001-add-statistic-for-sst-file-info.patch\;
-             git am -s ../../patch/0002-add-latency-statistic-log.patch\; ")
-		execute_process(COMMAND bash "-c" ${patchCommand})
-        set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb")
-    else()
-        message("using rocksdb-5.13.4")
-        set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-5.13.4")
-    endif()
+set(CMAKE_C_STANDARD 17)
+set(CMAKE_CXX_STANDARD 17)
+
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0")
 else()
-    set(NEW_ROCKSDB on)
-	set(STDFS_LIB "")
-	set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb")
+    SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3")
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
 endif()
 
+message("using rocksdb-v8.5.3")
+if(CMAKE_COMPILER_IS_GNUCC)
+    set(patchCommand
+        "cd ${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb/rocksdb\;
+         git am --abort\;
+         git am -s ../../patch/0001-add-statistic-for-sst-file-info.patch\;
+         git am -s ../../patch/0002-add-latency-statistic-log.patch\; ")
+    execute_process(COMMAND bash "-c" ${patchCommand})
+endif()
+set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb")
 set(CMAKE_MODULE_PATH "${ROCKSDB_DIR}/cmake/modules/")
+add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX -DROCKSDB_SUPPORT_THREAD_LOCAL)
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -92,35 +94,30 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 option(WITH_ASAN "build with ASAN" OFF)
 option(WITH_TSAN "build with WITH_TSAN" OFF)
 option(ENABLE_JEMALLOC "enable jemalloc" ON)
-option(BUILD_TENDIS_STATIC "build tendis staticly" OFF)
 if(WITH_ASAN)
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address -fno-omit-frame-pointer -fno-common -static-libasan")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer -fno-common -static-libasan")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fno-omit-frame-pointer -fno-common -static-libasan")
-  set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fsanitize=address -fno-omit-frame-pointer -fno-common -static-libasan")
-  list(APPEND SYS_LIBS "-fsanitize=address -fno-omit-frame-pointer -fno-common -static-libasan")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address -fno-common -static-libasan")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-common -static-libasan")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fno-common -static-libasan")
+  set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fsanitize=address -fno-common -static-libasan")
+  list(APPEND SYS_LIBS "-fsanitize=address -fno-common -static-libasan")
   add_definitions(-DWITH_ASAN)
   set(WITH_TSAN OFF)
   message("ASAN won't work with TSAN")
   set(ENABLE_JEMALLOC OFF)
   message("ASAN would disabled JeMalloc")
-  set(BUILD_TENDIS_STATIC OFF)
-  message("ASAN would disabled staticly compile, too")
 endif()
 
 if(WITH_TSAN)
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fno-omit-frame-pointer -fsanitize=thread -pie -lpthread -lm -static-libtsan")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=thread -fPIC -lpthread -lm -static-libtsan")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer -fsanitize=thread -fPIC -lpthread -lm -static-libtsan")
-  set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=thread -fPIC -lpthread -lm -static-libtsan")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread -pie -lpthread -lm -static-libtsan")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=thread -fPIC -lpthread -lm -static-libtsan")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=thread -fPIC -lpthread -lm -static-libtsan")
+  set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fsanitize=thread -fPIC -lpthread -lm -static-libtsan")
   list(APPEND SYS_LIBS "-fsanitize=thread -lpthread -lm -static-libtsan")
   add_definitions(-DWITH_TSAN)
   set(WITH_ASAN OFF)
   message("TSAN won't work with ASAN")
   set(ENABLE_JEMALLOC OFF)
   message("TSAN would disabled JeMalloc")
-  set(BUILD_TENDIS_STATIC OFF)
-  message("TSAN would disabled staticly compile, too")
 endif()
 
 option(WITH_COVER "build with COVER" OFF)
@@ -144,7 +141,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
                 # NOTE(takenliu) support jemalloc profile, before start tendisplus need export as below:
                 #     export MALLOC_CONF="prof:true,prof_prefix:jeprof.out"
-				COMMAND ./autogen.sh --enable-prof --disable-shared CFLAGS=-Wno-missing-attributes CXXFLAGS=-Wno-missing-attributes
+				COMMAND ./autogen.sh --enable-prof --disable-shared "CFLAGS=-Wno-missing-attributes -g3 -ggdb3 -gdwarf-4" "CXXFLAGS=-Wno-missing-attributes -g3 -ggdb3 -gdwarf-4"
 				WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR})
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/lib/libjemalloc_pic.a"
 				COMMAND make -j16
@@ -167,11 +164,6 @@ if(CMAKE_COMPILER_IS_GNUCC)
 	endif()
 
 	list(APPEND SYS_LIBS "dl" "pthread" "rt")
-	# thirdparty code
-	# do not set unnecessary flags before thirdparty dirs
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -g3 -ggdb3 -fno-omit-frame-pointer ")
-
-	add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX -DROCKSDB_SUPPORT_THREAD_LOCAL)
 endif()
 
 # TODO(vinchen): in the future it should disable sync_ponit in production
@@ -180,10 +172,10 @@ add_subdirectory(src/thirdparty/gflag)
 set(SNAPPY_BUILD_TESTS OFF)
 add_subdirectory(src/thirdparty/snappy)
 target_compile_options(snappy PRIVATE -fPIC)
-add_subdirectory(src/thirdparty/lz4/contrib/cmake_unofficial)
+add_subdirectory(src/thirdparty/lz4/contrib/cmake_unofficial EXCLUDE_FROM_ALL)
 add_subdirectory(src/thirdparty/googletest)
 set(WITH_GFLAGS OFF)
-add_subdirectory(src/thirdparty/glog glog EXCLUDE_FROM_ALL)
+add_subdirectory(src/thirdparty/glog EXCLUDE_FROM_ALL)
 
 list(APPEND SYS_LIBS sync_point)
 list(APPEND SYS_LIBS snappy)
@@ -206,7 +198,6 @@ set(LZ4_LIBRARIES ${CMAKE_BINARY_DIR}/lib/liblz4.a)
 include_directories("src/thirdparty/lz4/lib/")
 list(APPEND THIRDPARTY_LIBS ${LZ4_LIBRARIES})
 
-add_definitions(-DENABLE_CJSON_GLOBAL)
 option(RAPIDJSON_BUILD_TESTS "" OFF)
 set(RAPIDJSON_BUILD_DOC OFF)
 set(RAPIDJSON_BUILD_EXAMPLES OFF)
@@ -215,8 +206,10 @@ set(RAPIDJSON_HAS_STDSTRING ON)
 add_subdirectory(src/thirdparty/rapidjson)
 add_subdirectory(src/thirdparty/lua)
 
-add_subdirectory(${ROCKSDB_DIR}/rocksdb rocksdb EXCLUDE_FROM_ALL)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-maybe-uninitialized") 
+add_subdirectory(${ROCKSDB_DIR}/rocksdb EXCLUDE_FROM_ALL)
 target_compile_options(rocksdb PRIVATE -DLZ4)
+
 if(CMAKE_COMPILER_IS_GNUCC)
 set(WARN_C_CXX
 "-Wall \
@@ -284,7 +277,7 @@ include_directories("${PROJECT_SOURCE_DIR}/src/tendisplus/include")
 include_directories("src/thirdparty/include/Windows/")
 ENDIF()
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 ${WARN_C_CXX} ${WARN_CXX_ONLY}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${WARN_C_CXX} ${WARN_CXX_ONLY}")
 
 add_definitions(-DASIO_STANDALONE)
 add_definitions(-DRAPIDJSON_HAS_STDSTRING)
@@ -305,8 +298,8 @@ include_directories(${ROCKSDB_DIR})
 include_directories(${ROCKSDB_DIR}/rocksdb)
 include_directories(${ROCKSDB_DIR}/rocksdb/include)
 
-# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
-
+option(TENDIS_WITH_TOOLS "build ldb_tendis and other tools" ON)
+option(TENDIS_WITH_UNIT_TESTS "build unit tests or not" ON)
 add_subdirectory(src/tendisplus/network)
 add_subdirectory(src/tendisplus/utils)
 add_subdirectory(src/tendisplus/server)
@@ -316,6 +309,6 @@ add_subdirectory(src/tendisplus/replication)
 add_subdirectory(src/tendisplus/cluster)
 add_subdirectory(src/tendisplus/lock)
 add_subdirectory(src/tendisplus/script)
-if(NOT WITH_ASAN AND NOT WITH_TSAN AND NEW_ROCKSDB)
+if(NOT WITH_ASAN AND NOT WITH_TSAN AND TENDIS_WITH_TOOLS)
 add_subdirectory(src/tendisplus/tools)
 endif()

@@ -4,8 +4,13 @@
 
 #include <fstream>
 #include <limits>
+#include <map>
+#include <memory>
+#include <set>
+#include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include "gtest/gtest.h"
 #include "rocksdb/filter_policy.h"
@@ -244,19 +249,11 @@ TEST(RocksKVStore, RocksOptions) {
   EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().create_if_missing,
             true);
 
-#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 13)
   rocksdb::BlockBasedTableOptions* option =
     (rocksdb::BlockBasedTableOptions*)kvstore->getUnderlayerPesDB()
       ->GetOptions()
       .table_factory->GetOptions<rocksdb::BlockBasedTableOptions>();
   EXPECT_EQ(option->cache_index_and_filter_blocks, true);
-#else
-  rocksdb::BlockBasedTableOptions* option =
-    (rocksdb::BlockBasedTableOptions*)kvstore->getUnderlayerPesDB()
-      ->GetOptions()
-      .table_factory->GetOptions();
-  EXPECT_EQ(option->cache_index_and_filter_blocks, true);
-#endif
   LocalSessionGuard sg(nullptr);
   uint64_t ts = genRand();
   uint64_t versionep = genRand();
@@ -301,19 +298,11 @@ TEST(RocksKVStore, BinlogRightMost) {
             4);
   EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().create_if_missing,
             true);
-#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 13)
   rocksdb::BlockBasedTableOptions* option =
     (rocksdb::BlockBasedTableOptions*)kvstore->getUnderlayerPesDB()
       ->GetOptions()
       .table_factory->GetOptions<rocksdb::BlockBasedTableOptions>();
   EXPECT_EQ(option->cache_index_and_filter_blocks, false);
-#else
-  rocksdb::BlockBasedTableOptions* option =
-    (rocksdb::BlockBasedTableOptions*)kvstore->getUnderlayerPesDB()
-      ->GetOptions()
-      .table_factory->GetOptions();
-  EXPECT_EQ(option->cache_index_and_filter_blocks, false);
-#endif
   LocalSessionGuard sg(nullptr);
   uint64_t ts = genRand();
   uint64_t versionep = genRand();

@@ -2455,44 +2455,16 @@ void testRocksOptionCommand(std::shared_ptr<ServerEntry> svr) {
   std::string err;
   sess.setArgs({"CONFIG", "SET", "rocks.compaction_deletes_window", "100"});
   expect = Command::runSessionCmd(&sess);
-#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 11)
   EXPECT_TRUE(expect.ok());
-#else
-  EXPECT_FALSE(expect.ok());
-  err = Command::fmtErr(
-    "-ERR:3,msg:rocks.compaction_deletes_window can't be changed dynmaically "
-    "in rocksdb(version < 6.11)\r\n");
-  EXPECT_EQ(err, expect.status().toString());
-#endif
 
   sess.setArgs({"CONFIG", "SET", "rocks.compaction_deletes_trigger", "50"});
   expect = Command::runSessionCmd(&sess);
-#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 11)
   EXPECT_TRUE(expect.ok());
-#else
-  EXPECT_FALSE(expect.ok());
-  err.clear();
-  err = Command::fmtErr(
-    "-ERR:3,msg:rocks.compaction_deletes_trigger can't be changed "
-    "dynmaically "
-    "in rocksdb(version < 6.11)\r\n");
-  EXPECT_EQ(err, expect.status().toString());
-#endif
 
   sess.setArgs({"CONFIG", "SET", "rocks.compaction_deletes_ratio", "0.5"});
   expect = Command::runSessionCmd(&sess);
-#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 11)
   EXPECT_TRUE(expect.ok());
-#else
-  EXPECT_FALSE(expect.ok());
-  err.clear();
-  err = Command::fmtErr(
-    "-ERR:3,msg:rocks.compaction_deletes_ratio can't be changed dynmaically "
-    "in rocksdb(version < 6.11)\r\n");
-  EXPECT_EQ(err, expect.status().toString());
-#endif
 
-#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 11)
   std::ostringstream tableProperties;
   tableProperties << "CompactOnDeletionCollector"
                   << " (Sliding window size = " << 100
@@ -2517,7 +2489,6 @@ void testRocksOptionCommand(std::shared_ptr<ServerEntry> svr) {
       }
     }
   }
-#endif
 
   sess.setArgs({"CONFIG", "SET", "rocks.abc", "-1"});
   expect = Command::runSessionCmd(&sess);

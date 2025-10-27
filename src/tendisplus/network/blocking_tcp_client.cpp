@@ -148,7 +148,7 @@ Status BlockingTcpClient::tryWaitConnect() {
     _socket.set_option(asio::socket_base::keep_alive(true));
     return {ErrorCodes::ERR_OK, ""};
   } else {
-    if (msSinceEpoch() - _ctime > (uint64_t)_timeout.count()) {
+    if (msSinceEpoch() - _ctime > static_cast<uint64_t>(_timeout.count())) {
       return {ErrorCodes::ERR_TIMEOUT, "conn timeout"};
     }
 
@@ -212,7 +212,8 @@ Expected<std::string> BlockingTcpClient::realRead(
     std::unique_lock<std::mutex> lk(_mutex);
     if (!_cv.wait_for(lk, timeout, [this] { return _notified; })) {
       closeSocket();
-      return {ErrorCodes::ERR_TIMEOUT, "read timeout" + std::to_string(remain)};
+      return {ErrorCodes::ERR_TIMEOUT,
+              "read timeout,remain:" + std::to_string(remain)};
     } else if (_ec) {
       closeSocket();
       return {ErrorCodes::ERR_NETWORK, _ec.message()};

@@ -165,15 +165,11 @@ TEST(ServerParams, RocksOption) {
   myfile << "rocks.max_write_buffer_number 1\n";
   myfile << "rocks.cache_index_and_filter_blocks 1\n";
   myfile << "rocks.wal_dir \"/Abc/tlg\"\n";
-#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 18)
   myfile << "rocks.enable_blob_files 1\n";
   myfile << "rocks.min_blob_size 4096\n";
   myfile << "rocks.blob_file_size 16000000\n";
   myfile << "rocks.enable_blob_garbage_collection 0\n";
-#endif
-#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 17)
   myfile << "rocks.skip_concurrency_control 1\n";
-#endif
   myfile.close();
   const auto guard = MakeGuard([] { remove("a.cfg"); });
   auto cfg = std::make_unique<ServerParams>();
@@ -188,9 +184,7 @@ TEST(ServerParams, RocksOption) {
   EXPECT_EQ(cfg->rocksStrictCapacityLimit, 1);
   EXPECT_EQ(cfg->rocksCompressType, "lz4");
   EXPECT_EQ(cfg->rocksWALDir, "/Abc/tlg");
-#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 17)
   EXPECT_EQ(cfg->skipConcurrencyControl, 1);
-#endif
   EXPECT_TRUE(cfg->getRocksdbOptions().find("max_write_buffer_number") !=
               cfg->getRocksdbOptions().end());
   EXPECT_TRUE(cfg->getRocksdbOptions().find("cache_index_and_filter_blocks") !=

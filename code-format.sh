@@ -39,6 +39,9 @@ do
         fi
     fi
     if [[ $file =~ \.go$ ]]; then
+        # print diff
         gofmt -d $file
+        # rewrite the file
+        gofmt -w $file
     fi
 done

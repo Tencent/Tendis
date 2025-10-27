@@ -2,11 +2,13 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include <algorithm>
 #include <chrono>
 #include <fstream>
 #include <list>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -263,6 +265,13 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
     return false;
   }
 
+  LOG(INFO) << "registerIncrSync, slave storeIdArg:" << storeIdArg
+            << " dstStoreIdArg:" << dstStoreIdArg
+            << " binlogPosArg:" << binlogPosArg
+            << ", my minValidBinlogID:" << firstPos
+            << " HighestBinlogId:" << expdb.value().store->getHighestBinlogId()
+            << " lastFlushBinlogId:" << lastFlushBinlogId;
+
   // NOTE(deyukong): this check is not precise
   // (not in the same critical area with the modification to _pushStatus),
   // but it does not harm correctness.
@@ -277,7 +286,7 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
        << ",master firstPos:" << firstPos << ",slave binlogPos:" << binlogPos
        << ",lastFlushBinlogId:" << lastFlushBinlogId;
     client->writeLine(ss.str());
-    LOG(ERROR) << ss.str();
+    LOG(ERROR) << "registerIncrSync failed, " << ss.str();
     return false;
   }
   client->writeLine("+OK");
@@ -315,7 +324,7 @@ bool ReplManager::registerIncrSyncStatus(
        << ",master firstPos:" << _logRecycStatus[storeId]->minValidBinlogID
        << ",slave binlogPos:" << binlogPos
        << ",lastFlushBinlogId:" << _logRecycStatus[storeId]->lastFlushBinlogId;
-    LOG(ERROR) << ss.str();
+    LOG(ERROR) << "registerIncrSyncStatus failed, " << ss.str();
     client->writeLine(ss.str());
     return false;
   }
@@ -550,8 +559,8 @@ void ReplManager::supplyFullSyncRoutine(
     size_t remain = fileInfo.second;
     while (remain) {
       size_t batchSize = std::min(remain, fileBatch);
-      _rateLimiter->SetBytesPerSecond((uint64_t)_cfg->binlogRateLimitMB * 1024 *
-                                      1024);
+      _rateLimiter->SetBytesPerSecond(
+        static_cast<uint64_t>(_cfg->binlogRateLimitMB) * 1024 * 1024);
       _rateLimiter->Request(batchSize);
       readBuf.resize(batchSize);
       remain -= batchSize;
@@ -1034,8 +1043,7 @@ void ReplManager::supplyFullPsyncRoutine(
     }
   }
 
-  LOG(INFO) << "full psync done."
-            << "remote addr:" << client->getRemoteRepr()
+  LOG(INFO) << "full psync done." << "remote addr:" << client->getRemoteRepr()
             << "sotreId:" << storeId;
 
 #if defined(_WIN32) && _MSC_VER > 1900

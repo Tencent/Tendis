@@ -188,7 +188,7 @@ Status MigrateManager::stopSrcNode(const std::string& taskid,
                                    const std::string& srcIp,
                                    uint64_t port) {
   LOG(INFO) << "send stop command to srcNode:" << srcIp << ":" << port
-            << "on taskid:" << taskid;
+            << " on taskid:" << taskid;
   std::string srcHost = srcIp;
   auto srcPort = port;
   std::shared_ptr<BlockingTcpClient> client =
@@ -319,7 +319,6 @@ Status MigrateManager::stopAllTasks(bool saveSlots) {
     auto s = stopSrcNode(iter->first, node->getNodeIp(), node->getPort());
     if (!s.ok()) {
       LOG(ERROR) << "stop srcNode task fail:" << s.toString();
-      return s;
     }
   }
 
@@ -533,9 +532,7 @@ std::string MigrateSendTask::toString() {
   int64_t taskTime = startTime > 0 ? msSinceEpoch() - startTime : -1;
   auto beginTime =
     startTime > 0 ? msEpochToDatetime(_sender->getTaskStartTime()) : "-1";
-  if (startTime > 0) {
-    beginTime.erase(beginTime.end() - 1);
-  }
+
   ss2 << "taskid:" + _taskid << "\n"
       << "beginTime: " << beginTime << "\n"
       << "runTime: " << taskTime << "ms \n"
@@ -585,9 +582,6 @@ std::string MigrateReceiveTask::toString() {
   std::string taskState = receTaskTypeString(_state);
   auto beginTime =
     snapshotTime > 0 ? msEpochToDatetime(_receiver->getTaskStartTime()) : "-1";
-  if (startTime > 0) {
-    beginTime.erase(beginTime.end() - 1);
-  }
   std::stringstream ss2;
 
   ss2 << "taskid:" + _taskid << "\n"
@@ -1130,7 +1124,6 @@ bool MigrateManager::receiverSchedule(const SCLOCK::time_point& now) {
               _failImportSlots.reset(i);
             }
           } else {
-            LOG(INFO) << "_migrateReceiveTask ERR, erase it, slots" << i;
             _failImportSlots.set(i);
           }
           _importNodes.erase(i);
@@ -1620,7 +1613,7 @@ Expected<std::string> MigrateManager::getMigrateInfo() {
     for (auto& iter : _migratePtaskMap) {
       auto lastTime = sinceEpoch() - iter.second->_migrateTime;
       migrateTaskStr += (iter.second->getTaskid() + " [" +
-                         msEpochToDatetime(iter.second->_migrateTime)) +
+                         epochToDatetime(iter.second->_migrateTime)) +
         " migrateTime:" + std::to_string(lastTime) + "s] ";
     }
     Command::fmtBulk(ss, migrateTaskStr);
@@ -1653,7 +1646,7 @@ Expected<std::string> MigrateManager::getMigrateInfo() {
     for (auto& iter : _importPtaskMap) {
       auto lastTime = sinceEpoch() - iter.second->_migrateTime;
       migrateTaskStr += (iter.second->getTaskid() + " [" +
-                         msEpochToDatetime(iter.second->_migrateTime)) +
+                         epochToDatetime(iter.second->_migrateTime)) +
         " migrateTime:" + std::to_string(lastTime) + "s] ";
     }
     Command::fmtBulk(ss, migrateTaskStr);

@@ -4,6 +4,8 @@
 
 #include "tendisplus/cluster/migrate_sender.h"
 
+#include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -294,8 +296,8 @@ Status ChunkMigrateSender::sendRangeByBatch(Transaction* txn,
   Status s;
   MigrateBatch migratebatch(
     _cfg->migrateSnapshotBatchSizeKB * 1024, _client, _svr);
-  LOG(INFO) << "Migrate SendRange Batch begin, migrate slot: " << begin << " - "
-            << end;
+  LOG(INFO) << "Migrate SendRange Batch begin, migrate slot: [" << begin
+            << " - " << end << ")";
 
   {
     Status migrateStatus;
@@ -334,8 +336,8 @@ Status ChunkMigrateSender::sendRangeByBatch(Transaction* txn,
     *totalNum = migratebatch.sendKVEntries();
   }
 
-  LOG(INFO) << "Migrate sendRange Batch end, migrate slot: " << begin << " - "
-            << end << ", total num: " << *totalNum;
+  LOG(INFO) << "Migrate sendRange Batch end, migrate slot: [" << begin << " - "
+            << end << "), total num: " << *totalNum;
   // Send over of one slot
   SyncWriteData("2");
   SyncReadData(exptData, _OKSTR.length(), timeoutSec);
@@ -383,7 +385,7 @@ Status ChunkMigrateSender::sendSnapshot() {
                                  &sendNum);
         if (!status.ok()) {
           LOG(ERROR) << "sendRange failed, slot:" << i
-                     << "send keys num:" << getSnapshotNum()
+                     << " send keys num:" << getSnapshotNum() << " "
                      << status.toString();
           return status;
         }
@@ -590,8 +592,8 @@ Status ChunkMigrateSender::sendLastBinlog() {
   PStore kvstore = _dbWithLock->store;
   auto ptxn = kvstore->createTransaction(nullptr);
   if (!ptxn.ok()) {
-    LOG(ERROR) << "send binlog create transaction fail:"
-               << "on slots:" << bitsetStrEncode(_slots);
+    LOG(ERROR) << "send binlog create transaction fail on slots:"
+               << bitsetStrEncode(_slots);
     return ptxn.status();
   }
   auto maxBinlogId = kvstore->getNextBinlogSeq();

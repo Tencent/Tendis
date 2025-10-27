@@ -102,16 +102,18 @@ func normInt(val uint64, withB bool) string {
 		}
 		return fmt.Sprintf("%d", val)
 	}
-	val = val / 1024
-	if val < 1024 {
-		return fmt.Sprintf("%dK", val)
+
+	fVal := float64(val)
+	fVal /= 1024.0
+	if fVal < 1024 {
+		return fmt.Sprintf("%.1fK", fVal)
 	}
-	val = val / 1024
-	if val < 1024 {
-		return fmt.Sprintf("%dM", val)
+	fVal /= 1024.0
+	if fVal < 1024 {
+		return fmt.Sprintf("%.1fM", fVal)
 	}
-	val = val / 1024
-	return fmt.Sprintf("%dG", val)
+	fVal /= 1024.0
+	return fmt.Sprintf("%.1fG", fVal)
 }
 
 func main() {
@@ -121,12 +123,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("dial host %s failed:%v", host, err)
 	}
-    if *passwd != "" {
-        if v, err := client.Cmd("AUTH", *passwd).Str(); err != nil || v != "OK" {
-            log.Fatalf("auth failed.")
-        }
-    }
-
+	if *passwd != "" {
+		if v, err := client.Cmd("AUTH", *passwd).Str(); err != nil || v != "OK" {
+			log.Fatalf("auth failed.")
+		}
+	}
 
 	var oldInfo *DebugInfo = nil
 	info := &DebugInfo{}
@@ -143,13 +144,13 @@ func main() {
 	for {
 		v, err := client.Cmd("tendisstat").Str()
 		if err != nil {
-    		s := fmt.Sprintf("send debug cmd failed:%v", err)
-	    	fmt.Fprintln(w, s)
+			s := fmt.Sprintf("send debug cmd failed:%v", err)
+			fmt.Fprintln(w, s)
 			log.Fatalf("send debug cmd failed:%v", err)
 		}
 		if err := json.Unmarshal([]byte(v), &info); err != nil {
-    		s := fmt.Sprintf("unmarshal debug info failed:%v", err)
-	    	fmt.Fprintln(w, s)
+			s := fmt.Sprintf("unmarshal debug info failed:%v", err)
+			fmt.Fprintln(w, s)
 			log.Fatalf("unmarshal debug info failed:%v", err)
 		}
 		if oldInfo == nil {
@@ -204,7 +205,7 @@ func main() {
 			normInt(qtps, false),
 			inqueue,
 			maxLag,
-            info.Request.Processed)
+			info.Request.Processed)
 		fmt.Fprintln(w, s)
 		w.Flush()
 

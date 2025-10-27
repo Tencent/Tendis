@@ -1,4 +1,3 @@
-gcc_version=5.5.0
 root_dir=../
 
 version=`./${root_dir}/build/bin/tendisplus -v | awk '{print $2}'|awk -F '=' '{print $2}'`
@@ -19,7 +18,7 @@ cp ${root_dir}/build/bin/ldb_tendis $packname/bin
 cp ${root_dir}/pack/start-redis.sh $packname/bin
 cp ${root_dir}/pack/stop-redis.sh $packname/bin
 cp ${root_dir}/bin/redis-cli $packname/bin
-cp /usr/local/gcc-${gcc_version}/lib64/libstdc++.so.6 $packname/bin/deps
+cp ${root_dir}/bin/tar $packname/bin
 cp ${root_dir}/pack/start.sh $packname/scripts
 cp ${root_dir}/pack/stop.sh $packname/scripts
 cp ${root_dir}/tendisplus.conf $packname/scripts

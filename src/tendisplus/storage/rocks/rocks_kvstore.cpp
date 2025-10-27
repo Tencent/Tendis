@@ -846,9 +846,7 @@ void RocksPesTxn::ensureTxn() {
   // due to server-layer's keylock, RC-level can satisfy our
   // requirements. so here set_snapshot = false
   txnOpts.set_snapshot = false;
-#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 17)
   txnOpts.skip_concurrency_control = _store->getCfg()->skipConcurrencyControl;
-#endif
 
   auto db = _store->getUnderlayerPesDB();
   if (!db) {
@@ -1013,10 +1011,8 @@ Status rocksdbOptionsSet(
     options.inplace_update_support = static_cast<bool>(value);
   } else if (key == "inplace_update_num_locks") {
     options.inplace_update_num_locks = static_cast<size_t>(value);
-#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
   } else if (key == "memtable_whole_key_filtering") {
     options.memtable_whole_key_filtering = static_cast<bool>(value);
-#endif
   } else if (key == "memtable_huge_page_size") {
     options.memtable_huge_page_size = static_cast<size_t>(value);
   } else if (key == "bloom_locality") {
@@ -1053,10 +1049,8 @@ Status rocksdbOptionsSet(
     options.force_consistency_checks = static_cast<bool>(value);
   } else if (key == "report_bg_io_stats") {
     options.report_bg_io_stats = static_cast<bool>(value);
-#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
   } else if (key == "ttl") {
     options.ttl = static_cast<uint64_t>(value);
-#endif
   } else if (key == "write_buffer_size") {
     options.write_buffer_size = static_cast<size_t>(value);
   } else if (key == "level0_file_num_compaction_trigger") {
@@ -1121,12 +1115,10 @@ Status rocksdbOptionsSet(
     options.is_fd_close_on_exec = static_cast<bool>(value);
   } else if (key == "stats_dump_period_sec") {
     options.stats_dump_period_sec = static_cast<int>(value);
-#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
   } else if (key == "stats_persist_period_sec") {
     options.stats_persist_period_sec = static_cast<int>(value);
   } else if (key == "stats_history_buffer_size") {
     options.stats_history_buffer_size = static_cast<size_t>(value);
-#endif
   } else if (key == "advise_random_on_open") {
     options.advise_random_on_open = static_cast<bool>(value);
   } else if (key == "db_write_buffer_size") {
@@ -1175,11 +1167,8 @@ Status rocksdbOptionsSet(
     options.two_write_queues = static_cast<bool>(value);
   } else if (key == "manual_wal_flush") {
     options.manual_wal_flush = static_cast<bool>(value);
-#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
   } else if (key == "atomic_flush") {
     options.atomic_flush = static_cast<bool>(value);
-#endif
-#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 18)
   } else if (key == "enable_blob_files") {
     options.enable_blob_files = static_cast<bool>(value);
   } else if (key == "min_blob_size") {
@@ -1215,7 +1204,6 @@ Status rocksdbOptionsSet(
   } else if (key == "prepopulate_blob_cache") {
     options.prepopulate_blob_cache =
       static_cast<rocksdb::PrepopulateBlobCache>(value);
-#endif
   } else {
     return {ErrorCodes::ERR_PARSEOPT, "invalid rocksdb option :" + key};
   }
@@ -1247,10 +1235,8 @@ Status rocksdbTableOptionsSet(
       static_cast<bool>(value);
   } else if (key == "pin_l0_filter_and_index_blocks_in_cache") {
     options.pin_l0_filter_and_index_blocks_in_cache = static_cast<bool>(value);
-#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
   } else if (key == "pin_top_level_index_and_filter") {
     options.pin_top_level_index_and_filter = static_cast<bool>(value);
-#endif
   } else if (key == "no_block_cache") {
     options.no_block_cache = static_cast<bool>(value);
   } else if (key == "block_size") {
@@ -1277,10 +1263,8 @@ Status rocksdbTableOptionsSet(
     options.format_version = static_cast<uint32_t>(value);
   } else if (key == "enable_index_compression") {
     options.enable_index_compression = static_cast<bool>(value);
-#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
   } else if (key == "block_align") {
     options.block_align = static_cast<bool>(value);
-#endif
   } else {
     return {ErrorCodes::ERR_PARSEOPT, "invalid rocksdb  option :" + key};
   }
@@ -2083,11 +2067,7 @@ Status RocksKVStore::clear() {
   // Using rocksdb::DestroyDB is simple. But when 'data path' has other
   // files(not rocksdb generate), rocksdb::DestroyDB couldn't delete 'data path'
   // , so we remove 'data path' again
-#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
   auto s = rocksdb::DestroyDB(dbName(), options(), _cfDescs);
-#else
-  auto s = rocksdb::DestroyDB(dbName(), options());
-#endif
   if (!s.ok()) {
     return handleRocksdbError(s);
   }
@@ -2203,22 +2183,11 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
 
     rocksdb::Options defaultColumnFamilyOpts = defaultColumnOptions();
     // enable CompactOnDeletionCollectorFactory:
-#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 11)
     defaultColumnFamilyOpts.table_properties_collector_factories.emplace_back(
       rocksdb::NewCompactOnDeletionCollectorFactory(
         _cfg->rocksCompactOnDeletionWindow,
         _cfg->rocksCompactOnDeletionTrigger,
         _cfg->rocksCompactOnDeletionRatio));
-#else
-    if (_cfg->rocksCompactOnDeletionWindow == 0) {
-      // disable CompactOnDeletionCollectorFactory
-    } else {
-      defaultColumnFamilyOpts.table_properties_collector_factories.emplace_back(
-        rocksdb::NewCompactOnDeletionCollectorFactory(
-          _cfg->rocksCompactOnDeletionWindow,
-          _cfg->rocksCompactOnDeletionTrigger));
-    }
-#endif
     defaultColumnFamilyOpts.table_properties_collector_factories.emplace_back(
       NewKeyCollectorFactory());
     std::unique_ptr<rocksdb::Iterator> iter = nullptr;
@@ -3214,37 +3183,15 @@ std::string RocksKVStore::getBgError() const {
 }
 
 Status RocksKVStore::recoveryFromBgError() {
-  if (getBgError() == "") {
+  if (getBgError().empty())
     return {ErrorCodes::ERR_OK, ""};
-  }
-#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
-  {
-    std::lock_guard<std::mutex> lk(_mutex);
-    auto s = getBaseDB()->Resume();
-    if (!s.ok()) {
-      return handleRocksdbError(s);
-    }
-  }
-  _env->resetError();
-#else
-  // NOTE(vinchen): in rocksdb-5.13.4 there is no DB::Resume().
-  // We restart KVstore to recover rocksdb
-  auto s = stop();
+
+  std::lock_guard<std::mutex> lk(_mutex);
+  auto s = getBaseDB()->Resume();
   if (!s.ok()) {
-    return s;
+    return handleRocksdbError(s);
   }
-
-  auto nextBinlogid = getNextBinlogSeq();
-
-  auto ret = restart(false, nextBinlogid, UINT64_MAX);
-  if (!ret.ok()) {
-    return ret.status();
-  }
-
-  INVARIANT_D(ret.value() == nextBinlogid - 1);
-  _env->resetError();
-#endif
-
+  _env->clear();
   return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -3351,7 +3298,6 @@ const rocksdb::Snapshot* RocksKVStore::getSnapshot() {
 
 Status RocksKVStore::setCompactOnDeletionCollectorFactory(
   const std::string& option, std::shared_ptr<tendisplus::ServerParams> cfg) {
-#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 11)
   auto table_properties_collector_factories =
     getBaseDB()->GetOptions().table_properties_collector_factories;
   std::string errinfo;
@@ -3379,10 +3325,6 @@ Status RocksKVStore::setCompactOnDeletionCollectorFactory(
 
   return {ErrorCodes::ERR_INTERNAL,
           "Options don't contain CompactOnDeletionTableFactory"};
-#else
-  return {ErrorCodes::ERR_INTERNAL,
-          option + " can't be changed dynmaically in rocksdb(version < 6.11)"};
-#endif
 }
 
 int64_t RocksKVStore::getOption(const std::string& option) {
@@ -3617,26 +3559,7 @@ void RocksdbEnv::setError(rocksdb::BackgroundErrorReason reason,
 
 void RocksdbEnv::clear() {
   std::lock_guard<std::mutex> lk(_mutex);
-  _bgError = "";
-#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
-  // do nothing
-#else
-  // TODO(vinchen): in rocksdb-5.13.4 there is no DB::Resume().
-  // We can only reset the bg_error_ in rocksdb.
-  _rocksbgError = rocksdb::Status::OK();
-#endif
-}
-
-void RocksdbEnv::resetError() {
-  std::lock_guard<std::mutex> lk(_mutex);
-  _bgError = "";
-#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
-  // do nothing
-#else
-  // TODO(vinchen): in rocksdb-5.13.4 there is no DB::Resume().
-  // We reset the backgroundError in tendisplus.
-  _rocksbgError = rocksdb::Status::OK();
-#endif
+  _bgError.clear();
 }
 
 std::string RocksdbEnv::getErrorString() const {

@@ -4,7 +4,10 @@
 
 #include "tendisplus/cluster/gc_manager.h"
 
+#include <memory>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "tendisplus/commands/command.h"
 
@@ -35,11 +38,18 @@ void GCManager::controlRoutine() {
   // 4. do actual deleteRange job.
   while (_isRunning.load(std::memory_order_relaxed)) {
     if (_svr->getMigrateManager()->existMigrateTask()) {
+      std::lock_guard<std::mutex> lk(_mutex);
       _waitTimeAfterMigrate = _svr->getParams()->waitTimeIfExistsMigrateTask;
-    } else if (_waitTimeAfterMigrate > 0) {
-      _waitTimeAfterMigrate--;
     } else {
-      gcSchedule();
+      {
+        std::lock_guard<std::mutex> lk(_mutex);
+        if (_waitTimeAfterMigrate > 0) {
+          _waitTimeAfterMigrate--;
+        }
+      }
+      if (_waitTimeAfterMigrate == 0) {
+        gcSchedule();
+      }
     }
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
