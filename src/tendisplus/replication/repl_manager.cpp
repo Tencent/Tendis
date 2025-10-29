@@ -1755,7 +1755,7 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
          ++iter) {
       std::string state = getEnumStr(iter->second->state);
       ss << "rocksdb" << i << "_slave" << j++ << ":";
-      ss << ",ip=" << iter->second->slave_listen_ip;
+      ss << "ip=" << iter->second->slave_listen_ip;
       ss << ",port=" << iter->second->slave_listen_port;
       ss << ",dest_store_id=" << iter->second->storeid;
       ss << ",state=" << state;
