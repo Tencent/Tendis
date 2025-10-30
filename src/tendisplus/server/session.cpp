@@ -296,7 +296,8 @@ LocalSessionGuard::LocalSessionGuard(ServerEntry* svr, Session* sess)
 
 LocalSessionGuard::~LocalSessionGuard() {
   // don't call svr->endSession(_sess->id());
-  if (_sess->getServerEntry()->getParams()->tendisLatencyLimit > 0 || _sess->getServerEntry()->getParams()->rocksdbLatencyLimit > 0) {
+  if (_sess->getServerEntry()->getParams()->tendisLatencyLimit > 0 ||
+      _sess->getServerEntry()->getParams()->rocksdbLatencyLimit > 0) {
     std::stringstream ss;
     for (uint8_t i = 0; i < LockLatencyType::MAX_LLT; ++i) {
       auto lockRecord = _sess->getCtx()->generateLockRecordLogIfNeeded(
@@ -323,7 +324,7 @@ LocalSessionGuard::~LocalSessionGuard() {
         cmds = "null cmd.";
       }
       LOG(WARNING) << "latency too long localsession cmd:" << cmds << " " << s
-                  << " threadid:" << getCurThreadId();
+                   << " threadid:" << getCurThreadId();
     }
   }
 }
