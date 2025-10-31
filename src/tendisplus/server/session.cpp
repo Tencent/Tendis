@@ -297,19 +297,22 @@ LocalSessionGuard::LocalSessionGuard(ServerEntry* svr, Session* sess)
 LocalSessionGuard::~LocalSessionGuard() {
   // don't call svr->endSession(_sess->id());
   std::string s;
-  for (uint8_t i = 0; i < LockLatencyType::MAX_LLT; ++i) {
-    auto lockRecord = _sess->getCtx()->generateLockRecordLogIfNeeded(
-      static_cast<LockLatencyType>(i));
-    if (!lockRecord.empty()) {
-      s.append(lockRecord).append(" ");
+  if (_sess->getServerEntry()->getParams()->tendisLatencyLimit > 0) {
+    for (uint8_t i = 0; i < LockLatencyType::MAX_LLT; ++i) {
+      auto lockRecord = _sess->getCtx()->generateLockRecordLogIfNeeded(
+        static_cast<LockLatencyType>(i));
+      if (!lockRecord.empty()) {
+        s.append(lockRecord).append(" ");
+      }
     }
   }
-
-  for (uint8_t i = 0; i < RocksdbLatencyType::MAX_RLT; ++i) {
-    auto rocksdbRecord = _sess->getCtx()->generateRocksdbRecordLogIfNeeded(
-      static_cast<RocksdbLatencyType>(i));
-    if (!rocksdbRecord.empty()) {
-      s.append(rocksdbRecord).append(" ");
+  if (_sess->getServerEntry()->getParams()->rocksdbLatencyLimit > 0) {
+    for (uint8_t i = 0; i < RocksdbLatencyType::MAX_RLT; ++i) {
+      auto rocksdbRecord = _sess->getCtx()->generateRocksdbRecordLogIfNeeded(
+        static_cast<RocksdbLatencyType>(i));
+      if (!rocksdbRecord.empty()) {
+        s.append(rocksdbRecord).append(" ");
+      }
     }
   }
 
