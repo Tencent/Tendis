@@ -1025,9 +1025,11 @@ std::stringstream& Command::fmtMultiBulkLen(std::stringstream& ss, uint64_t l) {
 
 std::stringstream& Command::fmtBulk(std::stringstream& ss,
                                     const std::string& s) {
-  ss << "$" << s.size() << "\r\n";
-  ss.write(s.c_str(), s.size());
-  ss << "\r\n";
+  std::string bulk;
+  bulk.append("$").append(std::to_string(s.size())).append("\r\n");
+  bulk.append(s.c_str(), s.size()).append("\r\n");
+
+  ss.write(bulk.data(), bulk.size());
   return ss;
 }
 
@@ -1042,19 +1044,20 @@ std::stringstream& Command::fmtLongLong(std::stringstream& ss, int64_t v) {
 }
 
 std::string Command::fmtBulk(const std::string& s) {
-  std::stringstream ss;
-  ss << "$" << s.size() << "\r\n";
-  ss.write(s.c_str(), s.size());
-  ss << "\r\n";
-  return ss.str();
+  std::string result;
+  result.append("$").append(std::to_string(s.size())).append("\r\n");
+  result.append(s.c_str(), s.size()).append("\r\n");
+  return result;
 }
 
 std::string Command::fmtStatus(const std::string& s) {
-  std::stringstream ss;
-  ss << "+";
-  ss.write(s.c_str(), s.size());
-  ss << "\r\n";
-  return ss.str();
+  std::string result;
+	size_t len = 1 + std::to_string(s.size()).size() + 2;
+	result.reserve(len);  // 预分配内存，避免多次扩容
+  result.append("+");
+  result.append(s.c_str(), s.size());
+  result.append("\r\n");
+  return result;
 }
 
 std::stringstream& Command::fmtStatus(std::stringstream& ss,
