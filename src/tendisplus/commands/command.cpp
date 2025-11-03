@@ -991,9 +991,9 @@ std::string Command::fmtZero() {
 }
 
 std::string Command::fmtLongLong(int64_t v) {
-  std::stringstream ss;
-  ss << ":" << v << "\r\n";
-  return ss.str();
+  std::string result;
+  result.append(":").append(std::to_string(v)).append("\r\n");
+  return result;
 }
 
 Expected<uint64_t> Command::getInt64FromFmtLongLong(const std::string& str) {
@@ -1019,7 +1019,9 @@ std::string Command::fmtZeroBulkLen() {
 }
 
 std::stringstream& Command::fmtMultiBulkLen(std::stringstream& ss, uint64_t l) {
-  ss << "*" << l << "\r\n";
+  std::string bulk;
+  bulk.append("*").append(std::to_string(l)).append("\r\n");
+  ss.write(bulk.data(), bulk.size());
   return ss;
 }
 
@@ -1039,7 +1041,9 @@ std::stringstream& Command::fmtNull(std::stringstream& ss) {
 }
 
 std::stringstream& Command::fmtLongLong(std::stringstream& ss, int64_t v) {
-  ss << ":" << v << "\r\n";
+  std::string bulk;
+  bulk.append(":").append(std::to_string(v)).append("\r\n");
+  ss.write(bulk.data(), bulk.size());
   return ss;
 }
 
@@ -1058,9 +1062,9 @@ std::string Command::fmtStatus(const std::string& s) {
 
 std::stringstream& Command::fmtStatus(std::stringstream& ss,
                                       const std::string& s) {
-  ss << "+";
-  ss.write(s.c_str(), s.size());
-  ss << "\r\n";
+  std::string bulk;
+  bulk.append("+").append(s.c_str(), s.size()).append("\r\n");
+  ss.write(bulk.data(), bulk.size());
   return ss;
 }
 
