@@ -1052,11 +1052,7 @@ std::string Command::fmtBulk(const std::string& s) {
 
 std::string Command::fmtStatus(const std::string& s) {
   std::string result;
-	size_t len = 1 + std::to_string(s.size()).size() + 2;
-	result.reserve(len);  // 预分配内存，避免多次扩容
-  result.append("+");
-  result.append(s.c_str(), s.size());
-  result.append("\r\n");
+  result.append("+").append(s.c_str(), s.size()).append("\r\n");
   return result;
 }
 
