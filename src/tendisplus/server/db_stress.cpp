@@ -2,7 +2,10 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include <cstdio>
+#include <iostream>
 #include <memory>
+#include <string>
 #include <thread>
 #include <utility>
 
@@ -329,21 +332,21 @@ bool setupEnv(const std::string& v) {
   std::error_code ec;
   std::stringstream ss;
   ss << "./" << v << "/log";
-  filesystem::remove_all(ss.str(), ec);
+  std::filesystem::remove_all(ss.str(), ec);
   EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
-  EXPECT_TRUE(filesystem::create_directories(ss.str()));
+  EXPECT_TRUE(std::filesystem::create_directories(ss.str()));
 
   ss.str("");
   ss << "./" << v << "/db";
-  filesystem::remove_all(ss.str(), ec);
+  std::filesystem::remove_all(ss.str(), ec);
   EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
-  EXPECT_TRUE(filesystem::create_directories(ss.str()));
+  EXPECT_TRUE(std::filesystem::create_directories(ss.str()));
 
   ss.str("");
   ss << "./" << v << "/dump";
-  filesystem::remove_all(ss.str(), ec);
+  std::filesystem::remove_all(ss.str(), ec);
   EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
-  EXPECT_TRUE(filesystem::create_directories(ss.str()));
+  EXPECT_TRUE(std::filesystem::create_directories(ss.str()));
 
   return true;
 }
@@ -627,34 +630,34 @@ void printHelpInfo() {
   std::cout << "db_stress -- Benchmark Tool for Tendisplus" << std::endl;
   std::cout << "usage: db_stress [options]" << std::endl;
   std::cout << "  Options:" << std::endl;
-  std::cout << "    --binlogEnabled=n             "
+  std::cout << "    --binlogEnabled=n                                  "
             << "enable binlog for benchmark. 0 = off / 1 = on" << std::endl;
-  std::cout << "    --binlogSaveLogs=n            "
+  std::cout << "    --binlogSaveLogs=n                                 "
             << "save binlog for benchmark. 0 = off / 1 = on" << std::endl;
-  std::cout << "    --db=path                     "
+  std::cout << "    --db=path                                          "
             << "set path used in benchmark." << std::endl;
-  std::cout << "    --kvStoreCount=n              "
+  std::cout << "    --kvStoreCount=n                                   "
             << "set kvstorecount used in benchmark." << std::endl;
-  std::cout << "    --generallog=n                "
-            << "enable log general for benchmark. "
-            << "0 = off / 1 = on" << std::endl;
-  std::cout << "    --sleepAfterBenchmark=seconds "
+  std::cout << "    --generallog=n                                     "
+            << "enable log general for benchmark. 0 = off / 1 = on"
+            << std::endl;
+  std::cout << "    --sleepAfterBenchmark=seconds                      "
             << "sleepping time after test." << std::endl;
-  std::cout << "    --num=n                       "
+  std::cout << "    --num=n                                            "
             << "kvwrite options number" << std::endl;
-  std::cout << "    --thread=n                    "
+  std::cout << "    --thread=n                                         "
             << "work thread number" << std::endl;
-  std::cout << "    --rocksTransactionMode=mode   "
+  std::cout << "    --rocksTransactionMode=mode                        "
             << "txn mode for Tendisplus." << std::endl;
-  std::cout << "                                  "
+  std::cout << "                                                       "
             << "  0 for Optimistic Transaction." << std::endl;
-  std::cout << "                                  "
+  std::cout << "                                                       "
             << "  1 for Pessimistic Transaction." << std::endl;
-  std::cout << "                                  "
+  std::cout << "                                                       "
             << "  2 for WriteBatch" << std::endl;
-  std::cout << "    -h/--help                     "
+  std::cout << "    -h/--help                                          "
             << "print help info" << std::endl;
-  std::cout << "    -v/--version                  "
+  std::cout << "    -v/--version                                       "
             << "print version info" << std::endl;
 }
 

@@ -24,7 +24,6 @@
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/sync_point.h"
@@ -223,15 +222,15 @@ void testMaxBinlogId(const std::unique_ptr<RocksKVStore>& kvstore) {
 TEST(RocksKVStore, RocksOptions) {
   auto cfg = genParamsRocks();
 
-  if (!filesystem::exists("db")) {
-    EXPECT_TRUE(filesystem::create_directory("db"));
+  if (!std::filesystem::exists("db")) {
+    EXPECT_TRUE(std::filesystem::create_directory("db"));
   }
-  if (!filesystem::exists("log")) {
-    EXPECT_TRUE(filesystem::create_directory("log"));
+  if (!std::filesystem::exists("log")) {
+    EXPECT_TRUE(std::filesystem::create_directory("log"));
   }
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -280,14 +279,14 @@ TEST(RocksKVStore, RocksOptions) {
 TEST(RocksKVStore, BinlogRightMost) {
   auto cfg = genParams();
 
-  // filesystem::remove_all("./log");
-  // filesystem::remove_all("./db");
+  // std::filesystem::remove_all("./log");
+  // std::filesystem::remove_all("./db");
 
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -377,13 +376,13 @@ TEST(RocksKVStore, BinlogRightMost) {
 
 TEST(RocksKVStore, RepllogCursorV2) {
   auto cfg = genParams();
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
 
   uint64_t ts0 = msSinceEpoch();
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -558,11 +557,11 @@ void cursorVisibleRoutine(RocksKVStore* kvstore) {
 
 TEST(RocksKVStore, OptCursorVisible) {
   auto cfg = genParams();
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -572,11 +571,11 @@ TEST(RocksKVStore, OptCursorVisible) {
 
 TEST(RocksKVStore, PesCursorVisible) {
   auto cfg = genParams();
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -586,11 +585,11 @@ TEST(RocksKVStore, PesCursorVisible) {
 
 TEST(RocksKVStore, WBCursorVisible) {
   auto cfg = genParams();
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -618,11 +617,11 @@ void setKV(RocksKVStore* kvstore,
 
 TEST(RocksKVStore, CursorUpperBound) {
   auto cfg = genParams();
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -667,11 +666,11 @@ TEST(RocksKVStore, CursorUpperBound) {
 
 TEST(RocksKVStore, BackupCkptInter) {
   auto cfg = genParams();
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -696,7 +695,8 @@ TEST(RocksKVStore, BackupCkptInter) {
   for (auto& bk : expBk.value().getFileList()) {
     LOG(INFO) << "backupInfo:[" << bk.first << "," << bk.second << "]";
   }
-  EXPECT_TRUE(filesystem::exists(kvstore->dftBackupDir() + "/backup_meta"));
+  EXPECT_TRUE(
+    std::filesystem::exists(kvstore->dftBackupDir() + "/backup_meta"));
 
   // backup failed, set the backup state to false
   Expected<BackupInfo> expBk1 = kvstore->backup(
@@ -705,7 +705,8 @@ TEST(RocksKVStore, BackupCkptInter) {
     cfg->binlogUsingDefaultCF ? BinlogVersion::BINLOG_VERSION_1
                               : BinlogVersion::BINLOG_VERSION_2);
   EXPECT_FALSE(expBk1.ok());
-  EXPECT_TRUE(filesystem::exists(kvstore->dftBackupDir() + "/backup_meta"));
+  EXPECT_TRUE(
+    std::filesystem::exists(kvstore->dftBackupDir() + "/backup_meta"));
 
   // backup failed, set the backup state to false
   Expected<BackupInfo> expBk2 = kvstore->backup(
@@ -738,14 +739,14 @@ TEST(RocksKVStore, BackupCkptInter) {
 TEST(RocksKVStore, BackupCkpt) {
   auto cfg = genParams();
   std::string backup_dir = "backup";
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
-  // EXPECT_TRUE(filesystem::create_directory(backup_dir));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
+  // EXPECT_TRUE(std::filesystem::create_directory(backup_dir));
 
   const auto guard = MakeGuard([backup_dir] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
-    filesystem::remove_all(backup_dir);
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
+    std::filesystem::remove_all(backup_dir);
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -777,7 +778,7 @@ TEST(RocksKVStore, BackupCkpt) {
   for (auto& bk : expBk1.value().getFileList()) {
     LOG(INFO) << "backupInfo:[" << bk.first << "," << bk.second << "]";
   }
-  EXPECT_TRUE(filesystem::exists(backup_dir + "/backup_meta"));
+  EXPECT_TRUE(std::filesystem::exists(backup_dir + "/backup_meta"));
 
   Expected<BackupInfo> expBk2 = kvstore->backup(
     backup_dir, KVStore::BackupMode::BACKUP_CKPT, binlogversion);
@@ -810,13 +811,13 @@ TEST(RocksKVStore, BackupCkpt) {
 TEST(RocksKVStore, BackupCopy) {
   auto cfg = genParams();
   std::string backup_dir = "backup";
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
-  EXPECT_TRUE(filesystem::create_directory(backup_dir));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory(backup_dir));
   const auto guard = MakeGuard([backup_dir] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
-    filesystem::remove_all(backup_dir);
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
+    std::filesystem::remove_all(backup_dir);
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -845,13 +846,13 @@ TEST(RocksKVStore, BackupCopy) {
   for (auto& bk : expBk1.value().getFileList()) {
     LOG(INFO) << "backupInfo:[" << bk.first << "," << bk.second << "]";
   }
-  EXPECT_TRUE(filesystem::exists(backup_dir + "/backup_meta"));
+  EXPECT_TRUE(std::filesystem::exists(backup_dir + "/backup_meta"));
 
   Expected<BackupInfo> expBk2 = kvstore->backup(
     backup_dir, KVStore::BackupMode::BACKUP_COPY, binlogversion);
   // BackupEngine will delete dir if not null.
   EXPECT_TRUE(expBk2.ok());
-  EXPECT_TRUE(filesystem::exists(backup_dir + "/backup_meta"));
+  EXPECT_TRUE(std::filesystem::exists(backup_dir + "/backup_meta"));
 
   s = kvstore->stop();
   EXPECT_TRUE(s.ok());
@@ -878,11 +879,11 @@ TEST(RocksKVStore, BackupCopy) {
 
 TEST(RocksKVStore, Stop) {
   auto cfg = genParams();
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -968,12 +969,12 @@ void commonRoutine(RocksKVStore* kvstore) {
 
 TEST(RocksKVStore, OptCommon) {
   auto cfg = genParams();
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  // EXPECT_TRUE(filesystem::create_directory("db/0"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  // EXPECT_TRUE(std::filesystem::create_directory("db/0"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -983,12 +984,12 @@ TEST(RocksKVStore, OptCommon) {
 
 TEST(RocksKVStore, PesCommon) {
   auto cfg = genParams();
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  // EXPECT_TRUE(filesystem::create_directory("db/0"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  // EXPECT_TRUE(std::filesystem::create_directory("db/0"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -998,12 +999,12 @@ TEST(RocksKVStore, PesCommon) {
 
 TEST(RocksKVStore, WBCommon) {
   auto cfg = genParams();
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  // EXPECT_TRUE(filesystem::create_directory("db/0"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  // EXPECT_TRUE(std::filesystem::create_directory("db/0"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -1046,8 +1047,8 @@ uint64_t getBinlogCount(Transaction* txn) {
 
 TEST(RocksKVStore, PesTruncateBinlog) {
   auto cfg = genParams();
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  const auto guard = MakeGuard([] { filesystem::remove_all("./db"); });
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  const auto guard = MakeGuard([] { std::filesystem::remove_all("./db"); });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
   uint64_t keepBinlog = 1;
@@ -1224,12 +1225,12 @@ TEST(RocksKVStore, PesTruncateBinlog) {
 
 TEST(RocksKVStore, Compaction) {
   auto cfg = genParams();
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  // EXPECT_TRUE(filesystem::create_directory("db/0"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  // EXPECT_TRUE(std::filesystem::create_directory("db/0"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
     SyncPoint::GetInstance()->DisableProcessing();
     SyncPoint::GetInstance()->ClearAllCallBacks();
   });
@@ -1297,12 +1298,12 @@ TEST(RocksKVStore, Compaction) {
 TEST(RocksKVStore, CompactionWithNoexpire) {
   auto cfg = genParams();
   cfg->noexpire = true;
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  // EXPECT_TRUE(filesystem::create_directory("db/0"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  // EXPECT_TRUE(std::filesystem::create_directory("db/0"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
     SyncPoint::GetInstance()->DisableProcessing();
     SyncPoint::GetInstance()->ClearAllCallBacks();
   });
@@ -1382,15 +1383,15 @@ TEST(RocksKVStore, CompressAndDecompress) {
     {"none", "NoCompression"}, {"lz4", "LZ4"}, {"snappy", "Snappy"}};
   for (const auto& compress_type : types) {
     for (const auto& decompress_type : types) {
-      if (!filesystem::exists("db")) {
-        EXPECT_TRUE(filesystem::create_directory("db"));
+      if (!std::filesystem::exists("db")) {
+        EXPECT_TRUE(std::filesystem::create_directory("db"));
       }
-      if (!filesystem::exists("log")) {
-        EXPECT_TRUE(filesystem::create_directory("log"));
+      if (!std::filesystem::exists("log")) {
+        EXPECT_TRUE(std::filesystem::create_directory("log"));
       }
       const auto guard = MakeGuard([] {
-        filesystem::remove_all("./log");
-        filesystem::remove_all("./db");
+        std::filesystem::remove_all("./log");
+        std::filesystem::remove_all("./db");
       });
 
       auto cfg = genParamsRocks();

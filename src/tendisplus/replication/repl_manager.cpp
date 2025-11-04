@@ -359,11 +359,11 @@ Expected<uint32_t> ReplManager::maxDumpFileSeq(uint32_t storeId) {
   subpath = replaceAll(subpath, "/", "\\");
 #endif
   try {
-    if (!filesystem::exists(_dumpPath)) {
-      filesystem::create_directory(_dumpPath);
+    if (!std::filesystem::exists(_dumpPath)) {
+      std::filesystem::create_directory(_dumpPath);
     }
-    if (!filesystem::exists(subpath)) {
-      filesystem::create_directory(subpath);
+    if (!std::filesystem::exists(subpath)) {
+      std::filesystem::create_directory(subpath);
     }
   } catch (const std::exception& ex) {
     LOG(ERROR) << "create dir:" << _dumpPath << " or " << subpath
@@ -372,9 +372,9 @@ Expected<uint32_t> ReplManager::maxDumpFileSeq(uint32_t storeId) {
   }
   uint32_t maxFno = 0;
   try {
-    for (auto& p : filesystem::recursive_directory_iterator(subpath)) {
-      const filesystem::path& path = p.path();
-      if (!filesystem::is_regular_file(p)) {
+    for (auto& p : std::filesystem::recursive_directory_iterator(subpath)) {
+      const std::filesystem::path& path = p.path();
+      if (!std::filesystem::is_regular_file(p)) {
         LOG(INFO) << "maxDumpFileSeq ignore:" << p.path();
         continue;
       }
@@ -897,9 +897,9 @@ Expected<uint64_t> ReplManager::getDumpBinlogID(uint32_t storeId,
   subpath = replaceAll(subpath, "/", "\\");
 #endif
   try {
-    for (auto& p : filesystem::recursive_directory_iterator(subpath)) {
-      const filesystem::path& path = p.path();
-      if (!filesystem::is_regular_file(p)) {
+    for (auto& p : std::filesystem::recursive_directory_iterator(subpath)) {
+      const std::filesystem::path& path = p.path();
+      if (!std::filesystem::is_regular_file(p)) {
         LOG(INFO) << "maxDumpFileSeq ignore:" << p.path();
         continue;
       }

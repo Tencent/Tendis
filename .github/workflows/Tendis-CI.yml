@@ -25,6 +25,7 @@ jobs:
         run: |
           export PATH=$PATH:~/.local/bin/
           files=`git diff --name-only HEAD HEAD~1`
+          exit_codes=0
           echo "$files" | while read file
           do
             if [[ $file =~ \.cc$ || $file =~ \.h$ || $file =~ \.hpp$ || $file =~ \.cpp$ ]]; then
@@ -35,14 +36,16 @@ jobs:
                 else
                   echo "cpplint --filter=\"-runtime/reference\" $file"
                   cpplint --filter="-runtime/reference,-whitespace/indent_namespace" $file
-                  if [[ $? -ne 0 ]]; then
-                      echo "Run cpplint against $file failed..."
-                      exit 1
-                  fi
+                  exit_code=$?
+                  exit_codes=$((exit_codes + exit_code))
                 fi
               fi
             fi
           done
+          if [[ $exit_codes -ne 0 ]]; then
+            echo "Run cpplint against $file failed..."
+            exit 1
+          fi
       - name: format
         run: |
           export PATH=$PATH:~/.local/bin/
@@ -67,7 +70,6 @@ jobs:
                 fi
               fi
             fi
-          
             if [[ $file =~ \.go$ ]]; then
               if [[ -f $file ]]; then
                 if [[ $file =~ ^src/tendisplus/misc || $file =~ src/tendisplus/perftools ||
@@ -86,7 +88,6 @@ jobs:
               fi
             fi
           done
-          
   test-unittest-sh:
     needs: [cpplint-check]
     name: Test-unittest.sh
@@ -112,7 +113,6 @@ jobs:
               exit $errcnt1
           fi
           exit 0
-
   test-redistest-sh:
     needs: [cpplint-check]
     name: Test-redistest.sh
@@ -215,7 +215,6 @@ jobs:
           cd src/tendisplus/integrate_test
           chmod +x gotest.sh
           ./gotest.sh normaltest-part1
-
   test-gotest-normaltest-part2:
     needs: [cpplint-check]
     name: Test-gotest-normaltest-part2
@@ -233,7 +232,6 @@ jobs:
           cd src/tendisplus/integrate_test
           chmod +x gotest.sh
           ./gotest.sh normaltest-part2
-
   test-gotest-normaltest-part3:
     needs: [cpplint-check]
     name: Test-gotest-normaltest-part3
@@ -251,7 +249,6 @@ jobs:
           cd src/tendisplus/integrate_test
           chmod +x gotest.sh
           ./gotest.sh normaltest-part3
-
   test-gotest-versiontest:
     needs: [cpplint-check]
     name: Test-gotest-versiontest
@@ -282,7 +279,6 @@ jobs:
             if ! [[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
                 continue
             fi
-
             if version_le "$ver" "$threshold"; then
                 continue
             else

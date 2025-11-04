@@ -25,7 +25,6 @@
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/status.h"
@@ -3121,11 +3120,11 @@ TEST(Command, testFlushallWithRocksDBPath) {
 
   const auto guard = MakeGuard([&walPath, &ec] {
     destroyEnv();
-    filesystem::remove_all(walPath, ec);
+    std::filesystem::remove_all(walPath, ec);
   });
 
   EXPECT_TRUE(setupEnv());
-  EXPECT_TRUE(filesystem::create_directory(walPath));
+  EXPECT_TRUE(std::filesystem::create_directory(walPath));
 
   auto cfg = makeServerParam();
   cfg->rocksWALDir = walPath;

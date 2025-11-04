@@ -100,8 +100,8 @@ void testScanJobRunning(std::shared_ptr<ServerEntry> server,
     });
   SyncPoint::GetInstance()->EnableProcessing();
 
-  EXPECT_TRUE(filesystem::is_empty("./db"));
-  EXPECT_TRUE(filesystem::is_empty("./log"));
+  EXPECT_TRUE(std::filesystem::is_empty("./db"));
+  EXPECT_TRUE(std::filesystem::is_empty("./log"));
 
   auto s = server->startup(cfg);
   ASSERT_TRUE(s.ok());

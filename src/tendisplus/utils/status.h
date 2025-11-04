@@ -13,11 +13,11 @@
 
 #include <cstdlib>
 #include <memory>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <utility>
-
-#include "tendisplus/utils/portable.h"
 
 namespace tendisplus {
 
@@ -152,7 +152,7 @@ class Expected {
   }
 
  private:
-  optional<T> _data;
+  std::optional<T> _data;
   Status _status;
 };
 
@@ -184,10 +184,10 @@ Expected<T> makeExpected(Args&&... args) {
     }                                                                  \
   } while (0)
 
-#define RET_IF_MEMORY_REQUEST_FAILED(SESS, SIZE)       \
-  auto tempStatus = (SESS) -> memLimitRequest((SIZE)); \
-  if (!tempStatus.ok()) {                              \
-    return tempStatus;                                 \
+#define RET_IF_MEMORY_REQUEST_FAILED(SESS, SIZE)     \
+  auto tempStatus = (SESS)->memLimitRequest((SIZE)); \
+  if (!tempStatus.ok()) {                            \
+    return tempStatus;                               \
   }
 }  // namespace tendisplus
 

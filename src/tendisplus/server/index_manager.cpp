@@ -12,7 +12,6 @@
 
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/sync_point.h"

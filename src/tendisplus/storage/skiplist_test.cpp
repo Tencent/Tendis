@@ -3,8 +3,13 @@
 // project for additional information.
 
 #include <algorithm>
+#include <filesystem>  // NOLINT(build/c++17)
 #include <fstream>
+#include <iostream>
+#include <memory>
 #include <random>
+#include <string>
+#include <vector>
 
 #include "gtest/gtest.h"
 
@@ -38,11 +43,11 @@ std::shared_ptr<ServerParams> genParams() {
 
 TEST(SkipList, BackWardTail) {
   auto cfg = genParams();
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -160,11 +165,11 @@ TEST(SkipList, BackWardTail) {
 
 TEST(SkipList, Mix) {
   auto cfg = genParams();
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -236,11 +241,11 @@ TEST(SkipList, Mix) {
 
 TEST(SkipList, InsertDelSameKeys) {
   auto cfg = genParams();
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -324,11 +329,11 @@ TEST(SkipList, InsertDelSameKeys) {
 
 TEST(SkipList, Common) {
   auto cfg = genParams();
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  EXPECT_TRUE(std::filesystem::create_directory("db"));
+  EXPECT_TRUE(std::filesystem::create_directory("log"));
   const auto guard = MakeGuard([] {
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    std::filesystem::remove_all("./log");
+    std::filesystem::remove_all("./db");
   });
   auto blockCache =
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
@@ -409,11 +414,8 @@ TEST(SkipList, Common) {
     EXPECT_TRUE(expRank.ok());
     EXPECT_EQ(expRank.value(), i);
   }
-  std::cout << "SkipList:"
-            << " size(" << sl.getCount()
-            << ") "
-               "level("
-            << (int32_t)sl.getLevel() << ") " << std::endl;
+  std::cout << "SkipList: size(" << sl.getCount() << ") level("
+            << static_cast<int32_t>(sl.getLevel()) << ") " << std::endl;
   {
     // auto eTxn = store->createTransaction();
     // std::stringstream ss;

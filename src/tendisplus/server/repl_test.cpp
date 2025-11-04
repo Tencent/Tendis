@@ -2,9 +2,13 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include <cstdio>
+#include <iostream>
 #include <memory>
+#include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include "gtest/gtest.h"
 
@@ -373,8 +377,9 @@ void checkBinlogFile(std::string dir, bool hasBinlog, uint32_t storeCount) {
     std::string fullFileName = dir + "/dump/" + std::to_string(i) + "/";
 
     uint32_t maxsize = 0;
-    for (auto& DirectoryIter : filesystem::directory_iterator(fullFileName)) {
-      uint32_t size = filesystem::file_size(DirectoryIter.path());
+    for (auto& DirectoryIter :
+         std::filesystem::directory_iterator(fullFileName)) {
+      uint32_t size = std::filesystem::file_size(DirectoryIter.path());
       LOG(INFO) << "checkBinlogFile, path:" << DirectoryIter.path()
                 << " size:" << size;
       if (size > maxsize) {
@@ -1084,8 +1089,7 @@ TEST(Repl, BinlogKeepNum_Test) {
     ASSERT_EQ(single.use_count(), 1);
 #endif
 
-    LOG(INFO) << ">>>>>> BinlogKeepNum_Test"
-              << " end;";
+    LOG(INFO) << ">>>>>> BinlogKeepNum_Test end";
   }
 }
 
@@ -1224,9 +1228,9 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
       LOG(INFO) << ">>>>>> scanDumpFile begin.";
       std::string subpath = "./" + std::string(single_dir2) + "/dump/0/";
       try {
-        for (auto& p : filesystem::recursive_directory_iterator(subpath)) {
-          const filesystem::path& path = p.path();
-          if (!filesystem::is_regular_file(p)) {
+        for (auto& p : std::filesystem::recursive_directory_iterator(subpath)) {
+          const std::filesystem::path& path = p.path();
+          if (!std::filesystem::is_regular_file(p)) {
             LOG(INFO) << "maxDumpFileSeq ignore:" << p.path();
             continue;
           }
@@ -1271,9 +1275,9 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
     LOG(INFO) << ">>>>>> scanDumpFile begin.";
     std::string subpath = "./" + std::string(single_dir2) + "/dump/0/";
     try {
-      for (auto& p : filesystem::recursive_directory_iterator(subpath)) {
-        const filesystem::path& path = p.path();
-        if (!filesystem::is_regular_file(p)) {
+      for (auto& p : std::filesystem::recursive_directory_iterator(subpath)) {
+        const std::filesystem::path& path = p.path();
+        if (!std::filesystem::is_regular_file(p)) {
           LOG(INFO) << "maxDumpFileSeq ignore:" << p.path();
           continue;
         }
@@ -1403,9 +1407,9 @@ TEST(Repl, BinlogVersion) {
 // macro from redis to avoid warning of no use var.
 #define UNUSED(x) (void)(x)
 
-static int getFileNum(const filesystem::path& p) {
+static int getFileNum(const std::filesystem::path& p) {
   int filenum = 0;
-  for (const auto& e : filesystem::directory_iterator{p}) {
+  for (const auto& e : std::filesystem::directory_iterator{p}) {
     UNUSED(e);
     filenum++;
   }
@@ -1430,7 +1434,8 @@ TEST(Repl, autoRemoveDumpFile) {
   auto master = std::make_shared<ServerEntry>(cfg);
   auto s = master->startup(cfg);
   INVARIANT(s.ok());
-  const filesystem::path masterDumpPath = std::string(master_dir) + "/dump/0/";
+  const std::filesystem::path masterDumpPath =
+    std::string(master_dir) + "/dump/0/";
 
   EXPECT_TRUE(setupEnv(slave_dir));
   auto cfg2 = makeServerParam(slave_port, kvstoreNum, slave_dir, false);
@@ -1441,7 +1446,8 @@ TEST(Repl, autoRemoveDumpFile) {
   auto slave = std::make_shared<ServerEntry>(cfg2);
   s = slave->startup(cfg2);
   INVARIANT(s.ok());
-  const filesystem::path slaveDumpPath = std::string(slave_dir) + "/dump/0/";
+  const std::filesystem::path slaveDumpPath =
+    std::string(slave_dir) + "/dump/0/";
 
   {
     auto ctx = std::make_shared<asio::io_context>();

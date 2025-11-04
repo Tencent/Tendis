@@ -130,7 +130,8 @@ Status ReplManager::receiveFileDirectio(
   const std::string& fullFileName,
   std::shared_ptr<BlockingTcpClient> client,
   size_t remain) {
-  filesystem::path dirName = filesystem::path(fullFileName).parent_path();
+  std::filesystem::path dirName =
+    std::filesystem::path(fullFileName).parent_path();
   auto alignedBuf = newAlignedBuff(dirName.generic_string(), 16);
   if (!alignedBuf) {
     return {ErrorCodes::ERR_INTERNAL, "newAlignedBuff failed"};
@@ -269,7 +270,8 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
       LOG(INFO) << "slaveStartFullsync rollback, rm dir:"
                 << store->dftBackupDir();
       std::error_code ec;
-      filesystem::remove_all(filesystem::path(store->dftBackupDir()), ec);
+      std::filesystem::remove_all(std::filesystem::path(store->dftBackupDir()),
+                                  ec);
       if (ec) {
         LOG(ERROR) << "slaveStartFullsync rollback, rm dir:"
                    << store->dftBackupDir() << " failed:" << ec.message();
@@ -306,7 +308,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
   auto backupExists = [store]() -> Expected<bool> {
     std::error_code ec;
     bool exists =
-      filesystem::exists(filesystem::path(store->dftBackupDir()), ec);
+      std::filesystem::exists(std::filesystem::path(store->dftBackupDir()), ec);
     if (ec) {
       return {ErrorCodes::ERR_INTERNAL, ec.message()};
     }
@@ -338,10 +340,11 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     std::string fullFileName = store->dftBackupDir() + "/" + s.value();
     LOG(INFO) << "fullsync file:" << fullFileName << " transfer begin";
 
-    filesystem::path fileDir = filesystem::path(fullFileName).parent_path();
-    if (!filesystem::exists(fileDir)) {
+    std::filesystem::path fileDir =
+      std::filesystem::path(fullFileName).parent_path();
+    if (!std::filesystem::exists(fileDir)) {
       LOG(INFO) << "slaveStartFullsync create_directories:" << fileDir;
-      filesystem::create_directories(fileDir);
+      std::filesystem::create_directories(fileDir);
     }
     size_t fLength = flist.at(s.value());
     Status ret;
@@ -359,7 +362,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
 
   BackupInfo bkInfo = std::move(ebkInfo.value());
   auto metaFile = store->dftBackupDir() + "/" + "backup_meta";
-  if (filesystem::exists(metaFile)) {
+  if (std::filesystem::exists(metaFile)) {
     // if backup_meta exists, get the backupinfo from backup_meata
     auto ebinfo = store->getBackupMeta(store->dftBackupDir());
     if (!ebinfo.ok()) {
@@ -746,10 +749,11 @@ void ReplManager::recycDumpFile(uint32_t storeid) {
   }
 
   std::error_code ec;
-  std::vector<std::pair<Tsys_time_point, filesystem::directory_entry>> files;
-  const filesystem::path subpath =
+  std::vector<std::pair<Tsys_time_point, std::filesystem::directory_entry>>
+    files;
+  const std::filesystem::path subpath =
     _dumpPath + "/" + std::to_string(storeid) + "/";
-  for (const auto& entry : filesystem::directory_iterator{subpath}) {
+  for (const auto& entry : std::filesystem::directory_iterator{subpath}) {
     auto tp = entry.last_write_time(ec);
     if (ec) {
       LOG(ERROR) << "get file:" << entry.path()
@@ -776,7 +780,7 @@ void ReplManager::recycDumpFile(uint32_t storeid) {
   for (size_t i = 0; i < numFilesToBeDeleted; i++) {
     if (files[i].first < filesDeletedTimePoint) {
       LOG(INFO) << "removing dumpfile: " << files[i].second.path();
-      filesystem::remove(files[i].second.path(), ec);
+      std::filesystem::remove(files[i].second.path(), ec);
       if (ec) {
         LOG(ERROR) << "remove file:" << files[i].second.path()
                    << " error:" << ec.message();

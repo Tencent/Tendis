@@ -14,7 +14,6 @@
 
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
@@ -203,14 +202,14 @@ class RecordValue {
                        uint64_t ttl = 0,
                        int64_t cas = -1,
                        uint64_t version = 0,
-                       uint64_t pieceSize = (uint64_t)-1);
+                       uint64_t pieceSize = static_cast<uint64_t>(-1));
   explicit RecordValue(std::string&& val,
                        RecordType type,
                        uint64_t versionEp,
                        uint64_t ttl = 0,
                        int64_t cas = -1,
                        uint64_t version = 0,
-                       uint64_t pieceSize = (uint64_t)-1);
+                       uint64_t pieceSize = static_cast<uint64_t>(-1));
 
   RecordValue(const std::string& val,
               RecordType type,
@@ -605,7 +604,7 @@ class BinlogReader {
 
  private:
   size_t _pos;
-  mystring_view _val;
+  std::string_view _val;
 };
 
 class ListMetaValue {

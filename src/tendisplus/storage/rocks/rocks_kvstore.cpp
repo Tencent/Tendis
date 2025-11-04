@@ -2074,10 +2074,10 @@ Status RocksKVStore::clear() {
 
   try {
     const std::string path = dbPath() + "/" + dbId();
-    if (!filesystem::exists(path)) {
+    if (!std::filesystem::exists(path)) {
       return {ErrorCodes::ERR_OK, ""};
     }
-    auto n = filesystem::remove_all(dbPath() + "/" + dbId());
+    auto n = std::filesystem::remove_all(dbPath() + "/" + dbId());
     LOG(INFO) << "dbId:" << dbId() << " cleared " << n << " files/dirs";
   } catch (const std::exception& ex) {
     LOG(WARNING) << "dbId:" << dbId() << " clear failed:" << ex.what();
@@ -2154,17 +2154,17 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
     if (restore) {
       try {
         const std::string path = dbPath() + "/" + dbId();
-        if (filesystem::exists(path)) {
+        if (std::filesystem::exists(path)) {
           std::stringstream ss;
           ss << "path:" << path << " should not exist when restore";
           return {ErrorCodes::ERR_INTERNAL, ss.str()};
         }
-        if (!filesystem::exists(dftBackupDir())) {
+        if (!std::filesystem::exists(dftBackupDir())) {
           std::stringstream ss;
           ss << "recover path:" << dftBackupDir() << " not exist when restore";
           return {ErrorCodes::ERR_INTERNAL, ss.str()};
         }
-        filesystem::rename(dftBackupDir(), path);
+        std::filesystem::rename(dftBackupDir(), path);
       } catch (const std::exception& ex) {
         LOG(WARNING) << "dbId:" << dbId() << "restore exception" << ex.what();
         return {ErrorCodes::ERR_INTERNAL, ex.what()};
@@ -2173,9 +2173,9 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
 
     try {
       // this happens due to a bad terminate
-      if (filesystem::exists(dftBackupDir())) {
+      if (std::filesystem::exists(dftBackupDir())) {
         LOG(WARNING) << dftBackupDir() << " exists, remove it";
-        filesystem::remove_all(dftBackupDir());
+        std::filesystem::remove_all(dftBackupDir());
       }
     } catch (const std::exception& ex) {
       return {ErrorCodes::ERR_INTERNAL, ex.what()};
@@ -2366,10 +2366,10 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
 
 Status RocksKVStore::releaseBackup() {
   try {
-    if (!filesystem::exists(dftBackupDir())) {
+    if (!std::filesystem::exists(dftBackupDir())) {
       return {ErrorCodes::ERR_OK, ""};
     }
-    filesystem::remove_all(dftBackupDir());
+    std::filesystem::remove_all(dftBackupDir());
   } catch (const std::exception& ex) {
     LOG(FATAL) << "remove " << dftBackupDir() << " ex:" << ex.what();
   }
@@ -2462,13 +2462,13 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
   }
   std::map<std::string, uint64_t> flist;
   try {
-    for (auto& p : filesystem::recursive_directory_iterator(dir)) {
-      const filesystem::path& path = p.path();
-      if (!filesystem::is_regular_file(p)) {
+    for (auto& p : std::filesystem::recursive_directory_iterator(dir)) {
+      const std::filesystem::path& path = p.path();
+      if (!std::filesystem::is_regular_file(p)) {
         LOG(INFO) << "backup ignore:" << p.path();
         continue;
       }
-      size_t filesize = filesystem::file_size(path);
+      size_t filesize = std::filesystem::file_size(path);
 #ifndef _WIN32
       // assert path with bkupdir prefix
       // for win32, the dir should change to "\\"
@@ -2521,7 +2521,7 @@ Expected<std::string> RocksKVStore::saveBackupMeta(const std::string& dir,
   metafile.close();
 
   // add metafile to filelist
-  auto size = filesystem::file_size(filename);
+  auto size = std::filesystem::file_size(filename);
   backup->addFile("backup_meta", size);
 
   return std::string("ok");
@@ -2631,12 +2631,12 @@ Expected<std::string> RocksKVStore::loadCopy(const std::string& dir) {
 Expected<std::string> RocksKVStore::copyCkpt(const std::string& dir) {
   try {
     const std::string path = dbPath() + "/" + dbId();
-    if (filesystem::exists(path)) {
+    if (std::filesystem::exists(path)) {
       std::stringstream ss;
       ss << "path:" << path << " should not exist when restore";
       return {ErrorCodes::ERR_INTERNAL, ss.str()};
     }
-    if (!filesystem::exists(dir)) {
+    if (!std::filesystem::exists(dir)) {
       std::stringstream ss;
       ss << "recover path:" << dir << " not exist when restore";
       return {ErrorCodes::ERR_INTERNAL, ss.str()};
@@ -2644,9 +2644,9 @@ Expected<std::string> RocksKVStore::copyCkpt(const std::string& dir) {
     LOG(INFO) << (getCfg()->moveDirWhenRestoreCkpt ? "move" : "copy")
               << " ckpt, src:" << dir << ", dst:" << path;
     if (getCfg()->moveDirWhenRestoreCkpt) {
-      filesystem::rename(dir, path);
+      std::filesystem::rename(dir, path);
     } else {
-      filesystem::copy(dir, path);
+      std::filesystem::copy(dir, path);
     }
   } catch (const std::exception& ex) {
     LOG(WARNING) << "dbId:" << dbId() << "restore exception" << ex.what();

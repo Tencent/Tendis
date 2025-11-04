@@ -15,7 +15,6 @@
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/time.h"
 
 static void shutdown(int sigNum) {
@@ -108,9 +107,9 @@ int main(int argc, char* argv[]) {
   if (params->logDir != "") {
     FLAGS_log_dir = params->logDir;
     std::cout << "glog dir:" << FLAGS_log_dir << std::endl;
-    if (!tendisplus::filesystem::exists(FLAGS_log_dir)) {
+    if (!std::filesystem::exists(FLAGS_log_dir)) {
       std::error_code ec;
-      if (!tendisplus::filesystem::create_directories(FLAGS_log_dir, ec)) {
+      if (!std::filesystem::create_directories(FLAGS_log_dir, ec)) {
         LOG(WARNING) << " create log path failed: " << ec.message();
       }
     }

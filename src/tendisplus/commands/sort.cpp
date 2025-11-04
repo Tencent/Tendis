@@ -3,7 +3,9 @@
 // project for additional information.
 
 #include <algorithm>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "tendisplus/commands/command.h"
@@ -20,8 +22,8 @@ constexpr uint64_t INITSEQ = MAXSEQ / 2ULL;
 class SortCommand : public Command {
  private:
   struct SortOp {
-    mystring_view cmd;
-    mystring_view pattern;
+    std::string_view cmd;
+    std::string_view pattern;
     std::vector<std::string> priKey;
     std::string field;
     bool keySelf;
@@ -35,7 +37,7 @@ class SortCommand : public Command {
   };
 
   std::pair<std::string, std::string> parsePattern(const std::string& key,
-                                                   mystring_view pattern) {
+                                                   std::string_view pattern) {
     if (pattern.size() == 0) {
       return std::make_pair("", "");
     }
@@ -203,7 +205,8 @@ class SortCommand : public Command {
       } else if (!::strcasecmp(args[i].c_str(), "by") && leftargs >= 1) {
         sortby = true;
         ops[0].cmd = "by";
-        ops[0].pattern = mystring_view(args[i + 1].c_str(), args[i + 1].size());
+        ops[0].pattern =
+          std::string_view(args[i + 1].c_str(), args[i + 1].size());
         i++;
         if (ops[0].pattern.find('*') == decltype(ops[0].pattern)::npos) {
           nosort = true;
@@ -220,7 +223,6 @@ class SortCommand : public Command {
           return {ErrorCodes::ERR_PARSEOPT,
                   "GET option of SORT denied in Cluster mode."};
         }
-        mystring_view cmd("get");
         ops.emplace_back(SortOp{
           "get",
           {args[i + 1].c_str(), args[i + 1].size()},

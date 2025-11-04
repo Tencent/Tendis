@@ -3,6 +3,7 @@
 // project for additional information.
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <string>
@@ -56,10 +57,10 @@ void backup(const std::shared_ptr<ServerEntry>& server,
 
   // clear data
   const char* dir = "./back_test";
-  if (filesystem::exists(dir)) {
-    filesystem::remove_all(dir);
+  if (std::filesystem::exists(dir)) {
+    std::filesystem::remove_all(dir);
   }
-  filesystem::create_directory(dir);
+  std::filesystem::create_directory(dir);
 
   std::vector<std::string> args;
   args.push_back("backup");
@@ -139,9 +140,9 @@ void restoreBinlog(const std::string& src_binlog_dir,
     std::string subpath =
       "./" + src_binlog_dir + "/dump/" + std::to_string(i) + "/";
     std::vector<std::string> loglist;
-    for (auto& p : filesystem::recursive_directory_iterator(subpath)) {
-      const filesystem::path& path = p.path();
-      if (!filesystem::is_regular_file(p)) {
+    for (auto& p : std::filesystem::recursive_directory_iterator(subpath)) {
+      const std::filesystem::path& path = p.path();
+      if (!std::filesystem::is_regular_file(p)) {
         LOG(INFO) << "maxDumpFileSeq ignore:" << p.path();
         continue;
       }

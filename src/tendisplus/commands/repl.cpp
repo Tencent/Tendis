@@ -61,19 +61,19 @@ class BackupCommand : public Command {
     auto svr = sess->getServerEntry();
     INVARIANT(svr != nullptr);
 
-    if (!filesystem::exists(dir)) {
+    if (!std::filesystem::exists(dir)) {
       return {ErrorCodes::ERR_MANUAL, "dir not exist:" + dir};
     }
-    if (filesystem::equivalent(dir, svr->getParams()->dbPath)) {
+    if (std::filesystem::equivalent(dir, svr->getParams()->dbPath)) {
       return {ErrorCodes::ERR_MANUAL, "dir cant be dbPath:" + dir};
     }
 
     // check whether current user has write permission on dir argument
     try {
       auto tmpDirPath = dir + "/tmpDir";
-      filesystem::create_directory(tmpDirPath);
-      filesystem::remove(tmpDirPath);
-    } catch (const filesystem::filesystem_error& e) {
+      std::filesystem::create_directory(tmpDirPath);
+      std::filesystem::remove(tmpDirPath);
+    } catch (const std::filesystem::filesystem_error& e) {
       return {ErrorCodes::ERR_MANUAL, e.what()};
     }
 

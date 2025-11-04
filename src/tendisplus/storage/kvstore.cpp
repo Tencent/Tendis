@@ -5,11 +5,14 @@
 #include "tendisplus/storage/kvstore.h"
 
 #include <fstream>
+#include <map>
+#include <memory>
+#include <string>
+#include <utility>
 
 #include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/include/endian.h"
 #include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/time.h"
 
 namespace tendisplus {
@@ -580,9 +583,9 @@ Expected<Record> SlotsCursor::next() {
 
 KVStore::KVStore(const std::string& id, const std::string& path)
   : _id(id), _dbPath(path), _backupDir(path + "/" + id + "_bak") {
-  filesystem::path mypath = _dbPath;
+  std::filesystem::path mypath = _dbPath;
 #ifndef _WIN32
-  if (filesystem::equivalent(mypath, "/")) {
+  if (std::filesystem::equivalent(mypath, "/")) {
     LOG(FATAL) << "dbpath set to root dir!";
   }
 #endif

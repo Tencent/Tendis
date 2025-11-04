@@ -17,7 +17,6 @@
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/string.h"
 
@@ -89,44 +88,44 @@ std::shared_ptr<ServerParams> makeServerParam(
 bool setupEnv() {
   std::error_code ec;
 
-  filesystem::remove_all("./log", ec);
+  std::filesystem::remove_all("./log", ec);
   EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
 
-  filesystem::remove_all("./db", ec);
+  std::filesystem::remove_all("./db", ec);
   EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
 
-  EXPECT_TRUE(filesystem::create_directory("./db"));
-  EXPECT_TRUE(filesystem::create_directory("./log"));
+  EXPECT_TRUE(std::filesystem::create_directory("./db"));
+  EXPECT_TRUE(std::filesystem::create_directory("./log"));
 
   return true;
 }
 
 void destroyEnv() {
   std::error_code ec;
-  filesystem::remove_all("./log", ec);
-  filesystem::remove_all("./db", ec);
-  filesystem::remove_all("./dump", ec);
+  std::filesystem::remove_all("./log", ec);
+  std::filesystem::remove_all("./db", ec);
+  std::filesystem::remove_all("./dump", ec);
 }
 
 bool setupEnv(const std::string& v) {
   std::error_code ec;
   std::stringstream ss;
   ss << "./" << v << "/log";
-  filesystem::remove_all(ss.str(), ec);
+  std::filesystem::remove_all(ss.str(), ec);
   EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
-  EXPECT_TRUE(filesystem::create_directories(ss.str()));
+  EXPECT_TRUE(std::filesystem::create_directories(ss.str()));
 
   ss.str("");
   ss << "./" << v << "/db";
-  filesystem::remove_all(ss.str(), ec);
+  std::filesystem::remove_all(ss.str(), ec);
   EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
-  EXPECT_TRUE(filesystem::create_directories(ss.str()));
+  EXPECT_TRUE(std::filesystem::create_directories(ss.str()));
 
   ss.str("");
   ss << "./" << v << "/dump";
-  filesystem::remove_all(ss.str(), ec);
+  std::filesystem::remove_all(ss.str(), ec);
   EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
-  EXPECT_TRUE(filesystem::create_directories(ss.str()));
+  EXPECT_TRUE(std::filesystem::create_directories(ss.str()));
 
   return true;
 }
@@ -136,17 +135,17 @@ void destroyEnv(const std::string& v) {
   std::error_code ec;
   std::stringstream ss;
   ss << "./" << v << "/log";
-  filesystem::remove_all(ss.str(), ec);
+  std::filesystem::remove_all(ss.str(), ec);
   // EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
 
   ss.str("");
   ss << "./" << v << "/db";
-  filesystem::remove_all(ss.str(), ec);
+  std::filesystem::remove_all(ss.str(), ec);
   // EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
 
   ss.str("");
   ss << "./" << v << "/dump";
-  filesystem::remove_all(ss.str(), ec);
+  std::filesystem::remove_all(ss.str(), ec);
   // EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
 }
 
