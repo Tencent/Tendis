@@ -34,9 +34,9 @@ startTask() {
         elif [[ "${task}" == "sadd" ]]; then
             ${cmdPrefix} --command='sadd __key__ __data__' --key-prefix='set_' &
         elif [[ "${task}" == "zadd" ]]; then
-            ${cmdPrefix} --command='zadd __key__ __float__ __data__' --key-prefix='zset_' &
+	    ${cmdPrefix} --command='zadd __key__ __key__ __data__' --key-prefix='' &
         elif [[ "${task}" == "hset" ]]; then
-            ${cmdPrefix} --command='hset __key__ __field__ __data__' --key-prefix='hash_' &
+            ${cmdPrefix} --command='hset __key__ __data__ __data__' --key-prefix='hash_' &
         fi
         benchmarkPidList+=($!)
     done
@@ -67,16 +67,16 @@ runTest() {
 
     mailfile=Report-$(date +"%Y%m%d%H%M%S").txt
     initTimeStamp=$(date +%s)
+    initTimeStamp=$((initTimeStamp - 180))
     if [[ $testType == ${LONGTIMETEST} ]]; then
         clientNum=10
         threadNum=10
-        pipelineNum=50
-        # enough for 100 days & 500k qps
-        keyMax=5000000000000
+        pipelineNum=100
+        keyMax=50000000000
     elif [[ $testType == ${MULTICMDTEST} ]]; then
         clientNum=10
         threadNum=10
-        pipelineNum=50
+        pipelineNum=100
         keyMax=5000000000
     elif [[ $testType == ${PIPELINETEST} ]]; then
         clientNum=2
@@ -84,9 +84,9 @@ runTest() {
         pipelineNum=50
         keyMax=5000000000
     elif [[ $testType == ${VALUESIZETEST} ]]; then
-        clientNum=10
-        threadNum=10
-        pipelineNum=50
+        clientNum=25
+        threadNum=5
+        pipelineNum=1
         keyMax=5000000000
     elif [[ $testType == ${LOWLOADTEST} ]]; then
         clientNum=15
@@ -97,21 +97,29 @@ runTest() {
     for valueSize in $(echo $valueSizeList | tr ',' '\n'); do
         for cmd in $(echo $cmdList | tr ',' '\n'); do
             if [[ "$cmd" != "get" ]]; then
+                sleep 30
                 ./redis-cli -h ${targetHost} -p ${port} -a ${password} flushall
                 sleep ${interTime}
             fi
             startTimestamp=$(date +%s)
+            startTimestamp=$((startTimestamp - 180))
             resultPath="result/tmp-${startTimestamp}"
             startTask ${cmd} ${resultPath} ${valueSize} ${pipelineNum}
             waitFinish ${cmd}
             endTimestamp=$(date +%s)
-
+	    endTimestamp=$((endTimestamp + 180))
+	    qps=0.1
             AVG=0.1 # avoid divided by zero
             P50=0.1
             P99=0.1
             P100=0.1
 
             for f in $(ls ${resultPath}); do
+		
+                tmpQps=$(cat ${resultPath}/$f | grep -i ${cmd}s | tail -n 1 | awk '{print $2}')
+		if [[ ! -z $tmpQps ]]; then
+		    qps=$(echo "$qps + $tmpQps" | bc)
+		fi
                 tmpAVG=$(cat ${resultPath}/$f | grep -i ${cmd}s | tail -n 1 | awk '{print $3}')
                 if [[ ! -z $tmpAVG ]]; then
                     if [ 1 -eq "$(echo "${tmpAVG} > ${AVG}" | bc)" ]; then
@@ -137,7 +145,7 @@ runTest() {
                     fi
                 fi
             done
-            getQPS ${startTimestamp} ${endTimestamp} ${tendisVersionShortFormat} ${cmd}
+            # getQPS ${startTimestamp} ${endTimestamp} ${tendisVersionShortFormat} ${cmd}
             decreaseLimit=''
             if [[ "$cmd" == "set" ]]; then
                 decreaseLimit=${decreaseLimitSet}
@@ -156,12 +164,14 @@ runTest() {
                 outputReport "测试命令(${predixyNum}个): ${benchmarkBinary} -c ${clientNum} -t ${threadNum} --test-time=${testTime} --pipeline=${pipelineNum} --distinct-client-seed --randomize --data-size=${valueSize} --random-data --key-minimum=1 --key-maximum=${keyMax} --command='sadd __key__ __data__' --key-prefix='set_'"
             elif [[ "$cmd" == "zadd" ]]; then
                 decreaseLimit=${decreaseLimitZadd}
-                outputReport "测试命令(${predixyNum}个): ${benchmarkBinary} -c ${clientNum} -t ${threadNum} --test-time=${testTime} --pipeline=${pipelineNum} --distinct-client-seed --randomize --data-size=${valueSize} --random-data --key-minimum=1 --key-maximum=${keyMax} --command='zadd __key__ __float__ __data__' --key-prefix='zset_'"
+                outputReport "测试命令(${predixyNum}个): ${benchmarkBinary} -c ${clientNum} -t ${threadNum} --test-time=${testTime} --pipeline=${pipelineNum} --distinct-client-seed --randomize --data-size=${valueSize} --random-data --key-minimum=1 --key-maximum=${keyMax} --command='zadd __key__ __key__ __data__' --key-prefix=''"
             elif [[ "$cmd" == "hset" ]]; then
                 decreaseLimit=${decreaseLimitHset}
-                outputReport "测试命令(${predixyNum}个): ${benchmarkBinary} -c ${clientNum} -t ${threadNum} --test-time=${testTime} --pipeline=${pipelineNum} --distinct-client-seed --randomize --data-size=${valueSize} --random-data --key-minimum=1 --key-maximum=${keyMax} --command='hset __key__ __field__ __data__' --key-prefix='hash_'"
+                outputReport "测试命令(${predixyNum}个): ${benchmarkBinary} -c ${clientNum} -t ${threadNum} --test-time=${testTime} --pipeline=${pipelineNum} --distinct-client-seed --randomize --data-size=${valueSize} --random-data --key-minimum=1 --key-maximum=${keyMax} --command='hset __key__ __data__ __data__' --key-prefix='hash_'"
             fi
-            outputReport "${cmd}测试曲线：<a href=\"${grafanaURL}${tendisVersionShortFormat}&from=${startTimestamp}000&to=${endTimestamp}000\">${grafanaURL}${tendisVersionShortFormat}&from=${startTimestamp}000&to=${endTimestamp}000</a>"
+            outputReport "${cmd}测试曲线：<a href=\"${grafanaURL}&from=${startTimestamp}000&to=${endTimestamp}000\">${grafanaURL}&from=${startTimestamp}000&to=${endTimestamp}000</a>"
+            python3 getRenderPicture.py $renderUrl $pngUrl $bk_app_code $bk_app_secret $bk_username $bk_biz_id $dashboard_uid $panel_id $app $cluster_domain ${startTimestamp} ${endTimestamp}
+            python3 addPicture.py "result_curve/${startTimestamp}-${endTimestamp}.jpeg" ${mailfile}
             if [[ ${qps} == "0.1" ||
                   ${P50} == "0.1" ||
                   ${P99} == "0.1" ||
@@ -180,14 +190,17 @@ runTest() {
         done
     done
     finalTimeStamp=$(date +%s)
+    finalTimeStamp=$((finalTimeStamp + 180))
     grafanaStartTimestamp=${initTimeStamp}000
     grafanaEndTimestamp=${finalTimeStamp}000
     logInfo "${tendisVersionLongFormat} grafanaStartTimestamp:$grafanaStartTimestamp grafanaEndTimestamp:$grafanaEndTimestamp"
     mv ${mailfile} ${mailfile}.bak
     if [[ $testType == ${LONGTIMETEST} ]]; then
         let runningTime=${finalTimeStamp}-${initTimeStamp}
-        prettyFormat=$(date -d@${runningTime} -u +%H:%M:%S)
-        outputReport "长时间测试，时长(hh:mm:ss)为：${prettyFormat}"
+        prettyFormat=$(date -d@"${runningTime}" -u +'%-dd:%-HH:%-MM:%-SS' 2>/dev/null || 
+               date -u -r "${runningTime}" +'%-dd:%-HH:%-MM:%-SS')
+        # prettyFormat=$(date -d@${runningTime} -u +%H:%M:%S)
+        outputReport "长时间测试，时长(dd:hh:mm:ss)为：${prettyFormat}"
     elif [[ $testType == ${MULTICMDTEST} ]]; then
         outputReport "常见命令测试，命令列表为：${cmdList}"
     elif [[ $testType == ${PIPELINETEST} ]]; then
@@ -199,7 +212,9 @@ runTest() {
         let totalClient=${clientNum}*${threadNum}
         outputReport "低负载延迟测试，client总数：${totalClient}"
     fi
-    outputReport "全过程监控<a href=\"${grafanaURL}${tendisVersionShortFormat}&from=${grafanaStartTimestamp}&to=${grafanaEndTimestamp}\">${grafanaURL}${tendisVersionShortFormat}&from=${grafanaStartTimestamp}&to=${grafanaEndTimestamp}</a>"
+    outputReport "全过程监控<a href=\"${grafanaURL}&from=${grafanaStartTimestamp}&to=${grafanaEndTimestamp}\">${grafanaURL}&from=${grafanaStartTimestamp}&to=${grafanaEndTimestamp}</a>"
+    python3 getRenderPicture.py $renderUrl $pngUrl $bk_app_code $bk_app_secret $bk_username $bk_biz_id $dashboard_uid $panel_id $app $cluster_domain ${initTimeStamp} ${finalTimeStamp}
+    python3 addPicture.py "result_curve/${initTimeStamp}-${finalTimeStamp}.jpeg" ${mailfile}
     cat ${mailfile}.bak >> ${mailfile}
     rm ${mailfile}.bak
     if [[ $testType == ${LONGTIMETEST} ]]; then
@@ -241,9 +256,15 @@ main() {
 
     # get Tendis version
     tendisVersionLongFormat=$1
-    tendisVersionShortFormat=$(echo $1 | perl -p -e 's/\.//g' | perl -p -e 's/tendisplus-/cd/g' | perl -p -e 's/-rocksdb-/r/g' | perl -p -e 's/v//g' | perl -p -e 's/-test/test/g')
+    tendisVersionShortFormat=${tendisVersionLongFormat#*-} && tendisVersionShortFormat=${tendisVersionShortFormat%%-*}
     shift
     logInfo "start tendisVersion: ${tendisVersionLongFormat} benchmark"
+        # source configure file
+    if [ ! -f ./conf.sh ]; then
+        echo "we need conf.sh"
+        exit 2
+    fi
+    source ./conf.sh
     shouldSave=${SAVETORESULTDB}
     if [[ "$shouldSave" == "1" ]]; then
         echo "should save result."
@@ -254,12 +275,7 @@ main() {
     fi
     logInfo "shoule test result be saved? $shouldSave"
 
-    # source configure file
-    if [ ! -f ./conf.sh ]; then
-        echo "we need conf.sh"
-        exit 2
-    fi
-    source ./conf.sh
+
     baselineVersion=$1
     shift
 

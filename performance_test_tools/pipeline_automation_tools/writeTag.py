@@ -1,64 +1,51 @@
 import os
 import re
-import sqlite3
 import sys
+import json
 
+def update_command_stats(file_path, testname, version, date, qps, p50, p99, p100, avg):
+    data = {}
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as f:
+            data = json.load(f)
+    
+    data[testname] = {
+        "tid": "nouse",
+        "testname": testname,
+        "version": version,
+        "date": date,
+        "qps": float(qps),
+        "p50": float(p50),
+        "p99": float(p99),
+        "p100": float(p100),
+        "avg": float(avg)
+    }
+    
+    with open(file_path, 'w') as f:
+        json.dump(data, f, indent=4)
 
-RecordDBPath='tendisTestResult.db'
-if not os.path.exists(RecordDBPath):
-    conn = sqlite3.connect(RecordDBPath)
-    # tid only for index
-    conn.execute('''
-    CREATE TABLE result
-    (
-        tid INTEGER PRIMARY KEY,
-        testname TEXT,
-        version TEXT,
-        date TEXT,
-        qps REAL,
-        p50 REAL,
-        p99 REAL,
-        p100 REAL,
-        avg REAL
-    )''')
-    conn.commit()
-    conn.close()
-
-def getMaxTid():
-    conn = sqlite3.connect(RecordDBPath)
-    c=conn.cursor()
-    p=c.execute('''
-    select count(*) from result''')
-    if not (p.fetchone())[0]:
-        return -1
-    p=c.execute('''
-    select max(tid) from result''')
-    res=p.fetchone()
-    conn.commit()
-    conn.close()
-    return res[0]
-
-def saveTestResult(testName, version, date, qps, p50, p99, p100, pavg):
-    curMaxTid=getMaxTid()
-    conn = sqlite3.connect(RecordDBPath)
-    conn.execute('''
-    insert into result values (?, ?, ?, ?, ?, ?, ?, ?, ?)''', (str(int(curMaxTid)+1), str(testName), str(version), str(date), str(qps), str(p50), str(p99), str(p100), str(pavg)))
-    conn.commit()
-    conn.close()
+def get_command_stats(command, file_path):
+    try:
+        with open(file_path, 'r') as file:
+            data = json.load(file)
+            
+        if command not in data:
+            return None
+            
+        command_data = data[command]
+        ordered_fields = ['tid', 'testname', 'version', 'date', 
+                         'qps', 'p50', 'p99', 'p100', 'avg']
+        
+        return [command_data[field] for field in ordered_fields]
+        
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Stats file not found at {file_path}")
+    except json.JSONDecodeError:
+        raise ValueError(f"Invalid JSON format in file {file_path}")
 
 def getHistoryRecord(testName, version):
-    conn = sqlite3.connect(RecordDBPath)
-    c=conn.cursor()
-    p=c.execute('''
-    select count(*) from result where testname = ? and version = ?''', (str(testName),str(version)))
-    if not (p.fetchone())[0]:
-        return None
-    p=c.execute('''
-    select * from result where testname = ? and version = ?''', (str(testName), str(version)))
-    res=p.fetchone()
-    conn.commit()
-    conn.close()
-    return res
+    infile = "performance_result/performance-" + version + ".json"
+    return get_command_stats(testName, infile)
 
 def prettyFormat(floatNum):
     # show 1.1w when floatNum is 11000 for human readable.
@@ -92,10 +79,11 @@ if __name__ == '__main__':
     # other for 'not compare'
     compareToHistory=sys.argv[16] == "1"
     baselineVersion=sys.argv[17]
-    versionInfo=re.search(r'\d+', baselineVersion).group()
-
+    # versionInfo=re.search(r'\d+', baselineVersion).group()
+    versionInfo=baselineVersion
+    outfile = "performance_result/performance-" + version + ".json"
     if shouldSave:
-        saveTestResult(testName, version, date, qps, p50, p99, p100, pavg)
+        update_command_stats(outfile, testName, version, date, qps, p50, p99, p100, pavg)
     r=getHistoryRecord(testName, baselineVersion)
     f=open(outputFile,'a')
     f.write("<table style=\"border:1px solid black; collapse:collapse\">")

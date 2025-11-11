@@ -77,7 +77,6 @@ class Tof4Mail:
         except req.exceptions.RequestException as e:
             print(e)
 
-
 if __name__ == "__main__":
     msg = Tof4Mail()
     msg.Title = sys.argv[1] + "性能测试报告"
@@ -87,16 +86,22 @@ if __name__ == "__main__":
             s+='<p>'+l.replace('\n', '')+'</p>'
         msg.Content=s
     msg.From = sys.argv[6]
+    
+    # 处理多个接收方
     if len(sys.argv) > 7:
-        msg.To = sys.argv[7]
+        recipients = sys.argv[7].split(',')  # 将逗号分隔的字符串分割为列表
     else:
-        msg.To = ''
-    msg.CC = ''
-    msg.Bcc = ''
-
+        recipients = []
+    
     key = MyKey()
     key.Paasid = sys.argv[3]
     key.Token = sys.argv[4]
 
     max_retries = 3
-    msg.Send(URL=sys.argv[5], Mykey=key, Max_retries=max_retries)
+    
+    # 为每个接收方发送邮件
+    for recipient in recipients:
+        msg.To = recipient.strip()  # 去除可能的空格
+        msg.CC = ''
+        msg.Bcc = ''
+        msg.Send(URL=sys.argv[5], Mykey=key, Max_retries=max_retries)
