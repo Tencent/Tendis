@@ -967,13 +967,42 @@ rocksdb::Iterator* RocksWBTxn::getIterator(
   return _writeBatch->NewIteratorWithBase(columnFamily, dbIter);
 }
 
+std::string rocksGetCompressionTypeStr(const std::string& typeStr) {
+  static std::unordered_map<std::string, std::string> compression_type_map = {
+    {"none", "kNoCompression"},
+    {"snappy", "kSnappyCompression"},
+    {"zlib", "kZlibCompression"},
+    {"bzip2", "kBZip2Compression"},
+    {"lz4", "kLZ4Compression"},
+    {"lz4hc", "kLZ4HCCompression"},
+    {"xpress", "kXpressCompression"},
+    {"zstd", "kZSTD"},
+    {"zstdnf", "kZSTDNotFinalCompression"},
+    {"disable", "kDisableCompressionOption"}};
+  auto iter = compression_type_map.find(typeStr);
+  if (iter != compression_type_map.end()) {
+    return iter->second;
+  } else {
+    return typeStr;
+  }
+}
+
 rocksdb::CompressionType rocksGetCompressType(const std::string& typeStr) {
-  if (typeStr == "snappy") {
-    return rocksdb::CompressionType::kSnappyCompression;
-  } else if (typeStr == "lz4") {
-    return rocksdb::CompressionType::kLZ4Compression;
-  } else if (typeStr == "none") {
-    return rocksdb::CompressionType::kNoCompression;
+  static std::unordered_map<std::string, rocksdb::CompressionType>
+    compression_type_string_map = {
+      {"none", rocksdb::kNoCompression},
+      {"snappy", rocksdb::kSnappyCompression},
+      {"zlib", rocksdb::kZlibCompression},
+      {"bzip2", rocksdb::kBZip2Compression},
+      {"lz4", rocksdb::kLZ4Compression},
+      {"lz4hc", rocksdb::kLZ4HCCompression},
+      {"xpress", rocksdb::kXpressCompression},
+      {"zstd", rocksdb::kZSTD},
+      {"zstdnf", rocksdb::kZSTDNotFinalCompression},
+      {"disable", rocksdb::kDisableCompressionOption}};
+  auto iter = compression_type_string_map.find(typeStr);
+  if (iter != compression_type_string_map.end()) {
+    return iter->second;
   } else {
     INVARIANT_D(0);
     return rocksdb::CompressionType::kNoCompression;
@@ -3311,7 +3340,11 @@ Status RocksKVStore::setOptionDynamic(const std::string& option,
     }
   }
 
-  map[short_option] = value;
+  if (short_option == "blob_compression_type") {
+    map[short_option] = rocksGetCompressionTypeStr(value);
+  } else {
+    map[short_option] = value;
+  }
 
   if (isDbOption) {
     auto s = getBaseDB()->SetDBOptions(map);
