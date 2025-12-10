@@ -1426,12 +1426,12 @@ rocksdb::Options RocksKVStore::options(const std::string cf) {
 }
 
 rocksdb::Options RocksKVStore::defaultColumnOptions() {
-  return options();
+  return options(kDefaultCF);
 }
 
 // Binlog Column different from default
 rocksdb::Options RocksKVStore::binlogColumnOptions() {
-  auto columOpts = options("binlogcf");
+  auto columOpts = options(kBinlogCF);
   for (int i = 0; i < ROCKSDB_NUM_LEVELS; ++i) {
     columOpts.compression_per_level[i] =
       rocksGetCompressType(_cfg->rocksCompressType);
@@ -3249,8 +3249,10 @@ Status RocksKVStore::setOptionDynamic(const std::string& option,
   auto cf = ColumnFamilyNumber::ColumnFamily_All;
   if (isCfOption) {
     if (specialCf == "") {
+      cf = ColumnFamilyNumber::ColumnFamily_All;
+    } else if (specialCf == kDefaultCF) {
       cf = ColumnFamilyNumber::ColumnFamily_Default;
-    } else if (specialCf == "binlogcf") {
+    } else if (specialCf == kBinlogCF) {
       cf = ColumnFamilyNumber::ColumnFamily_Binlog;
     } else {
       return {ErrorCodes::ERR_INTERNAL,

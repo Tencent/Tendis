@@ -222,6 +222,18 @@ jobs:
     env:
         TEST_DIR: build/bin
     steps:
+      - name: Show disk usage before cleanup
+        run: |
+          df -h && du -sh /usr/* 2>/dev/null | sort -h | tail
+          sudo du -sh /* 2>/dev/null
+
+      - name: Clean up pre-installed tools
+        run: |
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/hostedtoolcache
+          df -h
+      
       - uses: actions/checkout@v3
         with:
           fetch-depth: 2
@@ -232,6 +244,8 @@ jobs:
           cd src/tendisplus/integrate_test
           chmod +x gotest.sh
           ./gotest.sh normaltest-part2
+          rm -rf tmp/ .cache/
+  
   test-gotest-normaltest-part3:
     needs: [cpplint-check]
     name: Test-gotest-normaltest-part3
