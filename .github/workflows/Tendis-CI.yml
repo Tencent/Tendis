@@ -222,6 +222,11 @@ jobs:
     env:
         TEST_DIR: build/bin
     steps:
+      - name: Clean up pre-installed tools
+        run: |
+          df -h
+          sudo rm -rf /usr/local/lib/android
+          df -h
       - uses: actions/checkout@v3
         with:
           fetch-depth: 2

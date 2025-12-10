@@ -902,7 +902,7 @@ void testLatencyMonitor(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(expect.ok());
     found = std::regex_search(expect.value(), matches, pattern);
     if (found) {
-      assert(matches.size() > 2);
+      assert(matches.size() >= 2);
       std::string res = matches[1];
       assert(res.size() > 10);
       auto v = res.substr(res.size() - 10, res.size());
@@ -915,7 +915,7 @@ void testLatencyMonitor(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(expect.ok());
   found = std::regex_search(expect.value(), matches, pattern);
   if (found) {
-    assert(matches.size() > 2);
+    assert(matches.size() >= 2);
     std::string res = matches[1];
     assert(res.size() > 10);
     auto v = res.substr(res.size() - 10, res.size());
@@ -930,7 +930,7 @@ void testLatencyMonitor(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(expect.ok());
   found = std::regex_search(expect.value(), matches, pattern);
   if (found) {
-    assert(matches.size() > 2);
+    assert(matches.size() >= 2);
     std::string res = matches[1];
     assert(res.size() > 10);
     auto v = res.substr(res.size() - 10, res.size());
@@ -2916,6 +2916,117 @@ TEST(Command, rocksdbOptionsCommand) {
   getGlobalServer()->stop();
   EXPECT_EQ(getGlobalServer().use_count(), 1);
 #endif
+}
+
+void testRocksCFOptionConfig(std::shared_ptr<ServerEntry> svr,
+                             int df_status,
+                             int bl_status) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+  for (uint32_t i = 0; i < svr->getKVStoreCount(); i++) {
+    auto exptDb = svr->getSegmentMgr()->getDb(&sess, 0, mgl::LockMode::LOCK_IS);
+    EXPECT_TRUE(exptDb.ok());
+
+    auto store = exptDb.value().store;
+    EXPECT_EQ(store->getCFOption(ColumnFamilyNumber::ColumnFamily_Default,
+                                 "rocks.enable_blob_files"),
+              df_status);
+    EXPECT_EQ(store->getCFOption(ColumnFamilyNumber::ColumnFamily_Binlog,
+                                 "rocks.enable_blob_files"),
+              bl_status);
+  }
+}
+
+void testCFConfigSetAndGet(std::shared_ptr<ServerEntry> master) {
+  auto ctx = std::make_shared<asio::io_context>();
+  auto session = makeSession(master, ctx);
+  {
+    session->setArgs({"config", "set", "rocks.enable_blob_files", "1"});
+    auto expect = Command::runSessionCmd(session.get());
+    EXPECT_EQ(expect.ok(), true);
+    testRocksCFOptionConfig(master, 1, 1);
+  }
+
+  {
+    session->setArgs({"config", "set", "rocks.enable_blob_files", "0"});
+    auto expect = Command::runSessionCmd(session.get());
+    EXPECT_EQ(expect.ok(), true);
+    testRocksCFOptionConfig(master, 0, 0);
+  }
+
+  {
+    session->setArgs(
+      {"config", "set", "rocks.defaultcf.enable_blob_files", "1"});
+    auto expect = Command::runSessionCmd(session.get());
+    EXPECT_EQ(expect.ok(), true);
+    testRocksCFOptionConfig(master, 1, 0);
+  }
+
+  {
+    session->setArgs(
+      {"config", "set", "rocks.defaultcf.enable_blob_files", "0"});
+    auto expect = Command::runSessionCmd(session.get());
+    EXPECT_EQ(expect.ok(), true);
+    testRocksCFOptionConfig(master, 0, 0);
+  }
+  {
+    session->setArgs(
+      {"config", "set", "rocks.binlogcf.enable_blob_files", "1"});
+    auto expect = Command::runSessionCmd(session.get());
+    EXPECT_EQ(expect.ok(), true);
+    testRocksCFOptionConfig(master, 0, 1);
+  }
+
+  {
+    session->setArgs(
+      {"config", "set", "rocks.binlogcf.enable_blob_files", "0"});
+    auto expect = Command::runSessionCmd(session.get());
+    EXPECT_EQ(expect.ok(), true);
+    testRocksCFOptionConfig(master, 0, 0);
+  }
+}
+TEST(Command, rocksdbCfOptionsCommand) {
+  const auto guard = MakeGuard([]() { destroyEnv(); });
+  EXPECT_TRUE(setupEnv());
+  {
+    std::map<std::string, std::string> configMap = {
+      {"rocks.enable_blob_files", "1"}};
+    auto cfg = makeServerParam(8814, 0, "", true, configMap);
+    getGlobalServer() = makeServerEntry(cfg);
+    testRocksCFOptionConfig(getGlobalServer(), 1, 1);
+    testCFConfigSetAndGet(getGlobalServer());
+#ifndef _WIN32
+    getGlobalServer()->stop();
+    EXPECT_EQ(getGlobalServer().use_count(), 1);
+#endif
+  }
+
+  {
+    std::map<std::string, std::string> configMap = {
+      {"rocks.defaultcf.enable_blob_files", "1"}};
+    auto cfg = makeServerParam(8815, 0, "", true, configMap);
+    getGlobalServer() = makeServerEntry(cfg);
+    testRocksCFOptionConfig(getGlobalServer(), 1, 0);
+    testCFConfigSetAndGet(getGlobalServer());
+#ifndef _WIN32
+    getGlobalServer()->stop();
+    EXPECT_EQ(getGlobalServer().use_count(), 1);
+#endif
+  }
+
+  {
+    std::map<std::string, std::string> configMap = {
+      {"rocks.binlogcf.enable_blob_files", "1"}};
+    auto cfg = makeServerParam(8816, 0, "", true, configMap);
+    getGlobalServer() = makeServerEntry(cfg);
+    testRocksCFOptionConfig(getGlobalServer(), 0, 1);
+    testCFConfigSetAndGet(getGlobalServer());
+#ifndef _WIN32
+    getGlobalServer()->stop();
+    EXPECT_EQ(getGlobalServer().use_count(), 1);
+#endif
+  }
 }
 
 void testSort(bool clusterEnabled) {

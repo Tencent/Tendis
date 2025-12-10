@@ -27,7 +27,8 @@
 #include "tendisplus/storage/kvstore.h"
 
 namespace tendisplus {
-
+static constexpr const char* kDefaultCF = "defaultcf";
+static constexpr const char* kBinlogCF = "binlogcf";
 class RocksKVStore;
 class RocksdbEnv;
 class BackgroundErrorListener;
