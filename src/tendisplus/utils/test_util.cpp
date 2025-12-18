@@ -36,8 +36,8 @@ std::shared_ptr<ServerParams> makeServerParam(
   ss_tmp_conf_file << port << "_test.cfg";
   std::string tmp_conf_file = ss_tmp_conf_file.str();
 
-  const auto guard =
-    MakeGuard([tmp_conf_file] { remove(tmp_conf_file.c_str()); });
+  // remove file if exist
+  remove(tmp_conf_file.c_str());
 
   std::ofstream myfile;
   myfile.open(tmp_conf_file);

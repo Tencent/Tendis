@@ -931,14 +931,30 @@ Status ServerParams::rewriteConfig() const {
     return s;
   }
 
-  for (auto it = _mapServerParams.begin(); it != _mapServerParams.end(); it++) {
-    std::string name = it->first;
-    BaseVar* var = it->second;
+  for (const auto& param : _mapServerParams) {
+    std::string name = param.first;
+    BaseVar* var = param.second;
 
     if (!var->isallowDynamicSet())
       continue;
 
     rw->rewriteConfigOption(name, var->show(), var->default_show());
+  }
+
+  for (const auto& option : _rocksdbOptions) {
+    std::string name = "rocks." + option.first;
+    auto var = option.second;
+
+    rw->rewriteConfigOption(name, var, "");
+  }
+
+  for (const auto& it : _rocksdbCFOptions) {
+    auto cfName = it.first;
+    auto cfOptions = it.second;
+    for (const auto& option : cfOptions) {
+      std::string name = "rocks." + cfName + "." + option.first;
+      rw->rewriteConfigOption(name, option.second, "");
+    }
   }
 
   rw->rewriteConfigRemoveOrphaned();

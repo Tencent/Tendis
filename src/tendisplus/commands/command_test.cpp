@@ -991,96 +991,109 @@ void testGlobStylePattern(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(!expect.ok());
 }
 
+// Get content of config file
+std::string getConfFileContent(const std::string& confile) {
+  std::ifstream file(confile);
+  if (!file.is_open()) {
+    EXPECT_TRUE(0);
+    return "";
+  }
+  std::stringstream buffer;
+  buffer << file.rdbuf();
+  file.close();
+  return buffer.str();
+}
+
+// Test config rewrite covers all scenarios
 void testConfigRewrite(std::shared_ptr<ServerEntry> svr) {
   asio::io_context ioContext;
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
-
-  sess.setArgs({"config", "set", "maxbinlogkeepnum", "1500000"});
+  // Test Case 1: Add new rocks option (rocks.min_blob_size)
+  // Option not in config file, should be appended after rewrite
+  sess.setArgs({"config", "set", "rocks.min_blob_size", "2048"});
   auto expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
+  // Test Case 2: Modify existing rocks option
+  // rocks.min_blob_size already exists, should update in place
+  sess.setArgs({"config", "set", "rocks.min_blob_size", "4096"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  // Test Case 3: Modify original config option (rocks.disable_wal)
+  // Option exists in original config, should update in place
+  sess.setArgs({"config", "set", "rocks.disable_wal", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  // Test Case 4: Add new rocks CF option (rocks.defaultcf.xxx)
+  sess.setArgs({"config", "set", "rocks.defaultcf.enable_blob_files", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  // Test Case 5: Modify existing rocks CF option
+  sess.setArgs({"config", "set", "rocks.binlogcf.enable_blob_files", "0"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  // Test Case 6: Add another CF option (rocks.binlogcf.xxx)
+  // Multiple CF options should coexist
+  sess.setArgs({"config",
+                "set",
+                "rocks.binlogcf.blob_garbage_collection_age_cutoff",
+                "0.25"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  // Test Case 7: Add multiple options for same CF
+  sess.setArgs(
+    {"config", "set", "rocks.defaultcf.blob_file_size", "268435456"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  // Test Case 8: Modify blob garbage collection age cutoff
+  sess.setArgs(
+    {"config", "set", "rocks.blob_garbage_collection_age_cutoff", "0.36"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  // Test Case 9: Modify defaultcf blob compression type
+  sess.setArgs(
+    {"config", "set", "rocks.defaultcf.blob_compression_type", "snappy"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
 
   sess.setArgs({"config", "rewrite"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
 
-  auto confile = svr->getParams()->getConfFile();
-  std::ifstream file(confile);
-  if (!file.is_open()) {
-    EXPECT_TRUE(0);
-  }
-  std::string line;
-  std::string text;
-  std::vector<std::string> tokens;
-
-  bool find = false;
-  try {
-    line.clear();
-    while (std::getline(file, line)) {
-      line = trim(line);
-      if (line.size() == 0 || line[0] == '#') {
-        continue;
-      }
-      std::stringstream ss(line);
-      tokens.clear();
-      std::string tmp;
-      while (std::getline(ss, tmp, ' ')) {
-        tokens.emplace_back(tmp);
-      }
-      if (tokens.size() == 2) {
-        if (tokens[0] == "maxbinlogkeepnum" && tokens[1] == "1500000") {
-          find = true;
-        }
-      }
-    }
-  } catch (const std::exception& ex) {
-    EXPECT_TRUE(0);
-    return;
-  }
-  EXPECT_TRUE(find);
-  file.close();
-
-  std::ofstream out;
-  out.open(confile);
-  out.flush();
-  out << text;
-  out.close();
-
-  sess.setArgs({"config", "rewrite"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-
-  bool correct = false;
-  std::ifstream check(confile);
-  if (!check.is_open()) {
-    EXPECT_TRUE(0);
-  }
-  try {
-    line.clear();
-    while (std::getline(check, line)) {
-      line = trim(line);
-      if (line.size() == 0 || line[0] == '#') {
-        continue;
-      }
-      std::stringstream ss(line);
-      tokens.clear();
-      std::string tmp;
-      while (std::getline(ss, tmp, ' ')) {
-        tokens.emplace_back(tmp);
-      }
-      if (tokens.size() == 2) {
-        if (tokens[0] == "maxbinlogkeepnum" && tokens[1] == "1500000") {
-          correct = true;
-          break;
-        }
-      }
-    }
-  } catch (const std::exception& ex) {
-    EXPECT_TRUE(0);
-    return;
-  }
-  EXPECT_TRUE(correct);
-  check.close();
+  std::string expectedContent =
+    "bind 127.0.0.1\n"
+    "port 8811\n"
+    "loglevel debug\n"
+    "logdir ./log\n"
+    "dir ./db\n"
+    "dumpdir ./dump\n"
+    "pidfile ./tendisplus.pid\n"
+    "slowlog ./log/slowlog\n"
+    "storage rocks\n"
+    "rocks.blockcachemb 4096\n"
+    "rocks.write_buffer_size 4096000\n"
+    "generallog yes\n"
+    "checkkeytypeforsetcmd yes\n"
+    "kvStoreCount 1\n"
+    "maxbinlogkeepnum 1000000\n"
+    "slavebinlogkeepnum 1000000\n"
+    "executorthreadnum 8\n"
+    "rocks.binlogcf.enable_blob_files 0\n"
+    "rocks.blob_garbage_collection_age_cutoff 0.36\n"
+    "rocks.defaultcf.blob_compression_type snappy\n"
+    "rocks.enable_blob_files 1\n"
+    "# Generated by CONFIG REWRITE\n"
+    "fullpushthreadnum 1\n"
+    "fullreceivethreadnum 1\n"
+    "incrpushthreadnum 1\n"
+    "logrecyclethreadnum 1\n"
+    "rocks.disable_wal yes\n"
+    "rocks.min_blob_size 4096\n"
+    "rocks.defaultcf.blob_file_size 268435456\n"
+    "rocks.defaultcf.enable_blob_files 1\n"
+    "rocks.binlogcf.blob_garbage_collection_age_cutoff 0.25\n";
+  auto content = getConfFileContent(svr->getParams()->getConfFile());
+  EXPECT_EQ(content, expectedContent);
 }
 
 void testCommand(std::shared_ptr<ServerEntry> svr) {
@@ -1340,16 +1353,22 @@ TEST(Command, testGlobStylePattern) {
 
 TEST(Command, testConfigRewrite) {
   const auto guard = MakeGuard([] { destroyEnv(); });
-
   EXPECT_TRUE(setupEnv());
 
-  auto cfg = makeServerParam();
+  std::map<std::string, std::string> configMap = {
+    {"executorthreadnum", "8"},
+    {"rocks.enable_blob_files", "1"},
+    {"rocks.binlogcf.enable_blob_files", "1"},
+    {"rocks.blob_garbage_collection_age_cutoff", "0.12"},
+    {"rocks.defaultcf.blob_compression_type", "lz4"}};
+  auto cfg = makeServerParam(8811, 1, "", true, configMap);
+
   auto server = makeServerEntry(cfg);
-
+  getGlobalServer() = server;
   testConfigRewrite(server);
-
+  getGlobalServer() = nullptr;
+  // Clean up temp config file
   remove(cfg->getConfFile().c_str());
-
 #ifndef _WIN32
   server->stop();
   EXPECT_EQ(server.use_count(), 1);
