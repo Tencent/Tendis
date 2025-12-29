@@ -78,10 +78,10 @@ TEST(Varint, Common) {
 
 double genDouble() {
   // static int rank = 0;
-  std::srand((int32_t)time(0));
+  std::srand(static_cast<int32_t>(time(0)));
   int r = std::rand();
 
-  std::srand((int32_t)time(0));
+  std::srand(static_cast<int32_t>(time(0)));
   int r2 = std::rand();
 
   int x = r % 1111;
@@ -137,7 +137,7 @@ void testInt(uint64_t val) {
   char buf[sizeof(uint64_t) * 2];
 
   {
-    uint16_t val16 = (uint16_t)val;
+    uint16_t val16 = static_cast<uint16_t>(val);
 
     auto v1 = int16Encode(val16);
     memcpy(buf, &v1, sizeof(v1));
@@ -158,7 +158,7 @@ void testInt(uint64_t val) {
   }
 
   {
-    uint32_t val32 = (uint32_t)val;
+    uint32_t val32 = static_cast<uint32_t>(val);
     auto v1 = int32Encode(val32);
     memcpy(buf, &v1, sizeof(v1));
     auto v2 = int32Decode(buf);
@@ -178,7 +178,7 @@ void testInt(uint64_t val) {
   }
 
   {
-    uint64_t val64 = (uint64_t)val;
+    uint64_t val64 = static_cast<uint64_t>(val);
     auto v1 = int64Encode(val64);
     memcpy(buf, &v1, sizeof(v1));
     auto v2 = int64Decode(buf);

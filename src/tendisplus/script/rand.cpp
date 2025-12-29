@@ -8,7 +8,7 @@
 
 int32_t RedisRandom::redisLrand48() {
   next();
-  return (((int32_t)x[2] << (NN - 1)) + (x[1] >> 1));
+  return ((static_cast<int32_t>(x[2]) << (NN - 1)) + (x[1] >> 1));
 }
 
 void RedisRandom::redisSrand48(int32_t seedval) {

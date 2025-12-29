@@ -7,6 +7,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -123,6 +124,8 @@ uint8_t rt2Char(RecordType t) {
     // the right most part.
     case RecordType::RT_BINLOG:
       return std::numeric_limits<uint8_t>::max();
+    case RecordType::RT_KV_EXTRA:
+      return 'k';
     default:
       LOG(FATAL) << "invalid recordtype:" << static_cast<uint32_t>(t);
       INVARIANT_D(0);
@@ -199,6 +202,8 @@ RecordType char2Rt(uint8_t t) {
       return RecordType::RT_TTL_INDEX;
     case std::numeric_limits<uint8_t>::max():
       return RecordType::RT_BINLOG;
+    case 'k':
+      return RecordType::RT_KV_EXTRA;
     default:
       LOG(ERROR) << "invalid rcdchr:" << static_cast<uint32_t>(t);
       // never reaches here, void compiler complain
@@ -947,7 +952,8 @@ Expected<bool> RecordValue::validate(const std::string& value,
     return {ErrorCodes::ERR_DECODE, "invalid pieceSize"};
   }
 
-  if (totalSize != value.size() - offset && totalSize != (uint64_t)-1) {
+  if (totalSize != value.size() - offset &&
+      totalSize != static_cast<uint64_t>(-1)) {
     return {ErrorCodes::ERR_DECODE, "invalid totalSize"};
   }
 
@@ -1952,8 +1958,8 @@ Expected<VersionMeta> VersionMeta::decode(const RecordKey& rk,
   auto nameMeta = rk.getPrimaryKey();
   std::string name = nameMeta.substr(0, nameMeta.size() - 5);
 
-  return VersionMeta((uint64_t)doc["timestamp"].GetUint64(),
-                     (uint64_t)(doc["version"].GetUint64()),
+  return VersionMeta(static_cast<uint64_t>(doc["timestamp"].GetUint64()),
+                     static_cast<uint64_t>(doc["version"].GetUint64()),
                      name);
 }
 

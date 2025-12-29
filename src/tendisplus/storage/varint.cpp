@@ -5,6 +5,7 @@
 #include "tendisplus/storage/varint.h"
 
 #include <string>
+#include <vector>
 
 #include "tendisplus/include/endian.h"
 #include "tendisplus/utils/invariant.h"
@@ -73,12 +74,12 @@ Expected<VarintDecodeResult> varintDecodeFwd(const uint8_t* input,
   uint64_t ret = 0;
   size_t i = 0;
   for (; i < maxSize && (input[i] & 0x80); i++) {
-    ret |= uint64_t(input[i] & 0x7f) << (7 * i);
+    ret |= static_cast<uint64_t>(input[i] & 0x7f) << (7 * i);
   }
   if (i == maxSize) {
     return {ErrorCodes::ERR_DECODE, "decode varint maxlen"};
   }
-  ret |= uint64_t(input[i] & 0x7f) << (7 * (i));
+  ret |= static_cast<uint64_t>(input[i] & 0x7f) << (7 * (i));
   i++;
   return VarintDecodeResult{ret, i};
 }
@@ -90,12 +91,12 @@ Expected<VarintDecodeResult> varintDecodeRvs(const uint8_t* input,
   const uint8_t* p = input;
   size_t i = 0;
   for (; i < maxSize && ((*p) & 0x80); i++, p--) {
-    ret |= uint64_t((*p) & 0x7f) << (7 * i);
+    ret |= static_cast<uint64_t>((*p) & 0x7f) << (7 * i);
   }
   if (i == maxSize) {
     return {ErrorCodes::ERR_DECODE, "decode varint maxlen"};
   }
-  ret |= uint64_t((*p) & 0x7f) << (7 * (i++));
+  ret |= static_cast<uint64_t>((*p) & 0x7f) << (7 * (i++));
   return VarintDecodeResult{ret, i};
 }
 

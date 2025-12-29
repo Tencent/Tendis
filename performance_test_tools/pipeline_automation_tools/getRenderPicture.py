@@ -2,6 +2,7 @@ import json
 import requests
 import sys
 import time
+import os
 
 def getRenderTaskId(renderUrl, bk_app_code, bk_app_secret, bk_username, bk_biz_id, dashboard_uid, panel_id, app, cluster_domain, start, end):
     data = {
@@ -79,15 +80,18 @@ def download_image(image_url, filename):
         sys.exit(1)
 
 if __name__ == "__main__":
-    print(sys.argv[10])
     print(sys.argv[11])
-    if len(sys.argv) != 13:
-        print("usage: python getRenderPng.py <renderUrl> <pngUrl> <bk_app_code> <bk_app_secret> <bk_username> <bk_biz_id> <dashboard_uid> <panel_id> <app> <cluster_domain> <start_time> <end_time>")
+    print(sys.argv[12])
+    if len(sys.argv) != 14:
+        print("usage: python getRenderPng.py <resultDir> <renderUrl> <pngUrl> <bk_app_code> <bk_app_secret> <bk_username> <bk_biz_id> <dashboard_uid> <panel_id> <app> <cluster_domain> <start_time> <end_time>")
         sys.exit(1)
-    renderUrl, pngUrl, bk_app_code, bk_app_secret, bk_username, bk_biz_id, dashboard_uid, panel_id, app, cluster_domain, start_time, end_time = sys.argv[1:13]
+    resultDir, renderUrl, pngUrl, bk_app_code, bk_app_secret, bk_username, bk_biz_id, dashboard_uid, panel_id, app, cluster_domain, start_time, end_time = sys.argv[1:14]
     bk_biz_id = int(bk_biz_id)
     print(bk_biz_id)
-    filename = "result_curve/" + start_time + "-" + end_time + ".jpeg"
+    filename = resultDir + start_time + "-" + end_time + ".jpeg"
+    if os.path.isfile(filename):
+        print(f"already exits: {filename}")
+        sys.exit(0)
     start_time = int(start_time)
     end_time = int(end_time)
     task_id = getRenderTaskId(renderUrl, bk_app_code, bk_app_secret, bk_username, bk_biz_id, dashboard_uid, panel_id, app, cluster_domain, start_time, end_time)

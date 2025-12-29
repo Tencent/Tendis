@@ -4,6 +4,7 @@
 
 #include <limits>
 #include <memory>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -466,13 +467,13 @@ uint64_t ReplLogRawV2::getVersionEp() {
   if (_val.size() <
       RecordValue::minSize() + ReplLogValueV2::fixedHeaderSize()) {
     INVARIANT_D(0);
-    return (uint64_t)-1;
+    return static_cast<uint64_t>(-1);
   }
 
   auto rvHdrSize = RecordValue::decodeHdrSizeNoMeta(_val);
   if (!rvHdrSize.ok()) {
     INVARIANT_D(0);
-    return (uint64_t)-1;
+    return static_cast<uint64_t>(-1);
   }
 
   return int64Decode(_val.c_str() + rvHdrSize.value() +
@@ -483,12 +484,12 @@ uint64_t ReplLogRawV2::getTimestamp() {
   if (_val.size() <
       RecordValue::minSize() + ReplLogValueV2::fixedHeaderSize()) {
     INVARIANT_D(0);
-    return (uint64_t)0;
+    return static_cast<uint64_t>(0);
   }
   auto rvHdrSize = RecordValue::decodeHdrSizeNoMeta(_val);
   if (!rvHdrSize.ok()) {
     INVARIANT_D(0);
-    return (uint64_t)0;
+    return static_cast<uint64_t>(0);
   }
 
   return int64Decode(_val.c_str() + rvHdrSize.value() +
@@ -499,12 +500,12 @@ uint32_t ReplLogRawV2::getChunkId() {
   if (_val.size() <
       RecordValue::minSize() + ReplLogValueV2::fixedHeaderSize()) {
     INVARIANT_D(0);
-    return (uint32_t)Transaction::CHUNKID_UNINITED;
+    return static_cast<uint32_t>(Transaction::CHUNKID_UNINITED);
   }
   auto rvHdrSize = RecordValue::decodeHdrSizeNoMeta(_val);
   if (!rvHdrSize.ok()) {
     INVARIANT_D(0);
-    return (uint32_t)Transaction::CHUNKID_UNINITED;
+    return static_cast<uint32_t>(Transaction::CHUNKID_UNINITED);
   }
 
   return int32Decode(_val.c_str() + rvHdrSize.value() +

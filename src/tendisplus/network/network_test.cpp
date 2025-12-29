@@ -5,7 +5,10 @@
 #include <algorithm>
 #include <cstdio>
 #include <iostream>
+#include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "gtest/gtest.h"
 

@@ -487,7 +487,7 @@ class ServerParams {
   uint32_t dbNum = CONFIG_DEFAULT_DBNUM;
 
   bool noexpire = false;
-  bool noexpireBlob = false;
+  bool noexpireBlob = true;
   uint64_t maxBinlogKeepNum = 1;
   uint32_t minBinlogKeepSec = 3600;
   uint64_t slaveBinlogKeepNum = 1;

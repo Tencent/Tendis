@@ -6,6 +6,7 @@
 #include <cctype>
 #include <clocale>
 #include <cmath>
+#include <list>
 #include <map>
 #include <memory>
 #include <string>
@@ -1060,7 +1061,7 @@ class ZRangeByScoreGenericCommand : public Command {
     const std::vector<std::string>& args = sess->getArgs();
     const std::string& key = args[1];
     uint64_t offset = 0;
-    uint64_t limit = (uint64_t)-1;
+    uint64_t limit = static_cast<uint64_t>(-1);
     int withscore = 0;
     int minidx, maxidx;
     Zrangespec range;
@@ -1088,12 +1089,12 @@ class ZRangeByScoreGenericCommand : public Command {
           if (!eoffset.ok()) {
             return eoffset.status();
           }
-          offset = (uint64_t)eoffset.value();
+          offset = static_cast<uint64_t>(eoffset.value());
           Expected<int64_t> elimit = ::tendisplus::stoll(args[pos + 2]);
           if (!elimit.ok()) {
             return elimit.status();
           }
-          limit = (uint64_t)elimit.value();
+          limit = static_cast<uint64_t>(elimit.value());
           pos += 3;
           remaining -= 3;
         } else {
@@ -1221,12 +1222,12 @@ class ZRangeByLexGenericCommand : public Command {
           if (!eoffset.ok()) {
             return eoffset.status();
           }
-          offset = (uint64_t)eoffset.value();
+          offset = static_cast<uint64_t>(eoffset.value());
           Expected<int64_t> elimit = ::tendisplus::stoll(args[pos + 2]);
           if (!elimit.ok()) {
             return elimit.status();
           }
-          limit = (uint64_t)elimit.value();
+          limit = static_cast<uint64_t>(elimit.value());
           pos += 3;
           remaining -= 3;
         } else {

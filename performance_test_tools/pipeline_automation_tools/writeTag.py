@@ -86,7 +86,7 @@ if __name__ == '__main__':
         update_command_stats(outfile, testName, version, date, qps, p50, p99, p100, pavg)
     r=getHistoryRecord(testName, baselineVersion)
     f=open(outputFile,'a')
-    f.write("<table style=\"border:1px solid black; collapse:collapse\">")
+    f.write("<table style=\"border:1px solid black; border-collapse:collapse\">")
     f.write("<tr>")
     f.write("<th style=\"border:1px solid black; text-align:center collapse:collapse\"></th>")
     f.write("<th style=\"border:1px solid black; text-align:center collapse:collapse\">本次测试结果</th>")

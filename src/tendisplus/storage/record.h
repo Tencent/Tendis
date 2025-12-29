@@ -65,6 +65,8 @@ enum class RecordType {
   RT_DATA_META,  /* For key type in RecordKey */
   RT_TBITMAP_META,
   RT_TBITMAP_ELE,
+  RT_KV_EXTRA  // For kv extra info type in RecordKey and RecordValue, such as
+               //   ttl info if KV has big value
 };
 
 uint8_t rt2Char(RecordType t);

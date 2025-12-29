@@ -51,6 +51,162 @@
 
 namespace tendisplus {
 
+class IterAllGeneric : public Command {
+ public:
+  IterAllGeneric(const std::string& name, const char* sflags)
+    : Command(name, sflags) {}
+
+  virtual Status callBack(Session* sess,
+                          PStore kvstore,
+                          const RecordKey& rk,
+                          const RecordValue& rv) = 0;
+  Status scanAllKeys(Session* sess) {
+    Status status;
+    auto server = sess->getServerEntry();
+    std::bitset<CLUSTER_SLOTS> checkSlots;
+    bool enableCluster = server->getParams()->clusterEnabled;
+    if (enableCluster) {
+      auto myself = server->getClusterMgr()->getClusterState()->getMyselfNode();
+      checkSlots = myself->nodeIsMaster() ? myself->getSlots()
+                                          : myself->getMaster()->getSlots();
+    }
+
+    for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
+      auto expdb =
+        server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS);
+      if (!expdb.ok()) {
+        if (expdb.status().code() == ErrorCodes::ERR_STORE_NOT_OPEN) {
+          continue;
+        }
+        return expdb.status();
+      }
+
+      PStore kvstore = expdb.value().store;
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
+      if (!ptxn.ok()) {
+        return ptxn.status();
+      }
+
+      auto cursor = ptxn.value()->createDataCursor();
+
+      cursor->seek("");
+      while (true) {
+        Expected<Record> exptRcd = cursor->next();
+        if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+          break;
+        }
+        if (!exptRcd.ok()) {
+          return exptRcd.status();
+        }
+
+        if (exptRcd.value().getRecordKey().getDbId() !=
+            sess->getCtx()->getDbId()) {
+          continue;
+        }
+        // NOTE(vinchen):
+        // RecordType::RT_TTL_INDEX and RecordType::BINLOG
+        // is always at the last of rocksdb, and the chunkid is very big
+        auto chunkId = exptRcd.value().getRecordKey().getChunkId();
+        if (chunkId >= server->getSegmentMgr()->getChunkSize()) {
+          break;
+        }
+        // NOTE(wayenchen) ignore slot not belong to me
+        if (enableCluster && !checkSlots.test(chunkId)) {
+          continue;
+        }
+
+        callBack(sess,
+                 kvstore,
+                 exptRcd.value().getRecordKey(),
+                 exptRcd.value().getRecordValue());
+      }
+    }
+    return status;
+  }
+};
+
+// Build Str TTL Index
+class BstiCommand : public IterAllGeneric {
+ public:
+  BstiCommand() : IterAllGeneric("bsti", "ws") {}
+
+  ssize_t arity() const {
+    return 1;
+  }
+
+  int32_t firstkey() const {
+    return 0;
+  }
+
+  int32_t lastkey() const {
+    return 0;
+  }
+
+  int32_t keystep() const {
+    return 0;
+  }
+
+  bool sameWithRedis() const {
+    return false;
+  }
+
+  Status callBack(Session* sess,
+                  PStore kvstore,
+                  const RecordKey& rk,
+                  const RecordValue& rv) override {
+    Status status;
+    if (rv.getRecordType() != RecordType::RT_KV) {
+      return status;
+    }
+    if (!needTTLIndex(kvstore, rv)) {
+      return status;
+    }
+
+    std::vector<std::string> keys;
+    keys.push_back(rk.getPrimaryKey());
+    std::vector<int> index;
+    index.push_back(0);
+    auto locklist = sess->getServerEntry()->getSegmentMgr()->getAllKeysLocked(
+      sess, keys, index, mgl::LockMode::LOCK_X, getFlags());
+    if (!locklist.ok()) {
+      return locklist.status();
+    }
+
+    auto eTxn = kvstore->createTransaction(nullptr);
+    if (!eTxn.ok()) {
+      LOG(ERROR) << "createTransaction failed:" << eTxn.status().toString();
+      return eTxn.status();
+    }
+    std::unique_ptr<Transaction> txn = std::move(eTxn.value());
+
+    _updateNum++;
+    status = updateTTLIndex(kvstore, rk, rv, txn.get(), 0);
+    if (!status.ok()) {
+      return status;
+    }
+
+    auto commitStatus = txn->commit();
+    if (!commitStatus.ok()) {
+      return commitStatus.status();
+    }
+    return status;
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    LOG(INFO) << "Build Str TTL Index begin.";
+    _updateNum = 0;
+    auto s = scanAllKeys(sess);
+    LOG(INFO) << "Build Str TTL Index end, updateNum:" << _updateNum;
+    if (!s.ok()) {
+      return s;
+    }
+    return Command::fmtLongLong(_updateNum);
+  }
+
+ private:
+  uint64_t _updateNum;
+} bstiCmd;
+
 class KeysCommand : public Command {
  public:
   KeysCommand() : Command("keys", "rs") {}

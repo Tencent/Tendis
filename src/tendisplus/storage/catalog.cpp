@@ -265,7 +265,7 @@ Expected<std::unique_ptr<StoreMeta>> Catalog::getStoreMeta(uint32_t idx) {
 
   INVARIANT(doc.HasMember("id"));
   INVARIANT(doc["id"].IsUint64());
-  result->id = (uint32_t)doc["id"].GetUint64();
+  result->id = static_cast<uint32_t>(doc["id"].GetUint64());
 
   INVARIANT(doc.HasMember("syncFromId"));
   INVARIANT(doc["syncFromId"].IsUint64());
@@ -352,7 +352,7 @@ Expected<std::unique_ptr<StoreMainMeta>> Catalog::getStoreMainMeta(
 
   INVARIANT(doc.HasMember("id"));
   INVARIANT(doc["id"].IsUint64());
-  result->id = (uint32_t)doc["id"].GetUint64();
+  result->id = static_cast<uint32_t>(doc["id"].GetUint64());
 
   INVARIANT(doc.HasMember("storeMode"));
   INVARIANT(doc["storeMode"].IsUint64());
@@ -380,7 +380,7 @@ Status Catalog::setMainMeta(const MainMeta& meta) {
   writer.Uint64(meta.chunkSize);
 
   writer.Key("binlogVersion");
-  writer.Uint64((uint64_t)meta.binlogVersion);
+  writer.Uint64(static_cast<uint64_t>(meta.binlogVersion));
 
   _binlogVersion = meta.binlogVersion;
 
@@ -439,11 +439,11 @@ Expected<std::unique_ptr<MainMeta>> Catalog::getMainMeta() {
 
   INVARIANT(doc.HasMember("kvStoreCount"));
   INVARIANT(doc["kvStoreCount"].IsUint64());
-  result->kvStoreCount = (uint32_t)doc["kvStoreCount"].GetUint64();
+  result->kvStoreCount = static_cast<uint32_t>(doc["kvStoreCount"].GetUint64());
 
   INVARIANT(doc.HasMember("chunkSize"));
   INVARIANT(doc["chunkSize"].IsUint64());
-  result->chunkSize = (uint32_t)doc["chunkSize"].GetUint64();
+  result->chunkSize = static_cast<uint32_t>(doc["chunkSize"].GetUint64());
 
   // old version may not have binlog version.
   // if one version have binlog version, it's bigger than 1.

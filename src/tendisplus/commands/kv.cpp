@@ -123,6 +123,13 @@ Expected<std::string> setGeneric(Session* sess,
   if (!status.ok()) {
     return status;
   }
+
+
+  status = updateTTLIndex(store, key, val, txn, 0);
+  if (!status.ok()) {
+    return status;
+  }
+
   if (endTxn) {
     Expected<uint64_t> exptCommit = sess->getCtx()->commitTransaction(txn);
     if (!exptCommit.ok()) {
@@ -1054,7 +1061,7 @@ class CasCommand : public GetSetGeneral {
       return ret;
     }
 
-    if ((int64_t)ecas.value() != oldValue.value().getCas() &&
+    if (static_cast<int64_t>(ecas.value()) != oldValue.value().getCas() &&
         oldValue.value().getCas() != -1) {
       return {ErrorCodes::ERR_CAS, "cas unmatch"};
     }
@@ -2144,19 +2151,9 @@ class RenameGenericCommand : public Command {
     if (!s.ok()) {
       return s;
     }
-    if (rv.value().getRecordType() != RecordType::RT_KV &&
-        rv.value().getTtl() > 0) {
-      TTLIndex ictx(dst,
-                    rv.value().getRecordType(),
-                    sess->getCtx()->getDbId(),
-                    rv.value().getTtl());
-      if (ictx.getType() != RecordType::RT_KV) {
-        s = dptxn.value()->setKV(
-          ictx.encode(), RecordValue(RecordType::RT_TTL_INDEX).encode());
-        if (!s.ok()) {
-          return s;
-        }
-      }
+    s = updateTTLIndex(dststore, rk, rv.value(), dptxn.value(), 0);
+    if (!s.ok()) {
+      return s;
     }
 
     if (rv.value().getRecordType() == RecordType::RT_KV) {
@@ -2389,8 +2386,8 @@ class BitFieldCommand : public Command {
     conv.u = getUnsignedBitfield(value, offset, bits);
     ret = conv.i;
 
-    if (ret & ((uint64_t)1 << (bits - 1)))
-      ret |= ((uint64_t)-1) << bits;
+    if (ret & (static_cast<uint64_t>(1) << (bits - 1)))
+      ret |= static_cast<uint64_t>(-1) << bits;
 
     return ret;
   }
@@ -2400,11 +2397,12 @@ class BitFieldCommand : public Command {
                                     uint64_t bits,
                                     BFOverFlowType owtype,
                                     uint64_t* newVal) {
-    uint64_t max = (bits == 64) ? UINT64_MAX : (((uint64_t)1 << bits) - 1);
+    uint64_t max =
+      (bits == 64) ? UINT64_MAX : ((static_cast<uint64_t>(1) << bits) - 1);
     int64_t maxincr = max - value;
     int64_t minincr = -value;
     auto handleWrap = [&]() {
-      uint64_t mask = ((uint64_t)-1) << bits;
+      uint64_t mask = static_cast<uint64_t>(-1) << bits;
       uint64_t res = value + incr;
       res &= ~mask;
       *newVal = res;
@@ -2435,15 +2433,16 @@ class BitFieldCommand : public Command {
                                   uint64_t bits,
                                   BFOverFlowType owtype,
                                   int64_t* newVal) {
-    int64_t max = (bits == 64) ? INT64_MAX : (((int64_t)1 << (bits - 1)) - 1);
+    int64_t max =
+      (bits == 64) ? INT64_MAX : ((static_cast<int64_t>(1) << (bits - 1)) - 1);
     int64_t min = (-max) - 1;
 
     int64_t maxincr = max - value;
     int64_t minincr = min - value;
 
     auto handleWrap = [&]() {
-      uint64_t mask = ((uint64_t)-1) << bits;
-      uint64_t msb = (uint64_t)1 << (bits - 1);
+      uint64_t mask = static_cast<uint64_t>(-1) << bits;
+      uint64_t msb = static_cast<uint64_t>(1) << (bits - 1);
       uint64_t a = value, b = incr, c;
       c = a + b;
 
@@ -2481,7 +2480,8 @@ class BitFieldCommand : public Command {
                            uint64_t bits,
                            uint64_t value) {
     for (size_t i = 0; i < bits; i++) {
-      uint64_t bitval = (value & ((uint64_t)1 << (bits - 1 - i))) != 0;
+      uint64_t bitval =
+        (value & (static_cast<uint64_t>(1) << (bits - 1 - i))) != 0;
       uint64_t byte = offset >> 3;
       uint64_t bit = 7 - (offset & 0x7);
       uint8_t byteval = static_cast<uint8_t>((*buf)[byte]);

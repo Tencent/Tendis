@@ -6,6 +6,7 @@
 #include <cctype>
 #include <clocale>
 #include <cmath>
+#include <cstdio>
 #include <map>
 #include <memory>
 #include <string>
@@ -292,7 +293,7 @@ uint64_t HPLLObject::getHllCount() const {
   int invalid = 0;
   auto count = redis_port::hllCount(_hdr, _hdrSize, &invalid);
   if (invalid) {
-    return (uint64_t)-1;
+    return static_cast<uint64_t>(-1);
   }
   return count;
 }
@@ -304,7 +305,7 @@ uint64_t HPLLObject::getHllCountFast() {
   int invalid = 0;
   auto count = redis_port::hllCountFast(_hdr, _hdrSize, &invalid);
   if (invalid) {
-    return (uint64_t)-1;
+    return static_cast<uint64_t>(-1);
   }
   hllInvalidateCache();
   return count;
@@ -530,7 +531,7 @@ class PfCountCommand : public Command {
     // NOTE(vinchen): pfcount should be a read only command,
     // so here it should not use hpll->getHllCountFast()
     auto count = hpll->getHllCount();
-    if (count == (uint64_t)-1) {
+    if (count == static_cast<uint64_t>(-1)) {
       return {ErrorCodes::ERR_INVALID_HLL, ""};
     }
 
@@ -728,7 +729,9 @@ class PfSelfTestCommand : public Command {
     auto o = std::make_unique<HPLLObject>();
     double relerr = 1.04 / sqrt(HLL_REGISTERS);
     int64_t checkpoint = 1;
-    uint64_t seed = (uint64_t)rand() | (uint64_t)rand() << 32;
+    uint64_t seed =
+      static_cast<uint64_t>(rand()) |       // NOLINT(runtime/threadsafe_fn)
+      static_cast<uint64_t>(rand()) << 32;  // NOLINT(runtime/threadsafe_fn)
     uint64_t ele;
     for (j = 1; j <= 10000000; j++) {
       ele = j ^ seed;
@@ -742,8 +745,8 @@ class PfSelfTestCommand : public Command {
       if (j == checkpoint && j < CONFIG_DEFAULT_HLL_SPARSE_MAX_BYTES / 2) {
         if (o->getHdrEncoding() != HLL_SPARSE) {
           std::stringstream ss;
-          ss << "TESTFAILED sparse encoding not used:"
-             << "j=" << j << " encoding=" << o->getHdrEncoding();
+          ss << "TESTFAILED sparse encoding not used:" << "j=" << j
+             << " encoding=" << o->getHdrEncoding();
 
           return {ErrorCodes::ERR_INVALID_HLL, ss.str()};
         }
@@ -757,7 +760,8 @@ class PfSelfTestCommand : public Command {
 
       /* Check error. */
       if (j == checkpoint) {
-        int64_t abserr = checkpoint - (int64_t)keyHpll->getHllCount();
+        int64_t abserr =
+          checkpoint - static_cast<int64_t>(keyHpll->getHllCount());
         uint64_t maxerr = ceil(relerr * 6 * checkpoint);
 
         /* Adjust the max error we expect for cardinality 10
@@ -769,13 +773,13 @@ class PfSelfTestCommand : public Command {
 
         if (abserr < 0)
           abserr = -abserr;
-        if (abserr > (int64_t)maxerr) {
+        if (abserr > static_cast<int64_t>(maxerr)) {
           char buf[256];
           snprintf(buf,
                    sizeof(buf),
                    "TESTFAILED Too big error. card:%lu abserr:%lu",
-                   (uint64_t)checkpoint,
-                   (uint64_t)abserr);
+                   static_cast<uint64_t>(checkpoint),
+                   static_cast<uint64_t>(abserr));
 
           return {ErrorCodes::ERR_INVALID_HLL, buf};
         }

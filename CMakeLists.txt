@@ -80,7 +80,9 @@ if(CMAKE_COMPILER_IS_GNUCC)
         "cd ${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb/rocksdb\;
          git am --abort\;
          git am -s ../../patch/0001-add-statistic-for-sst-file-info.patch\;
-         git am -s ../../patch/0002-add-latency-statistic-log.patch\; ")
+         git am -s ../../patch/0002-add-latency-statistic-log.patch\;
+         git am -s ../../patch/0003-better-control-of-blobldb-space-amp.patch\;
+         ")
     execute_process(COMMAND bash "-c" ${patchCommand})
 endif()
 set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb")

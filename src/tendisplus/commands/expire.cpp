@@ -27,6 +27,7 @@ Expected<bool> expireBeforeNow(Session* sess,
   return Command::delKeyChkExpire(sess, key, type, txn);
 }
 
+
 // return true if exists
 // return false if not exists
 // return error if has error
@@ -68,33 +69,18 @@ Expected<bool> expireAfterNow(Session* sess,
       return eValue.status();
     }
     auto rv = eValue.value();
-    auto vt = rv.getRecordType();
     Status s;
 
-    if (vt != RecordType::RT_KV) {
-      // delete old index entry
-      auto oldTTL = rv.getTtl();
-      if (oldTTL != 0) {
-        TTLIndex o_ictx(key, vt, pCtx->getDbId(), oldTTL);
-
-        s = txn->delKV(o_ictx.encode());
-        if (!s.ok()) {
-          return s;
-        }
-      }
-
-      // add new index entry
-      TTLIndex n_ictx(key, vt, pCtx->getDbId(), expireAt);
-      s = txn->setKV(n_ictx.encode(),
-                     RecordValue(RecordType::RT_TTL_INDEX).encode());
-      if (!s.ok()) {
-        return s;
-      }
-    }
-
+    uint64_t oldTTl = rv.getTtl();
     // update
     rv.setTtl(expireAt);
     rv.setVersionEP(pCtx->getVersionEP());
+
+    s = updateTTLIndex(kvstore, rk, rv, txn, oldTTl);
+    if (!s.ok()) {
+      return s;
+    }
+
     s = kvstore->setKV(rk, rv, txn);
     if (!s.ok()) {
       return s;
@@ -111,7 +97,7 @@ Expected<std::string> expireGeneric(Session* sess,
                                     int64_t expireAt,
                                     const std::string& key,
                                     Transaction* txn) {
-  if (expireAt >= (int64_t)msSinceEpoch() ||
+  if (expireAt >= static_cast<int64_t>(msSinceEpoch()) ||
       sess->getServerEntry()->getParams()->noexpire) {
     bool atLeastOne = false;
     for (auto type : {RecordType::RT_DATA_META}) {

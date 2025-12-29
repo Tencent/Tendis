@@ -22,7 +22,7 @@ namespace tendisplus {
 
 using Zrangespec = redis_port::Zrangespec;
 using Zlexrangespec = redis_port::Zlexrangespec;
-const uint64_t SKIPLIST_INVALID_POS = (uint64_t)-1;
+const uint64_t SKIPLIST_INVALID_POS = static_cast<uint64_t>(-1);
 class SkipList {
  public:
   using PSE = std::unique_ptr<ZSlEleValue>;

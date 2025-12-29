@@ -5,9 +5,11 @@
 #include <algorithm>
 #include <cctype>
 #include <clocale>
+#include <list>
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/invariant.h"

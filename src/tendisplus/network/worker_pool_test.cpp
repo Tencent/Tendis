@@ -2,6 +2,9 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include <memory>
+#include <utility>
+
 #include "gtest/gtest.h"
 
 #include "tendisplus/network/worker_pool.h"

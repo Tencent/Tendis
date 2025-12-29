@@ -4,6 +4,8 @@
 
 #include "tendisplus/storage/pessimistic.h"
 
+#include <string>
+
 #include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {

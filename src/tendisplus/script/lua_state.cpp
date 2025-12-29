@@ -5,6 +5,7 @@
 #include "tendisplus/script/lua_state.h"
 
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <utility>

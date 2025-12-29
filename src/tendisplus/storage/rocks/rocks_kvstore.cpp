@@ -965,13 +965,42 @@ rocksdb::Iterator* RocksWBTxn::getIterator(
   return _writeBatch->NewIteratorWithBase(columnFamily, dbIter);
 }
 
+std::string rocksGetCompressionTypeStr(const std::string& typeStr) {
+  static std::unordered_map<std::string, std::string> compression_type_map = {
+    {"none", "kNoCompression"},
+    {"snappy", "kSnappyCompression"},
+    {"zlib", "kZlibCompression"},
+    {"bzip2", "kBZip2Compression"},
+    {"lz4", "kLZ4Compression"},
+    {"lz4hc", "kLZ4HCCompression"},
+    {"xpress", "kXpressCompression"},
+    {"zstd", "kZSTD"},
+    {"zstdnf", "kZSTDNotFinalCompression"},
+    {"disable", "kDisableCompressionOption"}};
+  auto iter = compression_type_map.find(typeStr);
+  if (iter != compression_type_map.end()) {
+    return iter->second;
+  } else {
+    return typeStr;
+  }
+}
+
 rocksdb::CompressionType rocksGetCompressType(const std::string& typeStr) {
-  if (typeStr == "snappy") {
-    return rocksdb::CompressionType::kSnappyCompression;
-  } else if (typeStr == "lz4") {
-    return rocksdb::CompressionType::kLZ4Compression;
-  } else if (typeStr == "none") {
-    return rocksdb::CompressionType::kNoCompression;
+  static std::unordered_map<std::string, rocksdb::CompressionType>
+    compression_type_string_map = {
+      {"none", rocksdb::kNoCompression},
+      {"snappy", rocksdb::kSnappyCompression},
+      {"zlib", rocksdb::kZlibCompression},
+      {"bzip2", rocksdb::kBZip2Compression},
+      {"lz4", rocksdb::kLZ4Compression},
+      {"lz4hc", rocksdb::kLZ4HCCompression},
+      {"xpress", rocksdb::kXpressCompression},
+      {"zstd", rocksdb::kZSTD},
+      {"zstdnf", rocksdb::kZSTDNotFinalCompression},
+      {"disable", rocksdb::kDisableCompressionOption}};
+  auto iter = compression_type_string_map.find(typeStr);
+  if (iter != compression_type_string_map.end()) {
+    return iter->second;
   } else {
     INVARIANT_D(0);
     return rocksdb::CompressionType::kNoCompression;
@@ -3258,7 +3287,11 @@ Status RocksKVStore::setOptionDynamic(const std::string& option,
     }
   }
 
-  map[short_option] = value;
+  if (short_option == "blob_compression_type") {
+    map[short_option] = rocksGetCompressionTypeStr(value);
+  } else {
+    map[short_option] = value;
+  }
 
   if (isDbOption) {
     auto s = getBaseDB()->SetDBOptions(map);
@@ -3327,13 +3360,25 @@ Status RocksKVStore::setCompactOnDeletionCollectorFactory(
           "Options don't contain CompactOnDeletionTableFactory"};
 }
 
-int64_t RocksKVStore::getOption(const std::string& option) {
+int64_t RocksKVStore::getDBOption(const std::string& option) {
   if (option == "rocks.max_background_jobs") {
     return getBaseDB()->GetDBOptions().max_background_jobs;
   } else if (option == "rocks.max_open_files") {
     return getBaseDB()->GetDBOptions().max_open_files;
-  } else if (option == "rocks.periodic_compaction_seconds") {
-    return getBaseDB()->GetOptions().periodic_compaction_seconds;
+  } else {
+    return -2;
+  }
+}
+
+int64_t RocksKVStore::getCFOption(ColumnFamilyNumber cf,
+                                  const std::string& option) {
+  rocksdb::ColumnFamilyHandle* handle = getColumnFamilyHandle(cf);
+  if (option == "rocks.periodic_compaction_seconds") {
+    return getBaseDB()->GetOptions(handle).periodic_compaction_seconds;
+  } else if (option == "rocks.min_blob_size") {
+    return getBaseDB()->GetOptions(handle).min_blob_size;
+  } else if (option == "rocks.enable_blob_files") {
+    return getBaseDB()->GetOptions(handle).enable_blob_files;
   } else {
     return -2;
   }

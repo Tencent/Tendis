@@ -6,7 +6,9 @@
 #include <cctype>
 #include <clocale>
 #include <memory>
+#include <set>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 

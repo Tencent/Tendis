@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <cctype>
 #include <clocale>
+#include <iostream>
+#include <list>
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>

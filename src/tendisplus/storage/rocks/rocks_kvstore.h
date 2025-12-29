@@ -392,7 +392,7 @@ class RocksKVStore : public KVStore {
   // NOTE(deyukong): this api is only for debug
   std::set<uint64_t> getUncommittedTxns() const;
 
-  const std::shared_ptr<ServerParams>& getCfg() const {
+  const std::shared_ptr<ServerParams>& getCfg() const override {
     return _cfg;
   }
 
@@ -417,7 +417,9 @@ class RocksKVStore : public KVStore {
   Status setCompactOnDeletionCollectorFactory(
     const std::string& option,
     std::shared_ptr<tendisplus::ServerParams> cfg) override;
-  int64_t getOption(const std::string& option) override;
+  int64_t getDBOption(const std::string& option) override;
+  int64_t getCFOption(ColumnFamilyNumber cf,
+                      const std::string& option) override;
   const rocksdb::Snapshot* getSnapshot();
   rocksdb::Iterator* newIterator(const rocksdb::ReadOptions& readOptions,
                                  rocksdb::ColumnFamilyHandle* columnFamily);

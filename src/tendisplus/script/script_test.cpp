@@ -3,6 +3,7 @@
 // project for additional information.
 
 #include <algorithm>
+#include <memory>
 
 #include "gtest/gtest.h"
 

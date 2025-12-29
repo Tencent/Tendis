@@ -4,6 +4,12 @@
 
 #include "tendisplus/utils/cursor_map.h"
 
+#include <map>
+#include <memory>
+#include <set>
+#include <string>
+#include <unordered_map>
+
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/time.h"
@@ -22,7 +28,7 @@ CursorMap::CursorMap(size_t maxCursorCount,
                      size_t maxExpireTimeSec)
   : _maxCursorCount(maxCursorCount),
     _maxSessionLimit(maxSessionLimit),
-    _maxExpireTimeNs((uint64_t)maxExpireTimeSec * 1000000000) {}
+    _maxExpireTimeNs(static_cast<uint64_t>(maxExpireTimeSec) * 1000000000) {}
 
 /**
  * @brief add mapping into cursorMap

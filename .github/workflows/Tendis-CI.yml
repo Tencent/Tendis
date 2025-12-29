@@ -2,7 +2,7 @@ name: Tendis-build-CI
 # Controls when the action will run.
 on:
   pull_request:
-    branches: [unstable, master]
+    branches: [unstable, master, 2.8.tx]
   push:
   # set to a branch that does not exist to disable the workflow
     branches: [notExistBranch]

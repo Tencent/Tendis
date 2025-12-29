@@ -9,6 +9,7 @@
 #include <memory>
 #include <queue>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -23,8 +24,8 @@ namespace tendisplus {
 #define MAKE_CONTEXT(key)                                               \
   auto pctx = sess->getCtx();                                           \
   INVARIANT(pctx != nullptr);                                           \
-  auto edb = sess->getServerEntry() -> getSegmentMgr()                  \
-               -> getDbWithKeyLock(sess, (key), mgl::LockMode::LOCK_X); \
+  auto edb = sess->getServerEntry()->getSegmentMgr()->getDbWithKeyLock( \
+    sess, (key), mgl::LockMode::LOCK_X);                                \
   RET_IF_ERR_EXPECTED(edb);                                             \
   auto kvstore = edb.value().store;                                     \
   auto eptxn = pctx->createTransaction(kvstore);                        \
@@ -552,7 +553,7 @@ class TBitCountCommand : public Command {
     }
 
     // whole bitmap except the first element
-    if ((uint64_t)start < meta.fragmentLen() && end >= len - 1) {
+    if (static_cast<uint64_t>(start) < meta.fragmentLen() && end >= len - 1) {
       INVARIANT_D(start >= 1);
       auto cnt = redis_port::popCount(meta.firstFragment(), 0, start - 1);
       return Command::fmtLongLong(meta.count() - cnt);
@@ -562,7 +563,7 @@ class TBitCountCommand : public Command {
     auto firstFrag = start / meta.fragmentLen();
     auto offset = start;
 
-    if ((uint64_t)start < meta.fragmentLen()) {
+    if (static_cast<uint64_t>(start) < meta.fragmentLen()) {
       bitcount += redis_port::popCount(meta.firstFragment(), start, end);
 
       offset = meta.fragmentLen();
@@ -599,11 +600,11 @@ class TBitCountCommand : public Command {
       auto efragId = fragmentIdDecode(subRk.getSecondaryKey());
       RET_IF_ERR_EXPECTED(efragId);
       auto fragId = efragId.value();
-      if (fragId * meta.fragmentLen() > (uint64_t)end) {
+      if (fragId * meta.fragmentLen() > static_cast<uint64_t>(end)) {
         break;
       }
 
-      if ((uint64_t)offset < fragId * meta.fragmentLen()) {
+      if (static_cast<uint64_t>(offset) < fragId * meta.fragmentLen()) {
         offset = fragId * meta.fragmentLen();
       }
 
@@ -690,7 +691,7 @@ class TBitPosCommand : public Command {
     auto firstFrag = start / meta.fragmentLen();
     auto offset = start;
 
-    if ((uint64_t)start < meta.fragmentLen()) {
+    if (static_cast<uint64_t>(start) < meta.fragmentLen()) {
       auto pos = redis_port::bitPos(meta.firstFragment(), start, end, bit);
       if (pos != -1) {
         /* If we are looking for clear bits, and the user specified an exact
@@ -740,11 +741,11 @@ class TBitPosCommand : public Command {
       auto efragId = fragmentIdDecode(subRk.getSecondaryKey());
       RET_IF_ERR_EXPECTED(efragId);
       auto fragId = efragId.value();
-      if (fragId * meta.fragmentLen() > (uint64_t)end) {
+      if (fragId * meta.fragmentLen() > static_cast<uint64_t>(end)) {
         break;
       }
 
-      if ((uint64_t)offset < fragId * meta.fragmentLen()) {
+      if (static_cast<uint64_t>(offset) < fragId * meta.fragmentLen()) {
         offset = fragId * meta.fragmentLen();
       }
 
@@ -896,8 +897,8 @@ class TBitFieldCommand : public Command {
     conv.u = ev.value();
     ret = conv.i;
 
-    if (ret & ((uint64_t)1 << (bits - 1)))
-      ret |= ((uint64_t)-1) << bits;
+    if (ret & (static_cast<uint64_t>(1) << (bits - 1)))
+      ret |= (static_cast<uint64_t>(-1)) << bits;
 
     return ret;
   }
@@ -907,11 +908,12 @@ class TBitFieldCommand : public Command {
                                     uint64_t bits,
                                     BFOverFlowType owtype,
                                     uint64_t* newVal) {
-    uint64_t max = (bits == 64) ? UINT64_MAX : (((uint64_t)1 << bits) - 1);
+    uint64_t max =
+      (bits == 64) ? UINT64_MAX : ((static_cast<uint64_t>(1) << bits) - 1);
     int64_t maxincr = max - value;
     int64_t minincr = -value;
     auto handleWrap = [&]() {
-      uint64_t mask = ((uint64_t)-1) << bits;
+      uint64_t mask = static_cast<uint64_t>(-1) << bits;
       uint64_t res = value + incr;
       res &= ~mask;
       *newVal = res;
@@ -941,15 +943,16 @@ class TBitFieldCommand : public Command {
                                   uint64_t bits,
                                   BFOverFlowType owtype,
                                   int64_t* newVal) {
-    int64_t max = (bits == 64) ? INT64_MAX : (((int64_t)1 << (bits - 1)) - 1);
+    int64_t max =
+      (bits == 64) ? INT64_MAX : ((static_cast<int64_t>(1) << (bits - 1)) - 1);
     int64_t min = (-max) - 1;
 
     int64_t maxincr = max - value;
     int64_t minincr = min - value;
 
     auto handleWrap = [&]() {
-      uint64_t mask = ((uint64_t)-1) << bits;
-      uint64_t msb = (uint64_t)1 << (bits - 1);
+      uint64_t mask = static_cast<uint64_t>(-1) << bits;
+      uint64_t msb = static_cast<uint64_t>(1) << (bits - 1);
       uint64_t a = value, b = incr, c;
       c = a + b;
 
@@ -1006,7 +1009,8 @@ class TBitFieldCommand : public Command {
     std::string buf = ebuf.value();
 
     for (size_t i = 0; i < bits; i++) {
-      uint64_t bitval = (value & ((uint64_t)1 << (bits - 1 - i))) != 0;
+      uint64_t bitval =
+        (value & (static_cast<uint64_t>(1) << (bits - 1 - i))) != 0;
       uint64_t byte = offset >> 3;
       uint64_t bit = 7 - (offset & 0x7);
       uint8_t byteval = static_cast<uint8_t>(buf[byte]);

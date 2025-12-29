@@ -21,6 +21,16 @@
 #include "tendisplus/utils/status.h"
 
 namespace tendisplus {
+bool needTTLIndex(PStore store, const RecordValue& val);
+Status updateTTLIndex(PStore store,
+                      const RecordKey& key,
+                      const RecordValue& val,
+                      Transaction* txn,
+                      uint64_t oldExpire);
+Status deleteTTLIndex(PStore store,
+                      const RecordKey& key,
+                      const RecordValue& val,
+                      Transaction* txn);
 
 class Command {
  public:
@@ -144,14 +154,14 @@ class Command {
                                         uint32_t storeId,
                                         const RecordKey& rk,
                                         RecordType valueType,
-                                        const TTLIndex* ictx = nullptr);
+                                        const RecordValue& rv);
 
   static Status delKeyOptimismInLock(Session* sess,
                                      uint32_t storeId,
                                      const RecordKey& rk,
                                      RecordType valueType,
                                      Transaction* txn,
-                                     const TTLIndex* ictx = nullptr);
+                                     const RecordValue& rv);
   static bool useDeleteRange(uint64_t eleCount,
                              RecordType type,
                              const std::shared_ptr<ServerParams>& cfg);
@@ -169,7 +179,7 @@ class Command {
                                               RecordType valueType,
                                               bool deleteMeta,
                                               Transaction* txn,
-                                              const TTLIndex* ictx = nullptr);
+                                              const RecordValue& rv);
 
   const std::string _name;
   /* Flags as string representation, one char per flag. */

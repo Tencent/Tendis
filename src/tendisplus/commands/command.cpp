@@ -40,6 +40,99 @@ std::unordered_map<std::string, Command*>& adminCommandMap() {
   return map;
 }
 
+// val._ttl is new ttl
+bool needTTLIndex(PStore store, const RecordValue& val) {
+  if (val.getRecordType() != RecordType::RT_KV) {
+    return true;
+  }
+  uint64_t minBlobSize = store->getCFOption(
+    ColumnFamilyNumber::ColumnFamily_Default, "rocks.min_blob_size");
+  bool enableBlobFiles = store->getCFOption(
+    ColumnFamilyNumber::ColumnFamily_Default, "rocks.enable_blob_files");
+  if (enableBlobFiles && val.encode().size() >= minBlobSize &&
+      store->getCfg()->noexpireBlob && val.getTtl()) {
+    return true;
+  }
+  return false;
+}
+
+// val._ttl is new ttl
+Status updateTTLIndex(PStore store,
+                      const RecordKey& key,
+                      const RecordValue& val,
+                      Transaction* txn,
+                      uint64_t oldExpire = 0) {
+  Status status;
+  if (!needTTLIndex(store, val)) {
+    return status;
+  }
+  uint64_t oldTTL = 0;
+  if (val.getRecordType() == RecordType::RT_KV) {
+    // get kv extra info
+    RecordKey keyEtra(key.getChunkId(),
+                      key.getDbId(),
+                      RecordType::RT_KV_EXTRA,
+                      key.getPrimaryKey(),
+                      "");
+    Expected<RecordValue> oldExtraValue = store->getKV(keyEtra, txn);
+    if (oldExtraValue.ok()) {
+      if (oldExtraValue.value().getValue().size() == sizeof(uint64_t)) {
+        oldTTL = int64Decode(oldExtraValue.value().getValue().c_str());
+      }
+    } else if (oldExtraValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
+      return oldExtraValue.status();
+    }
+    // save kv extra info
+    std::string ttl;
+    ttl.resize(sizeof(uint64_t));
+    int64Encode(&ttl[0], val.getTtl());
+    RecordValue newExtraValue(
+      ttl, RecordType::RT_KV_EXTRA, val.getVersionEP(), 0);
+    status = txn->setKV(keyEtra.encode(), newExtraValue.encode());
+    if (!status.ok()) {
+      return status;
+    }
+  } else {
+    oldTTL = oldExpire;
+  }
+
+  // delete old index entry
+  if (oldTTL != 0) {
+    TTLIndex ictx(
+      key.getPrimaryKey(), val.getRecordType(), key.getDbId(), oldTTL);
+
+    status = txn->delKV(ictx.encode());
+    if (!status.ok()) {
+      return status;
+    }
+  }
+
+  if (val.getTtl() != 0) {
+    //  add new index entry
+    TTLIndex ictx(
+      key.getPrimaryKey(), val.getRecordType(), key.getDbId(), val.getTtl());
+    return txn->setKV(ictx.encode(),
+                      RecordValue(RecordType::RT_TTL_INDEX).encode());
+  }
+  return status;
+}
+
+Status deleteTTLIndex(PStore store,
+                      const RecordKey& key,
+                      const RecordValue& val,
+                      Transaction* txn) {
+  Status status;
+  if (!needTTLIndex(store, val)) {
+    return status;
+  }
+  if (val.getTtl() != 0) {
+    //  del index entry
+    TTLIndex ictx(
+      key.getPrimaryKey(), val.getRecordType(), key.getDbId(), val.getTtl());
+    return txn->delKV(ictx.encode());
+  }
+  return status;
+}
 Command::Command(const std::string& name, const char* sflags)
   : _name(toLower(name)),
     _sflags(sflags),
@@ -357,7 +450,7 @@ Status Command::delKeyPessimisticInLock(Session* sess,
                                         uint32_t storeId,
                                         const RecordKey& mk,
                                         RecordType valueType,
-                                        const TTLIndex* ictx) {
+                                        const RecordValue& rv) {
   std::string keyEnc = mk.encode();
   auto server = sess->getServerEntry();
 
@@ -388,12 +481,11 @@ Status Command::delKeyPessimisticInLock(Session* sess,
     return s;
   }
 
-  if (ictx && ictx->getType() != RecordType::RT_KV) {
-    Status s = txn->delKV(ictx->encode());
-    if (!s.ok()) {
-      return s;
-    }
+  s = deleteTTLIndex(kvstore, mk, rv, txn.get());
+  if (!s.ok()) {
+    return s;
   }
+
 
   Expected<uint64_t> commitStatus = txn->commit();
   return commitStatus.status();
@@ -492,7 +584,7 @@ Status Command::delKeyOptimismInLock(Session* sess,
                                      const RecordKey& rk,
                                      RecordType valueType,
                                      Transaction* txn,
-                                     const TTLIndex* ictx) {
+                                     const RecordValue& rv) {
   auto s = Command::partialDelSubKeys(sess,
                                       storeId,
                                       std::numeric_limits<uint32_t>::max(),
@@ -500,7 +592,7 @@ Status Command::delKeyOptimismInLock(Session* sess,
                                       valueType,
                                       true,
                                       txn,
-                                      ictx);
+                                      rv);
   return s.status();
 }
 
@@ -644,7 +736,7 @@ Expected<uint32_t> Command::partialDelSubKeys(Session* sess,
                                               RecordType valueType,
                                               bool deleteMeta,
                                               Transaction* txn,
-                                              const TTLIndex* ictx) {
+                                              const RecordValue& rv) {
   Status s(ErrorCodes::ERR_OK, "");
   auto guard = MakeGuard([&s] {
     if (!s.ok()) {
@@ -663,6 +755,12 @@ Expected<uint32_t> Command::partialDelSubKeys(Session* sess,
 
   PStore kvstore = expdb.value().store;
   INVARIANT_D(mk.getRecordType() == RecordType::RT_DATA_META);
+
+  s = deleteTTLIndex(kvstore, mk, rv, txn);
+  if (!s.ok()) {
+    return s;
+  }
+
   if (valueType == RecordType::RT_KV) {
     s = kvstore->delKV(mk, txn);
     RET_IF_ERR(s);
@@ -747,10 +845,6 @@ Expected<uint32_t> Command::partialDelSubKeys(Session* sess,
     RET_IF_ERR(s);
   }
 
-  if (ictx && ictx->getType() != RecordType::RT_KV) {
-    s = txn->delKV(ictx->encode());
-    RET_IF_ERR(s);
-  }
 
   return pendingDelete.size();
 }
@@ -791,16 +885,11 @@ Status Command::delKeyAndTTL(Session* sess,
     return s;
   }
 
-  if (val.getTtl() > 0 && val.getRecordType() != RecordType::RT_KV) {
-    TTLIndex ictx(mk.getPrimaryKey(),
-                  val.getRecordType(),
-                  sess->getCtx()->getDbId(),
-                  val.getTtl());
-    s = txn->delKV(ictx.encode());
-    if (!s.ok()) {
-      return s;
-    }
+  s = deleteTTLIndex(kvstore, mk, val, txn);
+  if (!s.ok()) {
+    return s;
   }
+
   return s;
 }
 
@@ -838,16 +927,14 @@ Status Command::delKey(Session* sess,
       return cnt.status();
     }
 
-    TTLIndex ictx(
-      key, valueType, sess->getCtx()->getDbId(), eValue.value().getTtl());
     if (useDeleteRange(cnt.value(), valueType, server->getParams())) {
       LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
                 << ",rcdType:" << rt2Char(valueType) << ",size:" << cnt.value();
       return Command::delKeyPessimisticInLock(
-        sess, storeId, mk, valueType, ictx.getTTL() > 0 ? &ictx : nullptr);
+        sess, storeId, mk, valueType, eValue.value());
     } else {
       Status s = Command::delKeyOptimismInLock(
-        sess, storeId, mk, valueType, txn, ictx.getTTL() > 0 ? &ictx : nullptr);
+        sess, storeId, mk, valueType, txn, eValue.value());
       if (s.code() == ErrorCodes::ERR_COMMIT_RETRY && i != RETRY_CNT - 1) {
         continue;
       }
@@ -936,12 +1023,11 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
       return cnt.status();
     }
 
-    TTLIndex ictx(key, valueType, sess->getCtx()->getDbId(), targetTtl);
     if (useDeleteRange(cnt.value(), valueType, server->getParams())) {
       LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
                 << ",rcdType:" << rt2Char(valueType) << ",size:" << cnt.value();
       Status s = Command::delKeyPessimisticInLock(
-        sg.getSession(), storeId, mk, valueType, &ictx);
+        sg.getSession(), storeId, mk, valueType, eValue.value());
       if (s.ok()) {
         return {ErrorCodes::ERR_EXPIRED, ""};
       } else {
@@ -949,7 +1035,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
       }
     } else {
       Status s = Command::delKeyOptimismInLock(
-        sg.getSession(), storeId, mk, valueType, txn.get(), &ictx);
+        sg.getSession(), storeId, mk, valueType, txn.get(), eValue.value());
       if (!s.ok()) {
         return s;
       }

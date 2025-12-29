@@ -71,8 +71,9 @@ ReplFlag randomReplFlag() {
     case 2:
       return ReplFlag::REPL_GROUP_END;
     case 3:
-      return static_cast<ReplFlag>((uint16_t)ReplFlag::REPL_GROUP_START |
-                                   (uint16_t)ReplFlag::REPL_GROUP_END);
+      return static_cast<ReplFlag>(
+        static_cast<uint16_t>(ReplFlag::REPL_GROUP_START) |
+        static_cast<uint16_t>(ReplFlag::REPL_GROUP_END));
     default:
       INVARIANT(0);
       // void compiler complain
@@ -150,7 +151,7 @@ TEST(Record, Common) {
     uint64_t versionEP =
       static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
     auto val = randomStr(5, true);
-    uint64_t pieceSize = (uint64_t)-1;
+    uint64_t pieceSize = static_cast<uint64_t>(-1);
     if (!isDataMetaType(type)) {
       versionEP = -1;
       ttl = 0;
@@ -202,7 +203,7 @@ TEST(Record, Common) {
 
 TEST(ReplRecordV2, Prefix) {
   uint64_t binlogid =
-    (uint64_t)genRand() + std::numeric_limits<uint32_t>::max();
+    static_cast<uint64_t>(genRand()) + std::numeric_limits<uint32_t>::max();
   auto rlk = ReplLogKeyV2(binlogid);
   RecordKey rk(ReplLogKeyV2::CHUNKID,
                ReplLogKeyV2::DBID,
@@ -238,14 +239,17 @@ TEST(ReplRecordV2, Common) {
 #else
   for (size_t i = 0; i < 1000; i++) {
 #endif
-    uint64_t txnid = uint64_t(genRand()) * uint64_t(genRand());
-    uint64_t binlogid = uint64_t(genRand()) * uint64_t(genRand());
-    uint64_t versionEp = uint64_t(genRand()) * uint64_t(genRand());
+    uint64_t txnid =
+      static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
+    uint64_t binlogid =
+      static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
+    uint64_t versionEp =
+      static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
     uint32_t chunkid = genRand() % 16384;
 
     ReplFlag flag = randomReplFlag();
-    uint64_t timestamp =
-      (uint64_t)genRand() + std::numeric_limits<uint32_t>::max() + 1;
+    uint64_t timestamp = static_cast<uint64_t>(genRand()) +
+      std::numeric_limits<uint32_t>::max() + 1;
 
     auto rk = ReplLogKeyV2(binlogid);
     auto rkStr = rk.encode();
@@ -258,8 +262,8 @@ TEST(ReplRecordV2, Common) {
     std::vector<ReplLogValueEntryV2> vec;
     vec.reserve(count);
     for (size_t j = 0; j < count; j++) {
-      uint64_t timestamp =
-        (uint64_t)genRand() + std::numeric_limits<uint32_t>::max() + 1;
+      uint64_t timestamp = static_cast<uint64_t>(genRand()) +
+        std::numeric_limits<uint32_t>::max() + 1;
 
       size_t keyLen = genRand() % 128;
       size_t valLen = genRand() % 1024;

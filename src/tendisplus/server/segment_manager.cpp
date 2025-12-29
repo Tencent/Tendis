@@ -9,8 +9,10 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <string>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/invariant.h"
@@ -39,11 +41,12 @@ Expected<bool> SegmentMgrFnvHash64::handleRedirectByKey(
   auto clusterSingle = cfg->clusterSingleNode;
 
   if (clusterEnabled && !clusterSingle && cfg->enableMovePubSubRequest) {
-    uint32_t hash = uint32_t(redis_port::keyHashSlot(key.c_str(),
-                                                       key.size()));
+    uint32_t hash =
+      static_cast<uint32_t>(redis_port::keyHashSlot(key.c_str(), key.size()));
     uint32_t chunkId = hash % CLUSTER_SLOTS;
-    auto node = server->getClusterMgr()->
-      getClusterState()->clusterHandleRedirect(chunkId, sess);
+    auto node =
+      server->getClusterMgr()->getClusterState()->clusterHandleRedirect(chunkId,
+                                                                        sess);
     if (!node.ok())
       return node.status();
   }
@@ -53,7 +56,8 @@ Expected<bool> SegmentMgrFnvHash64::handleRedirectByKey(
 Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
   Session* sess, const std::string& key, mgl::LockMode mode) {
   INVARIANT(sess != nullptr && sess->getServerEntry() != nullptr);
-  uint32_t hash = uint32_t(redis_port::keyHashSlot(key.c_str(), key.size()));
+  uint32_t hash =
+    static_cast<uint32_t>(redis_port::keyHashSlot(key.c_str(), key.size()));
   INVARIANT_D(hash < _chunkSize);
   uint32_t chunkId = hash % _chunkSize;
   INVARIANT(_chunkSize == CLUSTER_SLOTS);
@@ -65,7 +69,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
   bool isSessionReplOnly = true;
   std::shared_ptr<ClusterState> clusterState;
   const auto& cfg = sess->getServerEntry()->getParams();
-  lockTimeoutMs = (uint64_t)cfg->lockWaitTimeOut * 1000;
+  lockTimeoutMs = static_cast<uint64_t>(cfg->lockWaitTimeOut) * 1000;
   clusterEnabled = sess->getServerEntry()->isClusterEnabled();
   clusterState = clusterEnabled
     ? sess->getServerEntry()->getClusterMgr()->getClusterState()
@@ -134,7 +138,8 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
 
 Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(
   Session* sess, const std::string& key) {
-  uint32_t hash = uint32_t(redis_port::keyHashSlot(key.c_str(), key.size()));
+  uint32_t hash =
+    static_cast<uint32_t>(redis_port::keyHashSlot(key.c_str(), key.size()));
   INVARIANT_D(hash < _chunkSize);
   uint32_t chunkId = hash % _chunkSize;
   INVARIANT(_chunkSize == CLUSTER_SLOTS);
@@ -190,7 +195,7 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
     ((cmdFlag & CMD_ALLOW_CROSS_SLOT) != 0);
   std::shared_ptr<ClusterState> clusterState;
   const auto& cfg = sess->getServerEntry()->getParams();
-  lockTimeoutMs = uint64_t(cfg->lockWaitTimeOut * 1000);
+  lockTimeoutMs = static_cast<uint64_t>(cfg->lockWaitTimeOut * 1000);
   clusterEnabled = sess->getServerEntry()->isClusterEnabled();
   clusterSingle = cfg->clusterSingleNode;
   clusterState = clusterEnabled
@@ -208,7 +213,8 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
   std::map<uint32_t, std::vector<std::pair<uint32_t, std::string>>> segList;
   for (const auto& it : index) {
     const auto& key = args[it];
-    uint32_t hash = uint32_t(redis_port::keyHashSlot(key.c_str(), key.size()));
+    uint32_t hash =
+      static_cast<uint32_t>(redis_port::keyHashSlot(key.c_str(), key.size()));
     INVARIANT_D(hash < _chunkSize);
     uint32_t chunkId = hash % _chunkSize;
     INVARIANT(_chunkSize == CLUSTER_SLOTS);
@@ -256,20 +262,20 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
     for (const auto& element : segList) {
       uint32_t segId = element.first;
       auto keysvec = element.second;
-      std::sort(keysvec.begin(), keysvec.end(), [](const auto& a,
-                                                   const auto& b) {
-        return a.first < b.first || (a.first == b.first &&
-                                     a.second < b.second);
-      });
+      std::sort(
+        keysvec.begin(), keysvec.end(), [](const auto& a, const auto& b) {
+          return a.first < b.first ||
+            (a.first == b.first && a.second < b.second);
+        });
       for (const auto& pair : keysvec) {
-        auto elk = KeyLock::AquireKeyLock(segId,
-                                          pair.first,
-                                          pair.second,
-                                          mode,
-                                          sess,
-                                          sess->getServerEntry()
-                                          ->getMGLockMgr(),
-                                          lockTimeoutMs);
+        auto elk =
+          KeyLock::AquireKeyLock(segId,
+                                 pair.first,
+                                 pair.second,
+                                 mode,
+                                 sess,
+                                 sess->getServerEntry()->getMGLockMgr(),
+                                 lockTimeoutMs);
         if (!elk.ok()) {
           return elk.status();
         }
@@ -317,17 +323,18 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session* sess,
   // a duration of 49 days.
   uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
   auto cfg = sess->getServerEntry()->getParams();
-  if (lock_wait_timeout == (uint64_t)-1) {
+  if (lock_wait_timeout == static_cast<uint64_t>(-1)) {
     if (mode == mgl::LockMode::LOCK_X) {
       /* *
        * If get db using LOCK_X, it can't wait
        * a long time. Otherwise, the waiting LOCK_X
        * would block all following the requests.
        */
-      lockTimeoutMs =
-        (cfg == nullptr) ? 1000 : (uint64_t)cfg->lockDbXWaitTimeout * 1000;
+      lockTimeoutMs = (cfg == nullptr)
+        ? 1000
+        : static_cast<uint64_t>(cfg->lockDbXWaitTimeout) * 1000;
     } else if (cfg) {
-      lockTimeoutMs = (uint64_t)cfg->lockWaitTimeOut * 1000;
+      lockTimeoutMs = static_cast<uint64_t>(cfg->lockWaitTimeOut) * 1000;
     }
   } else {
     // NOTE(vinchen) : if lock_wait_timeout == 0, it means we don't wait

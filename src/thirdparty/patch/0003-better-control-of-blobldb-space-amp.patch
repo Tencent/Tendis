@@ -1,0 +1,45 @@
+From 846a40c4378edcd560352a219ba19654a8fd3f2e Mon Sep 17 00:00:00 2001
+From: takenliu <takenliu@tencent.com>
+Date: Tue, 25 Nov 2025 16:09:01 +0800
+Subject: [PATCH] Change the semantics of
+ blob_garbage_collection_force_threshold to provide better control over space
+ amp see details: https://github.com/facebook/rocksdb/pull/13022
+
+---
+ db/version_set.cc | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/db/version_set.cc b/db/version_set.cc
+index 85d9a5326..2fe3ac3bb 100644
+--- a/db/version_set.cc
++++ b/db/version_set.cc
+@@ -3763,15 +3763,18 @@ void VersionStorageInfo::ComputeFilesMarkedForForcedBlobGC(
+     const auto& meta = blob_files_[count];
+     assert(meta);
+ 
++    /*
+     if (!meta->GetLinkedSsts().empty()) {
+       // Found the beginning of the next batch of blob files
+       break;
+     }
++    */
+ 
+     sum_total_blob_bytes += meta->GetTotalBlobBytes();
+     sum_garbage_blob_bytes += meta->GetGarbageBlobBytes();
+   }
+ 
++  /*
+   if (count < blob_files_.size()) {
+     const auto& meta = blob_files_[count];
+     assert(meta);
+@@ -3781,6 +3784,7 @@ void VersionStorageInfo::ComputeFilesMarkedForForcedBlobGC(
+       return;
+     }
+   }
++  */
+ 
+   if (sum_garbage_blob_bytes <
+       blob_garbage_collection_force_threshold * sum_total_blob_bytes) {
+-- 
+2.41.3
+

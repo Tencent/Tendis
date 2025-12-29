@@ -5,9 +5,14 @@
 #include "tendisplus/storage/skiplist.h"
 
 #include <chrono>
+#include <limits>
+#include <list>
 #include <map>
+#include <memory>
 #include <random>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "tendisplus/server/session.h"
 #include "tendisplus/utils/invariant.h"

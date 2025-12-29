@@ -4,6 +4,10 @@
 
 #include "tendisplus/network/latency_record.h"
 
+#include <cstdio>
+#include <string>
+#include <utility>
+
 namespace tendisplus {
 
 LockLatencyRecord::LockLatencyRecord()

@@ -2,6 +2,7 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include <cstdio>
 #include <iostream>
 #include <set>
 #include <string>
@@ -89,15 +90,13 @@ class BinlogScanner {
 
     if (logValue.value().getChunkId() == Transaction::CHUNKID_FLUSH) {
       std::cout << binlogInfo.str();
-      std::cout << "  op:"
-                << "FLUSH"
-                << " cmd:" << logValue.value().getCmd() << std::endl;
+      std::cout << "  op:" << "FLUSH" << " cmd:" << logValue.value().getCmd()
+                << std::endl;
       return "";
     } else if (logValue.value().getChunkId() == Transaction::CHUNKID_MIGRATE) {
       std::cout << binlogInfo.str();
-      std::cout << "  op:"
-                << "MIGRATE"
-                << " cmd:" << logValue.value().getCmd() << std::endl;
+      std::cout << "  op:" << "MIGRATE" << " cmd:" << logValue.value().getCmd()
+                << std::endl;
       return "";
     }
 
