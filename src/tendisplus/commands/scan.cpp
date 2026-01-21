@@ -791,11 +791,11 @@ class ScanCommand : public Command {
     auto kvstoreSlots = getKvstoreSlots(kvstoreId, kvstoreCount, slots);
     auto cursor = txn->createDataCursor();
     cursor->seek(lastScanRecordKey.encode());
+    auto seekSlotId = lastScanRecordKey.getChunkId();
 
     while (result.size() < count && *scanTimes < scanMaxTimes) {
       // get cursor current record and iterate next cursor
       auto expRecord = cursor->next();
-      (*scanTimes)++;
 
       // ERR_EXHAUST means this kv-store has been iterated over
       if (expRecord.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -828,7 +828,8 @@ class ScanCommand : public Command {
       auto recordSlotId = record.getRecordKey().getChunkId();
       auto recordDbId = record.getRecordKey().getDbId();
       auto recordType = record.getRecordKey().getRecordType();
-      if (!kvstoreSlots.test(recordSlotId) || recordDbId != dbId ||
+      auto isRecordValidSlotId = kvstoreSlots.test(recordSlotId);
+      if (!isRecordValidSlotId || recordDbId != dbId ||
           recordType != RecordType::RT_DATA_META) {
         // seq: this key in DBID db's position
         // means, recordDbId == dbId && recordType == RT_DATA_META
@@ -841,18 +842,23 @@ class ScanCommand : public Command {
         //     recordType == RecordType::RT_DATA_META) {
         //   (*seq)++;
         // }
-        auto nextSlot = getNextSlot(slots, recordSlotId);
+        int32_t nextSlot = recordSlotId;
+        if (!isRecordValidSlotId || recordSlotId == seekSlotId) {
+          nextSlot = getNextSlot(slots, recordSlotId);
+        }
         // nextSlot == -1 means this kv-store has been iterated over
         if (nextSlot == -1) {
           break;
         }
 
         // construct new record key to seek
-        auto nextRecordKey = genRecordKey(nextSlot, dbId, "");
+        seekSlotId = nextSlot;
+        auto nextRecordKey = genRecordKey(seekSlotId, dbId, "");
         cursor->seek(nextRecordKey.encode());
         continue;
       }
 
+      (*scanTimes)++;
       /**
        * check if this record has expired
        * expired key shouldn't increase scanTimes,
