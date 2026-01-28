@@ -843,7 +843,8 @@ class ScanCommand : public Command {
         //   (*seq)++;
         // }
         int32_t nextSlot = recordSlotId;
-        if (!isRecordValidSlotId || recordSlotId == seekSlotId) {
+        if (!isRecordValidSlotId || recordSlotId == seekSlotId || 
+            rt2Char(recordType) > rt2Char(RecordType::RT_DATA_META)) {
           nextSlot = getNextSlot(slots, recordSlotId);
         }
         // nextSlot == -1 means this kv-store has been iterated over
