@@ -17,6 +17,8 @@
 #include <vector>
 
 #include "rocksdb/db.h"
+#include "rocksdb/env.h"
+#include "rocksdb/file_system.h"
 #include "rocksdb/sst_file_manager.h"
 #include "rocksdb/utilities/optimistic_transaction_db.h"
 #include "rocksdb/utilities/transaction.h"
@@ -546,6 +548,9 @@ class RocksKVStore : public KVStore {
 
   std::shared_ptr<BinlogObserver> _logOb;
   std::shared_ptr<RocksdbEnv> _env;
+  // Shared FileSystem support (NFS/HDFS/S3/etc.)
+  std::shared_ptr<rocksdb::FileSystem> _sharedFileSystem;
+  std::unique_ptr<rocksdb::Env> _sharedEnv;
   std::map<std::string, std::string> _rocksIntProperties;
   std::map<std::string, std::string> _rocksStringProperties;
   std::vector<rocksdb::ColumnFamilyHandle*> _cfHandles;

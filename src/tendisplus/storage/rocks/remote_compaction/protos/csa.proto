@@ -1,0 +1,73 @@
+// Copyright 2015 gRPC authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+option go_package = "google.golang.org/grpc/examples/csa/csa";
+option java_multiple_files = true;
+option java_package = "io.grpc.examples.csa";
+option java_outer_classname = "CSAProto";
+
+import "google/protobuf/empty.proto";
+package csa;
+
+message CompactionAdditionInfo {
+  double score = 1;
+  uint64 num_entries = 2;
+  uint64 num_deletions = 3;
+  uint64 compensated_file_size = 4;
+  int32 output_level = 5;
+  int32 start_level = 6;
+}
+
+message CompactionReply {
+  int32 code = 1;
+  string result = 2;
+}
+
+message CompactionArgs {
+  string name = 1;
+  string output_directory = 2;
+  string input = 3;
+  // Shared filesystem configuration (supports NFS, HDFS, S3, etc.)
+  string shared_fs_uri = 4;         // e.g., "nfs://host/path", "hdfs://host:port/path", "s3://bucket/prefix"
+  string shared_fs_local_prefix = 5; // local path prefix that maps to shared_fs_uri
+}
+
+message CompactionTaskArgs {
+  uint64 task_id = 1;
+  CompactionArgs compaction_args = 2;
+}
+
+message SubmitTaskArgs {
+  uint64 task_id = 1;
+  CompactionReply compaction_reply = 2;
+}
+
+message CSAStatus {
+  string ip = 1;
+  uint32 port = 2;
+  uint64 local_task_nums = 3;
+  uint64 max_task_nums = 4;
+  double memory_usage = 5;
+}
+
+message CompactionJobInfo {
+  CompactionArgs compaction_args = 1;
+  CompactionAdditionInfo compaction_addition_info = 2;
+};
+
+service CSAService {
+  rpc ExecuteCompactionTask(CompactionArgs) returns (CompactionReply) {}
+}

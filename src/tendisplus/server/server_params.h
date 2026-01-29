@@ -644,6 +644,29 @@ class ServerParams {
 
   bool enableClosePubSubConnection = true;
   bool enableMovePubSubRequest = true;
+
+  // Remote Compaction Service (CSA) Configuration
+  std::string csaAddress =
+    "";  // CSA server address (host:port), e.g., "localhost:8010"
+  // Note: remote compaction only supports shared_storage mode (no configuration
+  // needed)
+
+  // Shared filesystem configuration (unified for NFS/HDFS/S3/etc.)
+  // URI format: "nfs://host/path", "hdfs://host:port/path",
+  // "s3://bucket/prefix"
+  std::string remoteCompactionSharedFsUri = "";  // Shared filesystem URI
+  std::string remoteCompactionSharedFsLocalPrefix =
+    "";  // Optional local path prefix (for backward compatibility)
+
+  // Remote Compaction Advanced Settings
+  int64_t remoteCompactionMaxConcurrentTasks =
+    0;  // Max concurrent compaction tasks (0 = use default)
+  int64_t remoteCompactionGrpcMaxMessageSize =
+    0;  // Max gRPC message size in bytes (0 = use default 16MB)
+  int32_t remoteCompactionCheckTimeInterval =
+    0;  // Check time interval in seconds (0 = use default)
+  uint64_t remoteCompactionMaxReschedule =
+    0;  // Max reschedule times (0 = use default)
 };
 
 extern std::shared_ptr<tendisplus::ServerParams> gParams;
