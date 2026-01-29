@@ -173,7 +173,7 @@ std::string removeQuotes(const std::string& v) {
   }
 
   auto tmp = v;
-  if (tmp[0] == '\"' && tmp[tmp.size() - 1] == '\"') {
+  if (tmp[0] == '"' && tmp[tmp.size() - 1] == '"') {
     tmp = tmp.substr(1, tmp.size() - 2);
   }
   return tmp;
@@ -185,7 +185,7 @@ std::string removeQuotesAndToLower(const std::string& v) {
     return tmp;
   }
 
-  if (tmp[0] == '\"' && tmp[tmp.size() - 1] == '\"') {
+  if (tmp[0] == '"' && tmp[tmp.size() - 1] == '"') {
     tmp = tmp.substr(1, tmp.size() - 2);
   }
   return tmp;
@@ -620,6 +620,27 @@ ServerParams::ServerParams() {
                                   enableClosePubSubConnection);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("enable-move-pubsub-request",
                                   enableMovePubSubRequest);
+
+  // Remote Compaction Service (CSA) Configuration
+  REGISTER_VARS_DIFF_NAME("csa_address", csaAddress);
+  // Note: remote_compaction.mode removed - only shared_storage mode is
+  // supported
+
+  // Shared filesystem configuration (unified for NFS/HDFS/S3/etc.)
+  REGISTER_VARS_DIFF_NAME("remote_compaction.shared_fs_uri",
+                          remoteCompactionSharedFsUri);
+  REGISTER_VARS_DIFF_NAME("remote_compaction.shared_fs_local_prefix",
+                          remoteCompactionSharedFsLocalPrefix);
+
+  // Remote Compaction Advanced Settings
+  REGISTER_VARS_DIFF_NAME("remote_compaction.max_concurrent_tasks",
+                          remoteCompactionMaxConcurrentTasks);
+  REGISTER_VARS_DIFF_NAME("remote_compaction.grpc_max_message_size",
+                          remoteCompactionGrpcMaxMessageSize);
+  REGISTER_VARS_DIFF_NAME("remote_compaction.check_time_interval",
+                          remoteCompactionCheckTimeInterval);
+  REGISTER_VARS_DIFF_NAME("remote_compaction.max_reschedule",
+                          remoteCompactionMaxReschedule);
 }
 
 ServerParams::~ServerParams() {
