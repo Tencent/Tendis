@@ -37,8 +37,12 @@
 #include "rocksdb/utilities/table_properties_collectors.h"
 
 #include "tendisplus/server/server_entry.h"
+#include "tendisplus/server/server_params.h"
 #include "tendisplus/server/session.h"
+#include "tendisplus/storage/rocks/compaction_service.h"
+#include "tendisplus/storage/rocks/nfs_filesystem.h"
 #include "tendisplus/storage/rocks/rocks_kvttlcompactfilter.h"
+#include "tendisplus/storage/rocks/shared_filesystem.h"
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/scopeguard.h"
@@ -2233,10 +2237,177 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
       _cfDescs.push_back(
         rocksdb::ColumnFamilyDescriptor("binlog_cf", binlogColumnFamilyOpts));
     }
+
+    bool use_shared_fs = false;
+    const std::string& db_path = dbPath();
+
+    // Build RemoteOpenAndCompactOptions from configuration
+    rocksdb::RemoteOpenAndCompactOptions remote_options;
+
+    // Read CSA address (required for remote compaction)
+    if (gParams && !gParams->csaAddress.empty()) {
+      remote_options.csa_address = gParams->csaAddress;
+      // Basic validation: check if address contains ':'
+      if (remote_options.csa_address.find(':') == std::string::npos) {
+        LOG(WARNING) << "Invalid CSA address format: "
+                     << remote_options.csa_address
+                     << " (expected format: host:port), remote compaction will "
+                        "be disabled";
+        remote_options.csa_address.clear();
+      } else {
+        LOG(INFO) << "CSA address configured: " << remote_options.csa_address;
+      }
+    }
+
+    // Remote compaction only supports shared_storage mode (default)
+    // No need to configure mode - it's always shared_storage
+
+    // Read shared filesystem configuration (unified for NFS/HDFS/S3/etc.)
+    if (gParams && !gParams->remoteCompactionSharedFsUri.empty()) {
+      remote_options.shared_fs_uri = gParams->remoteCompactionSharedFsUri;
+      remote_options.shared_fs_local_prefix =
+        gParams->remoteCompactionSharedFsLocalPrefix;
+
+      LOG(INFO) << "Shared filesystem configuration:"
+                << " uri=" << remote_options.shared_fs_uri << ", local_prefix="
+                << (remote_options.shared_fs_local_prefix.empty()
+                      ? "(auto-inferred)"
+                      : remote_options.shared_fs_local_prefix)
+                << ", csa_address=" << remote_options.csa_address;
+    }
+
+    // Read advanced settings
+    if (gParams) {
+      if (gParams->remoteCompactionMaxConcurrentTasks > 0) {
+        remote_options.csa_max_concurrent_tasks =
+          gParams->remoteCompactionMaxConcurrentTasks;
+        LOG(INFO) << "Remote compaction max concurrent tasks: "
+                  << remote_options.csa_max_concurrent_tasks;
+      }
+      if (gParams->remoteCompactionGrpcMaxMessageSize > 0) {
+        remote_options.grpc_max_message_size =
+          gParams->remoteCompactionGrpcMaxMessageSize;
+        LOG(INFO) << "Remote compaction gRPC max message size: "
+                  << remote_options.grpc_max_message_size;
+      }
+      if (gParams->remoteCompactionCheckTimeInterval > 0) {
+        remote_options.check_time_interval =
+          gParams->remoteCompactionCheckTimeInterval;
+      }
+      if (gParams->remoteCompactionMaxReschedule > 0) {
+        remote_options.max_reschedule = gParams->remoteCompactionMaxReschedule;
+      }
+    }
+
+    // Enable shared filesystem (NFS/HDFS/etc.) if configured
+    if (!remote_options.shared_fs_uri.empty()) {
+      rocksdb::Status fs_status;
+      const std::string& shared_fs_uri = remote_options.shared_fs_uri;
+
+      // All filesystem types (NFS, HDFS, S3, etc.) use the same unified interface
+      // The FileSystem operates in URI mode where all paths are relative to
+      // the URI's base path.
+      fs_status = rocksdb::CreateSharedFileSystem(
+        rocksdb::FileSystem::Default(), shared_fs_uri, &_sharedFileSystem);
+      if (fs_status.ok() && _sharedFileSystem) {
+        LOG(INFO) << "Shared FileSystem created: " << shared_fs_uri;
+      }
+
+      if (!fs_status.ok() || !_sharedFileSystem) {
+        LOG(ERROR) << "Failed to create shared filesystem: "
+                   << (fs_status.ok() ? "unknown error" : fs_status.ToString())
+                   << ", falling back to default filesystem";
+        if (!remote_options.csa_address.empty()) {
+          LOG(WARNING)
+            << "Shared filesystem initialization failed but CSA address is "
+               "configured. "
+            << "Remote compaction will fallback to local compaction.";
+        }
+      } else {
+        _sharedEnv = rocksdb::NewCompositeEnv(_sharedFileSystem);
+        if (_sharedEnv) {
+          use_shared_fs = true;
+          LOG(INFO) << "Shared filesystem enabled successfully"
+                    << ", uri: " << shared_fs_uri
+                    << ", csa_address: " << remote_options.csa_address;
+        }
+      }
+    } else {
+      if (!remote_options.csa_address.empty()) {
+        LOG(WARNING) << "Shared filesystem is not configured but CSA address "
+                        "is configured. "
+                     << "Remote compaction requires shared filesystem to work. "
+                     << "Please configure remote_compaction.shared_fs_uri. "
+                     << "Remote compaction will not work properly.";
+      }
+      LOG(INFO) << "Shared filesystem not configured, using local filesystem"
+                << ", dbPath: " << db_path;
+    }
+
+    // IMPORTANT: Consistency guarantee
+    // If shared filesystem is enabled, ALL compaction (both remote and local
+    // fallback) MUST use it This ensures data consistency - all compaction
+    // results are stored in the same location
+    if (use_shared_fs && _sharedEnv) {
+      LOG(INFO) << "Shared filesystem enabled: All compaction operations "
+                   "(remote and local fallback) "
+                << "will use shared storage to ensure data consistency";
+    }
+
     if (_txnMode == TxnMode::TXN_OPT) {
       rocksdb::OptimisticTransactionDB* tmpDb = nullptr;
       rocksdb::Options dbOpts = options();
       dbOpts.create_missing_column_families = true;
+
+      // Register additional paths to shared filesystem (wal_dir, db_log_dir,
+      // etc.) This must be done after options() is called but before using
+      // dbOpts
+      if (use_shared_fs && _sharedFileSystem) {
+        // Register wal_dir if configured
+        if (!dbOpts.wal_dir.empty()) {
+          rocksdb::RegisterSharedFileSystemPathPrefix(_sharedFileSystem,
+                                                      dbOpts.wal_dir);
+          LOG(INFO) << "Registered WAL directory to shared filesystem: "
+                    << dbOpts.wal_dir;
+        }
+        // Register db_log_dir if configured
+        if (!dbOpts.db_log_dir.empty()) {
+          rocksdb::RegisterSharedFileSystemPathPrefix(_sharedFileSystem,
+                                                      dbOpts.db_log_dir);
+          LOG(INFO) << "Registered db_log_dir to shared filesystem: "
+                    << dbOpts.db_log_dir;
+        }
+        // Register db_paths if configured
+        for (const auto& db_path : dbOpts.db_paths) {
+          if (!db_path.path.empty()) {
+            rocksdb::RegisterSharedFileSystemPathPrefix(_sharedFileSystem,
+                                                        db_path.path);
+            LOG(INFO) << "Registered db_path to shared filesystem: "
+                      << db_path.path;
+          }
+        }
+      }
+
+      // Apply shared filesystem environment
+      if (use_shared_fs && _sharedEnv) {
+        dbOpts.env = _sharedEnv.get();
+        LOG(INFO) << "TXN_OPT: Using shared FileSystem for db: " << dbname;
+      }
+
+      std::vector<std::shared_ptr<rocksdb::TablePropertiesCollectorFactory>>
+        remote_table_properties_collector_factories;
+      auto& tmp_options = const_cast<rocksdb::Options&>(dbOpts);
+      auto& remote_listeners =
+        const_cast<std::vector<std::shared_ptr<rocksdb::EventListener>>&>(
+          dbOpts.listeners);
+      auto compaction_svc = std::make_shared<rocksdb::MyTestCompactionService>(
+        dbname,
+        tmp_options,
+        _stats,
+        remote_listeners,
+        remote_table_properties_collector_factories,
+        remote_options);
+      tmp_options.compaction_service = compaction_svc;
       auto status = rocksdb::OptimisticTransactionDB::Open(
         dbOpts,
         dbname,
@@ -2269,6 +2440,60 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
       rocksdb::Options dbOpts = options();
       dbOpts.create_missing_column_families = true;
       LOG(INFO) << "rocksdb Open,id:" << dbId() << " dbname:" << dbname;
+
+      // Register additional paths to shared filesystem (wal_dir, db_log_dir,
+      // etc.) This must be done after options() is called but before using
+      // dbOpts
+      if (use_shared_fs && _sharedFileSystem) {
+        // Register wal_dir if configured
+        if (!dbOpts.wal_dir.empty()) {
+          rocksdb::RegisterSharedFileSystemPathPrefix(_sharedFileSystem,
+                                                      dbOpts.wal_dir);
+          LOG(INFO) << "Registered WAL directory to shared filesystem: "
+                    << dbOpts.wal_dir;
+        }
+        // Register db_log_dir if configured
+        if (!dbOpts.db_log_dir.empty()) {
+          rocksdb::RegisterSharedFileSystemPathPrefix(_sharedFileSystem,
+                                                      dbOpts.db_log_dir);
+          LOG(INFO) << "Registered db_log_dir to shared filesystem: "
+                    << dbOpts.db_log_dir;
+        }
+        // Register db_paths if configured
+        for (const auto& db_path : dbOpts.db_paths) {
+          if (!db_path.path.empty()) {
+            rocksdb::RegisterSharedFileSystemPathPrefix(_sharedFileSystem,
+                                                        db_path.path);
+            LOG(INFO) << "Registered db_path to shared filesystem: "
+                      << db_path.path;
+          }
+        }
+      }
+
+      // Apply shared filesystem environment
+      if (use_shared_fs && _sharedEnv) {
+        dbOpts.env = _sharedEnv.get();
+        LOG(INFO) << "TXN_PES: Using shared FileSystem for db: " << dbname;
+      }
+
+      std::vector<std::shared_ptr<rocksdb::TablePropertiesCollectorFactory>>
+        remote_table_properties_collector_factories;
+      auto& tmp_options = const_cast<rocksdb::Options&>(dbOpts);
+      auto& compaction_stats =
+        const_cast<std::shared_ptr<rocksdb::Statistics>&>(dbOpts.statistics);
+      auto& remote_listeners =
+        const_cast<std::vector<std::shared_ptr<rocksdb::EventListener>>&>(
+          dbOpts.listeners);
+
+      auto compaction_svc = std::make_shared<rocksdb::MyTestCompactionService>(
+        dbname,
+        tmp_options,
+        compaction_stats,
+        remote_listeners,
+        remote_table_properties_collector_factories,
+        remote_options);
+      tmp_options.compaction_service = compaction_svc;
+
       // open two colum_family in pessimisticTranDB
       auto status = rocksdb::TransactionDB::Open(
         dbOpts, txnDbOptions, dbname, _cfDescs, &_cfHandles, &tmpDb);
