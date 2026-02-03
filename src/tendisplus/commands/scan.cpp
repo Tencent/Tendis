@@ -843,7 +843,7 @@ class ScanCommand : public Command {
         //   (*seq)++;
         // }
         int32_t nextSlot = recordSlotId;
-        if (!isRecordValidSlotId || recordSlotId == seekSlotId || 
+        if (!isRecordValidSlotId || recordSlotId == seekSlotId ||
             rt2Char(recordType) > rt2Char(RecordType::RT_DATA_META) ||
             recordDbId > dbId) {
           nextSlot = getNextSlot(slots, recordSlotId);
