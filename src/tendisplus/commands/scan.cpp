@@ -260,8 +260,6 @@ class ZScanbyscoreCommand : public ScanGenericCommand {
     Command::fmtBulk(ss, cursor);
     Command::fmtMultiBulkLen(ss, rcds.size() * 2);
     for (const auto& v : rcds) {
-      auto str = v.toString() + " ";
-      std::cout << str;
       if (v.getRecordKey().getSecondaryKey() ==
           std::to_string(ZSlMetaValue::HEAD_ID)) {
         continue;
@@ -816,7 +814,7 @@ class ScanCommand : public Command {
         // NOTE: no need increase seq. If it meets the criteria,
         //     it must have been increased seq.
         // WARNING: scan this kvstore over no need this record ! ! !
-        if (*scanTimes == scanMaxTimes &&
+        if (*scanTimes == scanMaxTimes && *seq > 0 &&
             expRecord.status().code() != ErrorCodes::ERR_EXHAUST) {
           if (result.empty() || (result.back() != record.getRecordKey())) {
             result.emplace_back(record.getRecordKey());
@@ -841,7 +839,22 @@ class ScanCommand : public Command {
         //     recordType == RecordType::RT_DATA_META) {
         //   (*seq)++;
         // }
-        auto nextSlot = getNextSlot(slots, recordSlotId);
+        // check if we should retain current slot
+        bool retainCurrentSlot = false;
+        // The structure of the UserKey is: SlotID | Type | DBID | PK | 0 | ...
+        // The record located by the seek operation may satisfy the SlotID
+        // condition, but its position could be preceding the target UserKey.
+        // In this case, the current slot must be retained, and the search
+        // should continue until the correct position is found.
+        if (kvstoreSlots.test(recordSlotId)) {
+          retainCurrentSlot =
+            (rt2Char(recordType) < rt2Char(RecordType::RT_DATA_META)) ||
+            (recordType == RecordType::RT_DATA_META && recordDbId < dbId);
+        }
+        // retainCurrentSlot = false, need to seek next slot
+        int32_t nextSlot = !retainCurrentSlot
+          ? getNextSlot(kvstoreSlots, recordSlotId)
+          : recordSlotId;
         // nextSlot == -1 means this kv-store has been iterated over
         if (nextSlot == -1) {
           break;
@@ -853,21 +866,19 @@ class ScanCommand : public Command {
         continue;
       }
 
-      /**
-       * check if this record has expired
-       * expired key shouldn't increase scanTimes,
-       * they only haven't been removed yet.
-       */
-      if (record.getRecordValue().getTtl() > 0 &&
-          record.getRecordValue().getTtl() < msSinceEpoch()) {
-        continue;
-      }
-
       // this record should increase seq.
-      // SLOTS, DBID, TYPE, TTL
+      // SLOTS, DBID, TYPE all match
       // NOTE: lastScanKey has increased seq.
       if (record.getRecordKey() != lastScanRecordKey) {
         (*seq)++;
+      }
+
+      // check if this record has expired
+      // expired keys are skipped but still count towards seq (cursor position)
+      // since they occupy a logical position in the database
+      if (record.getRecordValue().getTtl() > 0 &&
+          record.getRecordValue().getTtl() < msSinceEpoch()) {
+        continue;
       }
 
       // filter

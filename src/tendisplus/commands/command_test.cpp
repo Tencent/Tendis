@@ -716,6 +716,63 @@ void testScan(std::shared_ptr<ServerEntry> svr) {
   EXPECT_FALSE(expect.ok());
 }
 
+void testOtherDBScan(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+  for (int i = 0; i < 20000; i++) {
+    sess.setArgs({"set", randomStr(10, false), std::to_string(i)});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+  }
+
+  {
+    sess.setArgs({"select", "15"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    sess.setArgs({"scan", "0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_NE(expect.value().find("0"), std::string::npos);
+    EXPECT_NE(expect.value().find("*0"), std::string::npos);
+
+    auto key = randomStr(6, false);
+    sess.setArgs({"set", key, randomStr(10, false)});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"scan", "0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_NE(expect.value().find("1"), std::string::npos);
+    EXPECT_TRUE(expect.value().find(key) != std::string::npos);
+
+    auto key2 = randomStr(6, false);
+    sess.setArgs({"set", key2, randomStr(10, false)});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"scan", "0", "count", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_NE(expect.value().find("2"), std::string::npos);
+    EXPECT_TRUE((expect.value().find(key) != std::string::npos ||
+                 expect.value().find(key2) != std::string::npos));
+  }
+
+  {
+    sess.setArgs({"select", "4"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"scan", "0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_NE(expect.value().find("0"), std::string::npos);
+    EXPECT_NE(expect.value().find("*0"), std::string::npos);
+  }
+}
+
 void testMulti(std::shared_ptr<ServerEntry> svr) {
   asio::io_context ioCtx;
   asio::ip::tcp::socket socket(ioCtx), socket1(ioCtx);
@@ -1175,6 +1232,21 @@ TEST(Command, common_scan) {
   auto server = makeServerEntry(cfg);
 
   testScan(server);
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
+TEST(Command, otherdb_scan) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+
+  testOtherDBScan(server);
 
 #ifndef _WIN32
   server->stop();
