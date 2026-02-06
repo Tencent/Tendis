@@ -108,6 +108,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
   }
 
   if (mode != mgl::LockMode::LOCK_NONE) {
+    auto start = nsSinceEpoch();
     auto elk = KeyLock::AquireKeyLock(segId,
                                       chunkId,
                                       key,
@@ -115,6 +116,8 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
                                       sess,
                                       sess->getServerEntry()->getMGLockMgr(),
                                       lockTimeoutMs);
+    auto duration = nsSinceEpoch() - start;
+    sess->addLockWaitTime(duration);
     if (!elk.ok()) {
       return elk.status();
     }

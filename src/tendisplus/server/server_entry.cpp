@@ -259,6 +259,7 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(
     slowLog << "# Db: " << sess->getCtx()->getDbId() << "\n";
     slowLog << "# Query_time: " << duration << "\n";
     slowLog << "# Execute_time: " << execTime << "\n";
+    slowLog << "# LockWait_time: " << sess->getLockWaitTime() << "\n";
     slowLog << "# Thread_id: " << getCurThreadId() << "\n";
     slowLog << "# Session_id: " << sess->id() << "\n";
     slowLog << "# Read_Pack_ts: " << sess->getCtx()->getReadPacketTs() << "\n";
