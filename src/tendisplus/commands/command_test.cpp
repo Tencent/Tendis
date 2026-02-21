@@ -2,8 +2,11 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include <unistd.h>
+
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -11,9 +14,11 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <ostream>
 #include <random>
 #include <regex>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -23,6 +28,8 @@
 #include "tendisplus/commands/command.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
+#include "tendisplus/server/session.h"
+#include "tendisplus/storage/record.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/portable.h"
@@ -32,6 +39,7 @@
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/test_util.h"
+#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
 
@@ -3551,6 +3559,408 @@ TEST(Command, getSessionCmd) {
   sess.setArgs({"set", "k1", "v1", "px", "10000000", "ex", "100"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(Command::fmtOK(), expect.value());
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+// get ttl (using for test)
+Expected<uint64_t> getTTL(Session* sess, const std::string& key) {
+  auto server = sess->getServerEntry();
+  auto expdb =
+    server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+  if (!expdb.ok()) {
+    return expdb.status();
+  }
+
+  PStore kvstore = expdb.value().store;
+  auto ptxn = sess->getCtx()->createTransaction(kvstore);
+  if (!ptxn.ok()) {
+    return ptxn.status();
+  }
+  auto db = std::move(expdb.value());
+  // get kv extra info
+  RecordKey keyEtra(
+    db.chunkId, sess->getCtx()->getDbId(), RecordType::RT_KV_EXTRA, key, "");
+  Expected<RecordValue> extraValue = kvstore->getKV(keyEtra, ptxn.value());
+  if (extraValue.ok()) {
+    if (extraValue.value().getValue().size() == sizeof(uint64_t)) {
+      uint64_t ttl = int64Decode(extraValue.value().getValue().c_str());
+      return {ttl};
+    } else {
+      return {ErrorCodes::ERR_NAN, "never expire\n"};
+    }
+  }
+  return extraValue.status();
+}
+// get ttlIndex (using for test)
+Expected<RecordType> getTTLindex(Session* sess,
+                                 const std::string& key,
+                                 RecordType type,
+                                 uint64_t ttl) {
+  auto server = sess->getServerEntry();
+  auto expdb =
+    server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+  if (!expdb.ok()) {
+    return expdb.status();
+  }
+
+  PStore kvstore = expdb.value().store;
+  auto ptxn = sess->getCtx()->createTransaction(kvstore);
+  if (!ptxn.ok()) {
+    return ptxn.status();
+  }
+  auto db = std::move(expdb.value());
+  TTLIndex ictx(key, type, sess->getCtx()->getDbId(), ttl);
+  auto record = ptxn.value()->getKV(ictx.encode());
+  if (record.ok()) {
+    auto tType =
+      RecordValue::decodeType(record.value().c_str(), record.value().size());
+    if (tType == RecordType::RT_TTL_INDEX) {
+      return {tType};
+    } else {
+      return {ErrorCodes::ERR_NAN, "decode err\n"};
+    }
+  }
+  return {ErrorCodes::ERR_NOTFOUND, "not found\n"};
+}
+
+int get_indexmanager_info(std::string& content, const std::string& key) {
+  size_t pos = content.find(key);
+
+  if (pos != std::string::npos) {
+    pos += key.length();
+    size_t end_pos = content.find_first_of("\r\n", pos);
+    std::string value = content.substr(pos, end_pos - pos);
+    int total_expire_keys = std::stoi(value);
+    std::cout << key << total_expire_keys << std::endl;
+    return total_expire_keys;
+  }
+  return 0;
+}
+
+void testTTLIndex_BlobDBEnabled(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  // Functional test 1: BlobDB enabled + large value + with TTL
+  // Expected: Create TTL index + RTKVEXTRA
+  {
+    std::string value_5000(5000, 'A');  // > 4096
+    sess.setArgs({"SET", "key_blob_ttl", value_5000, "EX", "5"});
+    auto result = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(result.ok());
+    auto setTime = msSinceEpoch();
+    auto v = getTTL(&sess, "key_blob_ttl");
+    EXPECT_TRUE(v.ok());
+    EXPECT_LE((5000 - (v.value() - setTime)), 30);
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+
+    sess.setArgs({"info", "indexmanager"});
+    result = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(result.ok());
+    int total_expire_keys =
+      get_indexmanager_info(result.value(), "total_expire_keys:");
+    int deleting_expire_keys =
+      get_indexmanager_info(result.value(), "deleting_expire_keys:");
+    ASSERT_EQ(total_expire_keys + deleting_expire_keys, 1);
+  }
+
+  // Functional test 2: BlobDB enabled + small value + with TTL
+  // Expected: NOT create TTL index (because size < minBlobSize)
+  {
+    std::string value_100(100, 'B');  // < 4096
+    sess.setArgs({"SET", "key_small_ttl1", value_100, "EX", "10"});
+    auto result = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(result.ok());
+
+    auto v = getTTL(&sess, "key_small_ttl1");
+    EXPECT_FALSE(v.ok());
+
+    sess.setArgs({"TTL", "key_small_ttl1"});
+    result = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(result.ok());
+    auto ttl = std::stoll(result.value().substr(1));
+    EXPECT_TRUE(ttl > 0 && ttl <= 10);
+  }
+
+  // Functional test 3: BlobDB enabled + large value + no TTL (TTL=0)
+  // Expected: NOT create TTL index (because there is no TTL)
+  {
+    std::string value_5000(5000, 'C');
+    sess.setArgs({"SET", "key_blob_no_ttl1", value_5000});  // 无 EX
+    auto result = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(result.ok());
+
+    auto v = getTTL(&sess, "key_blob_no_ttl1");
+    EXPECT_FALSE(v.ok());
+
+    sess.setArgs({"TTL", "key_blob_no_ttl1"});
+    result = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(result.ok());
+    auto ttl = std::stoll(result.value().substr(1));
+    EXPECT_EQ(ttl, -1);
+  }
+
+  // Functional test 4: SET updates the TTL of an existing large value
+  // Expectation: Update TTL index, delete old index entries, add new index
+  // entries
+  {
+    auto setTime = msSinceEpoch();
+    sess.setArgs(
+      {"SET", "key_update_ttl1", std::string(5000, 'D'), "EX", "10"});
+    auto result = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(result.ok());
+
+    auto v = getTTL(&sess, "key_update_ttl1");
+    EXPECT_TRUE(v.ok());
+    EXPECT_LE((10000 - (v.value() - setTime)), 30);
+    auto d =
+      getTTLindex(&sess, "key_update_ttl1", RecordType::RT_KV, v.value());
+    ASSERT_TRUE(d.ok());
+
+    // Verify initial TTL
+    sess.setArgs({"TTL", "key_update_ttl1"});
+    result = Command::runSessionCmd(&sess);
+    auto ttl1 = std::stoll(result.value().substr(1));
+    EXPECT_TRUE(ttl1 > 0 && ttl1 <= 10);
+
+    // Update the same key with new TTL
+    setTime = msSinceEpoch();
+    sess.setArgs(
+      {"SET", "key_update_ttl1", std::string(5000, 'D'), "EX", "15"});
+    result = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(result.ok());
+
+    v = getTTL(&sess, "key_update_ttl1");
+    EXPECT_TRUE(v.ok());
+    EXPECT_LE(((v.value() - setTime)) - 15000, 30);
+    d = getTTLindex(&sess, "key_update_ttl1", RecordType::RT_KV, v.value());
+    ASSERT_TRUE(d.ok());
+    // Verify new TTL (should be larger than original)
+    sess.setArgs({"TTL", "key_update_ttl1"});
+    result = Command::runSessionCmd(&sess);
+    auto ttl2 = std::stoll(result.value().substr(1));
+    EXPECT_TRUE(ttl2 > 0 && ttl2 <= 20);
+    EXPECT_TRUE(ttl2 > ttl1);
+
+    std::this_thread::sleep_for(std::chrono::seconds(20));
+    sess.setArgs({"info", "indexmanager"});
+    result = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(result.ok());
+    int total_expire_keys =
+      get_indexmanager_info(result.value(), "total_expire_keys:");
+    int deleting_expire_keys =
+      get_indexmanager_info(result.value(), "deleting_expire_keys:");
+    ASSERT_EQ(total_expire_keys + deleting_expire_keys, 2);
+  }
+
+  // Functional test 5: EXPIRE dynamically updates large value TTL
+  // Expected: Delete old TTL index and create new TTL index
+  {
+    auto setTime1 = msSinceEpoch();
+    sess.setArgs({"SET", "key_expire", std::string(5000, 'E'), "EX", "100"});
+    Command::runSessionCmd(&sess);
+
+    auto v1 = getTTL(&sess, "key_expire");
+    EXPECT_TRUE(v1.ok());
+    EXPECT_LE(((v1.value() - setTime1)) - 100000, 30);
+    auto d1 = getTTLindex(&sess, "key_expire", RecordType::RT_KV, v1.value());
+    ASSERT_TRUE(d1.ok());
+
+    auto setTime2 = msSinceEpoch();
+    sess.setArgs({"EXPIRE", "key_expire", "300"});
+    auto result = Command::runSessionCmd(&sess);
+    EXPECT_EQ(result.value(), Command::fmtOne());
+
+    auto v2 = getTTL(&sess, "key_expire");
+    EXPECT_TRUE(v2.ok());
+    EXPECT_LE(((v2.value() - setTime2) - 300000), 30);
+    auto d2 = getTTLindex(&sess, "key_expire", RecordType::RT_KV, v2.value());
+    ASSERT_TRUE(d2.ok());
+
+    sess.setArgs({"TTL", "key_expire"});
+    result = Command::runSessionCmd(&sess);
+    auto ttl = std::stoll(result.value().substr(1));
+    EXPECT_TRUE(ttl > 100 && ttl <= 300);
+  }
+
+  // Functional test 6: PERSIST remove large value TTL index
+  // Expected: Remove TTL index, set TTL=-1
+  {
+    auto setTime1 = msSinceEpoch();
+    sess.setArgs({"SET", "key_persist", std::string(5000, 'F'), "EX", "100"});
+    Command::runSessionCmd(&sess);
+
+    auto v1 = getTTL(&sess, "key_persist");
+    EXPECT_TRUE(v1.ok());
+    EXPECT_LE(((v1.value() - setTime1) - 100000), 30);
+    auto d1 = getTTLindex(&sess, "key_persist", RecordType::RT_KV, v1.value());
+    ASSERT_TRUE(d1.ok());
+
+    sess.setArgs({"PERSIST", "key_persist"});
+    auto result = Command::runSessionCmd(&sess);
+    EXPECT_EQ(result.value(), Command::fmtOne());
+
+    sess.setArgs({"TTL", "key_persist"});
+    result = Command::runSessionCmd(&sess);
+    auto ttl = std::stoll(result.value().substr(1));
+    EXPECT_EQ(ttl, -1);
+  }
+
+  // Functional test 7: Multiple large values independently manage TTL index
+  // Expected: Separate TTL index entries for each key
+  {
+    auto setTime1 = msSinceEpoch();
+    sess.setArgs({"SET", "key_multi_1", std::string(5000, 'G'), "EX", "10"});
+    Command::runSessionCmd(&sess);
+
+    auto setTime2 = msSinceEpoch();
+    sess.setArgs({"SET", "key_multi_2", std::string(5000, 'H'), "EX", "15"});
+    Command::runSessionCmd(&sess);
+
+    auto setTime3 = msSinceEpoch();
+    sess.setArgs({"SET", "key_multi_3", std::string(5000, 'I'), "EX", "20"});
+    Command::runSessionCmd(&sess);
+
+    // Verify separate TTLs
+    sess.setArgs({"TTL", "key_multi_1"});
+    auto ttl1 = std::stoll(Command::runSessionCmd(&sess).value().substr(1));
+
+    sess.setArgs({"TTL", "key_multi_2"});
+    auto ttl2 = std::stoll(Command::runSessionCmd(&sess).value().substr(1));
+
+    sess.setArgs({"TTL", "key_multi_3"});
+    auto ttl3 = std::stoll(Command::runSessionCmd(&sess).value().substr(1));
+
+    EXPECT_TRUE(ttl1 > 0 && ttl1 <= 10);
+    EXPECT_TRUE(ttl2 > 0 && ttl2 <= 15);
+
+    EXPECT_TRUE(ttl3 > 0 && ttl3 <= 20);
+
+    auto v1 = getTTL(&sess, "key_multi_1");
+    EXPECT_TRUE(v1.ok());
+    EXPECT_LE(((v1.value() - setTime1) - 10000), 30);
+    auto d1 = getTTLindex(&sess, "key_multi_1", RecordType::RT_KV, v1.value());
+    ASSERT_TRUE(d1.ok());
+
+    auto v2 = getTTL(&sess, "key_multi_2");
+    EXPECT_TRUE(v2.ok());
+    EXPECT_LE(((v2.value() - setTime2) - 15000), 30);
+    auto d2 = getTTLindex(&sess, "key_multi_2", RecordType::RT_KV, v2.value());
+    ASSERT_TRUE(d2.ok());
+
+    auto v3 = getTTL(&sess, "key_multi_3");
+    EXPECT_TRUE(v3.ok());
+    EXPECT_LE(((v3.value() - setTime3) - 20000), 30);
+    auto d3 = getTTLindex(&sess, "key_multi_3", RecordType::RT_KV, v3.value());
+    ASSERT_TRUE(d3.ok());
+
+    std::this_thread::sleep_for(std::chrono::seconds(25));
+    sess.setArgs({"info", "indexmanager"});
+    auto result = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(result.ok());
+    int total_expire_keys =
+      get_indexmanager_info(result.value(), "total_expire_keys:");
+    int deleting_expire_keys =
+      get_indexmanager_info(result.value(), "deleting_expire_keys:");
+    ASSERT_EQ(total_expire_keys + deleting_expire_keys, 5);
+  }
+}
+
+void testTTLIndex_BlobDBDisabled(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  // Functional test 8: BlobDB disabled + large value + with TTL
+  // Expected: NOT create TTL index (because enableBlobFiles=false)
+  {
+    std::string value_5000(5000, 'J');
+    sess.setArgs({"SET", "key_no_blob_ttl", value_5000, "EX", "100"});
+    auto result = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(result.ok());
+
+    auto v = getTTL(&sess, "key_no_blob_ttl");
+    EXPECT_FALSE(v.ok());
+
+    sess.setArgs({"TTL", "key_no_blob_ttl"});
+    result = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(result.ok());
+    auto ttl = std::stoll(result.value().substr(1));
+    EXPECT_TRUE(ttl > 0 && ttl <= 100);
+  }
+
+  // Functional test 9: Size bounds test (exactly equal to minBlobSize)
+  // Expected: Create TTL index when >= minBlobSize
+  {
+    std::string value_4096(4096, 'K');  // == minBlobSize
+    sess.setArgs({"SET", "key_boundary", value_4096, "EX", "100"});
+    auto result = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(result.ok());
+
+    auto v = getTTL(&sess, "key_boundary");
+    EXPECT_FALSE(v.ok());
+
+    sess.setArgs({"TTL", "key_boundary"});
+    result = Command::runSessionCmd(&sess);
+    auto ttl = std::stoll(result.value().substr(1));
+    EXPECT_TRUE(ttl > 0 && ttl <= 100);
+  }
+
+  // Functional test 10: Small value boundary test (exactly smaller than
+  // minBlobSize) Expected: NOT create TTL index when < minBlobSize
+  {
+    std::string value_4095(4095, 'L');  // < minBlobSize
+    sess.setArgs({"SET", "key_boundary_small", value_4095, "EX", "100"});
+    auto result = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(result.ok());
+
+    auto v = getTTL(&sess, "key_boundary_small");
+    EXPECT_FALSE(v.ok());
+
+    sess.setArgs({"TTL", "key_boundary_small"});
+    result = Command::runSessionCmd(&sess);
+    auto ttl = std::stoll(result.value().substr(1));
+    EXPECT_TRUE(ttl > 0 && ttl <= 100);
+  }
+}
+
+TEST(Command, TTLIndex_BlobDBEnabled) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+
+  // Enable blob files with min_blob_size = 4096
+  std::map<std::string, std::string> configMap = {
+    {"rocks.enable_blob_files", "1"}, {"rocks.min_blob_size", "4096"}};
+  auto cfg = makeServerParam(8811, 0, "", true, configMap);
+
+  auto server = makeServerEntry(cfg);
+
+  testTTLIndex_BlobDBEnabled(server);
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
+TEST(Command, TTLIndex_BlobDBDisabled) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+
+  // Disable blob files (default configuration)
+  std::map<std::string, std::string> configMap = {
+    {"rocks.enable_blob_files", "0"}};  // Disable BlobDB
+  auto cfg = makeServerParam(8812, 0, "", true, configMap);
+
+  auto server = makeServerEntry(cfg);
+
+  testTTLIndex_BlobDBDisabled(server);
+
 #ifndef _WIN32
   server->stop();
   EXPECT_EQ(server.use_count(), 1);
