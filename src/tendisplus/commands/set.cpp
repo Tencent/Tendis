@@ -252,8 +252,8 @@ class SMembersCommand : public Command {
       return expdb.status();
     }
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_SET_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
       return Command::fmtZeroBulkLen();
     } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -350,8 +350,8 @@ class SIsMemberCommand : public Command {
       return expdb.status();
     }
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_SET_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
       return fmtZero();
     } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -438,8 +438,8 @@ class SrandMemberCommand : public Command {
     auto expdb =
       server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_SET_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
         rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       if (bulk == 1 && !explictBulk) {
@@ -822,8 +822,8 @@ class ScardCommand : public Command {
     SessionCtx* pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_SET_META, Command::RdLock());
 
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
       return fmtZero();
@@ -935,15 +935,16 @@ class SdiffgenericCommand : public Command {
     SessionCtx* pCtx = sess->getCtx();
 
     std::vector<int> index = getKeysFromCommand(args);
-    auto lock = server->getSegmentMgr()->getAllKeysLocked(
-      sess, args, index, _store ? mgl::LockMode::LOCK_X : Command::RdLock());
+    auto lockMode = _store ? mgl::LockMode::LOCK_X : Command::RdLock();
+    auto lock =
+      server->getSegmentMgr()->getAllKeysLocked(sess, args, index, lockMode);
     if (!lock.ok()) {
       return lock.status();
     }
 
     for (size_t i = startkey; i < args.size(); ++i) {
-      Expected<RecordValue> rv =
-        Command::expireKeyIfNeeded(sess, args[i], RecordType::RT_SET_META);
+      Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+        sess, args[i], RecordType::RT_SET_META, lockMode);
       if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
         continue;
       } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -1127,8 +1128,9 @@ class SintergenericCommand : public Command {
     SessionCtx* pCtx = sess->getCtx();
 
     std::vector<int> index = getKeysFromCommand(args);
-    auto lock = server->getSegmentMgr()->getAllKeysLocked(
-      sess, args, index, _store ? mgl::LockMode::LOCK_X : Command::RdLock());
+    auto lockMode = _store ? mgl::LockMode::LOCK_X : Command::RdLock();
+    auto lock =
+      server->getSegmentMgr()->getAllKeysLocked(sess, args, index, lockMode);
     if (!lock.ok()) {
       return lock.status();
     }
@@ -1136,8 +1138,8 @@ class SintergenericCommand : public Command {
     // stored all sets sorted by their length
     std::vector<std::pair<size_t, uint64_t>> setList;
     for (size_t i = startkey; i < args.size(); i++) {
-      Expected<RecordValue> rv =
-        Command::expireKeyIfNeeded(sess, args[i], RecordType::RT_SET_META);
+      Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+        sess, args[i], RecordType::RT_SET_META, lockMode);
 
       // if one set is empty, their intersection is empty set, so just
       // return it.
@@ -1187,8 +1189,8 @@ class SintergenericCommand : public Command {
         std::string prefix = fakeRk.prefixPk();
 
         std::string seekPos = "";
-        Expected<RecordValue> rv =
-          Command::expireKeyIfNeeded(sess, args[i], RecordType::RT_SET_META);
+        Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+          sess, args[i], RecordType::RT_SET_META, lockMode);
         if (rv.ok()) {
           Expected<SetMetaValue> exptSm =
             SetMetaValue::decode(rv.value().getValue());
@@ -1512,15 +1514,16 @@ class SuniongenericCommand : public Command {
     SessionCtx* pCtx = sess->getCtx();
 
     std::vector<int> index = getKeysFromCommand(args);
-    auto lock = server->getSegmentMgr()->getAllKeysLocked(
-      sess, args, index, _store ? mgl::LockMode::LOCK_X : Command::RdLock());
+    auto lockMode = _store ? mgl::LockMode::LOCK_X : Command::RdLock();
+    auto lock =
+      server->getSegmentMgr()->getAllKeysLocked(sess, args, index, lockMode);
     if (!lock.ok()) {
       return lock.status();
     }
 
     for (size_t i = startkey; i < args.size(); ++i) {
-      Expected<RecordValue> rv =
-        Command::expireKeyIfNeeded(sess, args[i], RecordType::RT_SET_META);
+      Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+        sess, args[i], RecordType::RT_SET_META, lockMode);
       if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
           rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
         continue;

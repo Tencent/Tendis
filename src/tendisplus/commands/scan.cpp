@@ -85,11 +85,12 @@ class ScanGenericCommand : public Command {
     }
 
     auto server = sess->getServerEntry();
-    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, RdLock());
+    auto expdb =
+      server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
     RET_IF_ERR_EXPECTED(expdb);
 
     Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, getRcdType());
+      Command::expireKeyIfNeeded(sess, key, getRcdType(), Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
         rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       std::stringstream ss;

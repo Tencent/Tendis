@@ -445,6 +445,14 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     ->setUpdate([this]() -> Status {
       return updateCompactDeletion("rocks.compaction_deletes_ratio", _cfg);
     });
+  // concurrentRead: control whether GET commands use LOCK_S or LOCK_X
+  Command::_expRdLk =
+    _cfg->concurrentRead ? mgl::LockMode::LOCK_S : mgl::LockMode::LOCK_X;
+  _cfg->serverParamsVar("concurrentRead")->setUpdate([this]() -> Status {
+    Command::_expRdLk =
+      _cfg->concurrentRead ? mgl::LockMode::LOCK_S : mgl::LockMode::LOCK_X;
+    return {ErrorCodes::ERR_OK, ""};
+  });
 }
 
 ServerEntry::~ServerEntry() {

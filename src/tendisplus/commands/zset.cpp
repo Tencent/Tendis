@@ -644,8 +644,8 @@ class ZCardCommand : public Command {
     const std::vector<std::string>& args = sess->getArgs();
     const std::string& key = args[1];
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_ZSET_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
         rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return Command::fmtZero();
@@ -693,8 +693,8 @@ class ZRankCommand : public Command {
     if (!expdb.ok()) {
       return expdb.status();
     }
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_ZSET_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
         rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return Command::fmtNull();
@@ -741,13 +741,14 @@ class ZRevRankCommand : public Command {
     const std::string& subkey = args[2];
 
     auto server = sess->getServerEntry();
-    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, RdLock());
+    auto expdb =
+      server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
     if (!expdb.ok()) {
       return expdb.status();
     }
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_ZSET_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
         rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return Command::fmtNull();
@@ -885,8 +886,8 @@ class ZCountCommand : public Command {
       return expdb.status();
     }
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_ZSET_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
         rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return Command::fmtZero();
@@ -975,8 +976,8 @@ class ZlexCountCommand : public Command {
       return expdb.status();
     }
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_ZSET_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
         rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return Command::fmtZero();
@@ -1110,8 +1111,8 @@ class ZRangeByScoreGenericCommand : public Command {
       return expdb.status();
     }
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_ZSET_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
         rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return Command::fmtZeroBulkLen();
@@ -1243,8 +1244,8 @@ class ZRangeByLexGenericCommand : public Command {
       return expdb.status();
     }
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_ZSET_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
         rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return Command::fmtZeroBulkLen();
@@ -1344,8 +1345,8 @@ class ZRangeGenericCommand : public Command {
       return expdb.status();
     }
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_ZSET_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
         rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return Command::fmtZeroBulkLen();
@@ -1448,8 +1449,8 @@ class ZScoreCommand : public Command {
       return expdb.status();
     }
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_ZSET_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
         rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return Command::fmtNull();

@@ -2902,99 +2902,101 @@ void testExpireCommandWhenNoexpireTrue(std::shared_ptr<ServerEntry> svr) {
   EXPECT_EQ(expect.value(), Command::fmtOne());
 }
 
+namespace {
+
+void cleanupExpireTestKeys(NetSession* sess) {
+  for (const auto& k : {"key", "myhash", "myset", "myzset", "mylist"}) {
+    sess->setArgs({"del", k});
+    Command::runSessionCmd(sess);
+  }
+}
+
+void buildExpiredMultiTypeKeys(NetSession* sess) {
+  auto runOkEq = [sess](const std::vector<std::string>& args,
+                        const std::string& expected) {
+    sess->setArgs(args);
+    auto expect = Command::runSessionCmd(sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), expected);
+  };
+
+  runOkEq({"set", "key", "xxx", "PX", std::to_string(1)}, Command::fmtOK());
+
+  runOkEq({"hset", "myhash", "k", "v"}, Command::fmtOne());
+  runOkEq({"pexpire", "myhash", std::to_string(1)}, Command::fmtOne());
+
+  runOkEq({"sadd", "myset", "v"}, Command::fmtOne());
+  runOkEq({"pexpire", "myset", std::to_string(1)}, Command::fmtOne());
+
+  runOkEq({"zadd", "myzset", std::to_string(100), "k"}, Command::fmtOne());
+  runOkEq({"pexpire", "myzset", std::to_string(1)}, Command::fmtOne());
+
+  runOkEq({"lpush", "mylist", "v"}, Command::fmtOne());
+  runOkEq({"pexpire", "mylist", std::to_string(1)}, Command::fmtOne());
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+}
+
+void expectExpiredMultiTypeInvisible(NetSession* sess) {
+  auto run = [sess](const std::vector<std::string>& args) {
+    sess->setArgs(args);
+    auto expect = Command::runSessionCmd(sess);
+    EXPECT_TRUE(expect.ok());
+    return expect.value();
+  };
+
+  EXPECT_EQ(run({"get", "key"}), Command::fmtNull());
+  EXPECT_EQ(run({"hget", "myhash", "k"}), Command::fmtNull());
+  EXPECT_EQ(run({"smembers", "myset"}), Command::fmtZeroBulkLen());
+  EXPECT_EQ(run({"zrange", "myzset", "0", "-1"}), Command::fmtZeroBulkLen());
+  EXPECT_EQ(run({"lindex", "mylist", "0"}), Command::fmtNull());
+}
+
+void expectExpiredMultiTypeVisible(NetSession* sess) {
+  auto run = [sess](const std::vector<std::string>& args) {
+    sess->setArgs(args);
+    auto expect = Command::runSessionCmd(sess);
+    EXPECT_TRUE(expect.ok());
+    return expect.value();
+  };
+
+  EXPECT_EQ(run({"get", "key"}), Command::fmtBulk("xxx"));
+  EXPECT_EQ(run({"hget", "myhash", "k"}), Command::fmtBulk("v"));
+
+  std::stringstream ss;
+  Command::fmtMultiBulkLen(ss, 1);
+  Command::fmtBulk(ss, "v");
+  EXPECT_EQ(run({"smembers", "myset"}), ss.str());
+
+  ss.str("");
+  Command::fmtMultiBulkLen(ss, 1);
+  Command::fmtBulk(ss, "k");
+  EXPECT_EQ(run({"zrange", "myzset", "0", "-1"}), ss.str());
+
+  EXPECT_EQ(run({"lindex", "mylist", "0"}), Command::fmtBulk("v"));
+}
+
+}  // namespace
+
 void testExpireKeyWhenGet(std::shared_ptr<ServerEntry> svr) {
   asio::io_context ioContext;
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  // Use LOCK_X for reads so that GET triggers synchronous delete
+  sess.setArgs({"config", "set", "concurrentRead", "false"});
+  auto expectCR = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expectCR.ok());
 
   sess.setArgs({"config", "set", "noexpire", "yes"});
   auto expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
   EXPECT_EQ(expect.value(), Command::fmtOK());
 
-  // string
-  sess.setArgs({"set", "key", "xxx", "PX", std::to_string(1)});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOK());
-
-  // hash
-  sess.setArgs({"hset", "myhash", "k", "v"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOne());
-
-  sess.setArgs({"pexpire", "myhash", std::to_string(1)});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOne());
-
-  // set
-  sess.setArgs({"sadd", "myset", "v"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOne());
-
-  sess.setArgs({"pexpire", "myset", std::to_string(1)});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOne());
-
-  // zset
-  sess.setArgs({"zadd", "myzset", std::to_string(100), "k"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOne());
-
-  sess.setArgs({"pexpire", "myzset", std::to_string(1)});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOne());
-
-  // list
-  sess.setArgs({"lpush", "mylist", "v"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOne());
-
-  sess.setArgs({"pexpire", "mylist", std::to_string(1)});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOne());
-
-  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  buildExpiredMultiTypeKeys(&sess);
 
   // we can get expired key, if noexpire true
-  sess.setArgs({"get", "key"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtBulk("xxx"));
-
-  sess.setArgs({"hget", "myhash", "k"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtBulk("v"));
-
-  sess.setArgs({"smembers", "myset"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  std::stringstream ss;
-  Command::fmtMultiBulkLen(ss, 1);
-  Command::fmtBulk(ss, "v");
-  EXPECT_EQ(expect.value(), ss.str());
-
-  sess.setArgs({"zrange", "myzset", "0", "-1"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  ss.str("");
-  Command::fmtMultiBulkLen(ss, 1);
-  Command::fmtBulk(ss, "k");
-  EXPECT_EQ(expect.value(), ss.str());
-
-  sess.setArgs({"lindex", "mylist", "0"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtBulk("v"));
+  expectExpiredMultiTypeVisible(&sess);
 
   // delete expired key when get
   sess.setArgs({"config", "set", "noexpire", "no"});
@@ -3002,30 +3004,12 @@ void testExpireKeyWhenGet(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(expect.ok());
   EXPECT_EQ(expect.value(), Command::fmtOK());
 
-  sess.setArgs({"get", "key"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtNull());
+  expectExpiredMultiTypeInvisible(&sess);
 
-  sess.setArgs({"hget", "myhash", "k"});
+  // Restore concurrentRead to default
+  sess.setArgs({"config", "set", "concurrentRead", "true"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtNull());
-
-  sess.setArgs({"smembers", "myset"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtZeroBulkLen());
-
-  sess.setArgs({"zrange", "myzset", "0", "-1"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtZeroBulkLen());
-
-  sess.setArgs({"lindex", "mylist", "0"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtNull());
 }
 
 void testExpireKeyWhenCompaction(std::shared_ptr<ServerEntry> svr) {
@@ -3033,94 +3017,18 @@ void testExpireKeyWhenCompaction(std::shared_ptr<ServerEntry> svr) {
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
+  // Explicit cleanup: ensure no stale keys from previous tests
+  cleanupExpireTestKeys(&sess);
+
   sess.setArgs({"config", "set", "noexpire", "yes"});
   auto expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
   EXPECT_EQ(expect.value(), Command::fmtOK());
 
-  // string
-  sess.setArgs({"set", "key", "xxx", "PX", std::to_string(1)});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOK());
-
-  // hash
-  sess.setArgs({"hset", "myhash", "k", "v"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOne());
-
-  sess.setArgs({"pexpire", "myhash", std::to_string(1)});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOne());
-
-  // set
-  sess.setArgs({"sadd", "myset", "v"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOne());
-
-  sess.setArgs({"pexpire", "myset", std::to_string(1)});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOne());
-
-  // zset
-  sess.setArgs({"zadd", "myzset", std::to_string(100), "k"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOne());
-
-  sess.setArgs({"pexpire", "myzset", std::to_string(1)});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOne());
-
-  // list
-  sess.setArgs({"lpush", "mylist", "v"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOne());
-
-  sess.setArgs({"pexpire", "mylist", std::to_string(1)});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtOne());
-
-  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  buildExpiredMultiTypeKeys(&sess);
 
   // we can get expired key, if noexpire true
-  sess.setArgs({"get", "key"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtBulk("xxx"));
-
-  sess.setArgs({"hget", "myhash", "k"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtBulk("v"));
-
-  sess.setArgs({"smembers", "myset"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  std::stringstream ss;
-  Command::fmtMultiBulkLen(ss, 1);
-  Command::fmtBulk(ss, "v");
-  EXPECT_EQ(expect.value(), ss.str());
-
-  sess.setArgs({"zrange", "myzset", "0", "-1"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  ss.str("");
-  Command::fmtMultiBulkLen(ss, 1);
-  Command::fmtBulk(ss, "k");
-  EXPECT_EQ(expect.value(), ss.str());
-
-  sess.setArgs({"lindex", "mylist", "0"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtBulk("v"));
+  expectExpiredMultiTypeVisible(&sess);
 
   // delete expired key by compaction and indexMgr
   sess.setArgs({"config", "set", "noexpire", "no"});
@@ -3136,30 +3044,7 @@ void testExpireKeyWhenCompaction(std::shared_ptr<ServerEntry> svr) {
 
   // test if key exist
   svr->getParams()->noexpire = true;
-  sess.setArgs({"get", "key"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtNull());
-
-  sess.setArgs({"hget", "myhash", "k"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtNull());
-
-  sess.setArgs({"smembers", "myset"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtZeroBulkLen());
-
-  sess.setArgs({"zrange", "myzset", "0", "-1"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtZeroBulkLen());
-
-  sess.setArgs({"lindex", "mylist", "0"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtNull());
+  expectExpiredMultiTypeInvisible(&sess);
 }
 
 void testSync(std::shared_ptr<ServerEntry> svr) {

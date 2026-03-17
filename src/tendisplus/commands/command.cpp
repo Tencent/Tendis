@@ -11,11 +11,11 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "tendisplus/lock/lock.h"
+#include "tendisplus/storage/kvstore.h"
 #include "tendisplus/storage/record.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/scopeguard.h"
@@ -25,7 +25,7 @@
 namespace tendisplus {
 
 std::mutex Command::_mutex;
-mgl::LockMode Command::_expRdLk = mgl::LockMode::LOCK_X;
+mgl::LockMode Command::_expRdLk = mgl::LockMode::LOCK_S;
 
 std::map<std::string, uint64_t> Command::_unSeenCmds = {};
 
@@ -913,142 +913,158 @@ Status Command::delKey(Session* sess,
 
   RecordKey mk(expdb.value().chunkId, pCtx->getDbId(), tp, key, "");
 
-  for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-    Expected<RecordValue> eValue = kvstore->getKV(mk, txn);
-    if (!eValue.ok()) {
-      if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
-        return {ErrorCodes::ERR_OK, ""};
-      }
-      return eValue.status();
+  Expected<RecordValue> eValue = kvstore->getKV(mk, txn);
+  if (!eValue.ok()) {
+    if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
+      return {ErrorCodes::ERR_OK, ""};
     }
-    RecordType valueType = eValue.value().getRecordType();
-    auto cnt = rcd_util::getSubKeyCount(mk, eValue.value());
-    if (!cnt.ok()) {
-      return cnt.status();
-    }
+    return eValue.status();
+  }
 
-    if (useDeleteRange(cnt.value(), valueType, server->getParams())) {
-      LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
-                << ",rcdType:" << rt2Char(valueType) << ",size:" << cnt.value();
-      return Command::delKeyPessimisticInLock(
-        sess, storeId, mk, valueType, eValue.value());
-    } else {
-      Status s = Command::delKeyOptimismInLock(
-        sess, storeId, mk, valueType, txn, eValue.value());
-      if (s.code() == ErrorCodes::ERR_COMMIT_RETRY && i != RETRY_CNT - 1) {
-        continue;
-      }
+  return Command::delKeyInLock(sess, storeId, kvstore, mk, eValue.value(), txn);
+}
+
+// Unified delete key core logic. Requirement: LOCK_X already held.
+// txn == nullptr: creates own txn, commits internally.
+// txn != nullptr: uses caller's txn, does NOT commit (caller commits).
+// NOTE: big key always goes through delKeyPessimisticInLock which creates
+//       its own txn and commits internally regardless of the txn parameter.
+Status Command::delKeyInLock(Session* sess,
+                             uint32_t storeId,
+                             PStore kvstore,
+                             const RecordKey& mk,
+                             const RecordValue& eValue,
+                             Transaction* txn) {
+  auto server = sess->getServerEntry();
+  RecordType valueType = eValue.getRecordType();
+
+  auto cnt = rcd_util::getSubKeyCount(mk, eValue);
+  if (!cnt.ok()) {
+    return cnt.status();
+  }
+
+  // big key → pessimistic delete (always creates own txn + commits internally)
+  if (useDeleteRange(cnt.value(), valueType, server->getParams())) {
+    LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
+              << ",rcdType:" << rt2Char(valueType) << ",size:" << cnt.value();
+    return Command::delKeyPessimisticInLock(
+      sess, storeId, mk, valueType, eValue);
+  }
+
+  // small key: caller's txn → single attempt, no commit
+  if (txn != nullptr) {
+    return Command::delKeyOptimismInLock(
+      sess, storeId, mk, valueType, txn, eValue);
+  }
+
+  // small key: own txn → create + retry + commit
+  for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+    auto ptxn = kvstore->createTransaction(sess);
+    if (!ptxn.ok()) {
+      return ptxn.status();
+    }
+    auto txnGuard = std::move(ptxn.value());
+
+    Status s = Command::delKeyOptimismInLock(
+      sess, storeId, mk, valueType, txnGuard.get(), eValue);
+    if (s.code() == ErrorCodes::ERR_COMMIT_RETRY && i != RETRY_CNT - 1) {
+      continue;
+    }
+    if (!s.ok()) {
       return s;
     }
+    return txnGuard->commit().status();
   }
   // should never reach here
   INVARIANT_D(0);
   return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
+// NOTE(shianwu): Unified expire check.
+//   - LOCK_X (write path): synchronous delete
+//   - LOCK_S (read path): check TTL + submit async delete task
 // NOTE(takenliu) txn is committed in this function.
 Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
                                                  const std::string& key,
                                                  RecordType tp,
-                                                 bool hasVersion) {
+                                                 mgl::LockMode mode) {
   auto server = sess->getServerEntry();
   INVARIANT(server != nullptr);
-  auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, RdLock());
+
+  auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mode);
   if (!expdb.ok()) {
     return expdb.status();
   }
   uint32_t storeId = expdb.value().dbId;
-
-  // NOTE(wayenchen) change session args to store a del command in session
-  LocalSessionGuard sg(server, sess);
-  if (sess->getArgs().size() >= 2) {
-    sg.getSession()->setArgs({"del", key});
-  }
-
   RecordKey mk(expdb.value().chunkId, sess->getCtx()->getDbId(), tp, key, "");
   PStore kvstore = expdb.value().store;
 
-  // NOTE(takenliu) we need setReplOnly
-  sg.getSession()->getCtx()->setReplOnly(kvstore->getMode() ==
-                                         KVStore::StoreMode::REPLICATE_ONLY);
-
-  for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-    // NOTE(takenliu) expireKeyIfNeeded don't use txn from params,
-    //   because it need rewrite codes too much.
-    //   so, we need new txn and commit txn in this function,
-    //   and then, we can't use sess->createTransaction
-    auto ptxn = kvstore->createTransaction(sg.getSession());
-    if (!ptxn.ok()) {
-      return ptxn.status();
-    }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    Expected<RecordValue> eValue = kvstore->getKV(mk, txn.get());
-    if (!eValue.ok()) {
-      // maybe ErrorCodes::ERR_NOTFOUND
-      ++sess->getServerEntry()->getServerStat().keyspaceMisses;
-      return eValue.status();
-    }
-
-    uint64_t currentTs = msSinceEpoch();
-    uint64_t targetTtl = eValue.value().getTtl();
-    RecordType valueType = eValue.value().getRecordType();
-    if (server->getParams()->noexpire || targetTtl == 0 ||
-        currentTs < targetTtl) {
-      if (valueType != tp && tp != RecordType::RT_DATA_META) {
-        /** NOTE(vinchen): This error message contains the key name, it is
-         * useful for users. The error message is a little different with redis.
-         * Maybe it is ok.
-         */
-        return {ErrorCodes::ERR_WRONG_TYPE,
-                "-WRONGTYPE Operation against a key holding the wrong kind of "
-                "value(" +
-                  key + ")\r\n"};
-      }
-      if (hasVersion) {
-        auto pCtx = sess->getCtx();
-        if (!pCtx->verifyVersion(eValue.value().getVersionEP())) {
-          ++sess->getServerEntry()->getServerStat().keyspaceIncorrectEp;
-          return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
-        }
-      }
-      ++sess->getServerEntry()->getServerStat().keyspaceHits;
-      return eValue.value();
-    } else if (txn->isReplOnly()) {
-      // NOTE(vinchen): if replOnly, it can't delete record, but return
-      // ErrorCodes::ERR_EXPIRED
-      return {ErrorCodes::ERR_EXPIRED, ""};
-    }
-    auto cnt = rcd_util::getSubKeyCount(mk, eValue.value());
-    if (!cnt.ok()) {
-      return cnt.status();
-    }
-
-    if (useDeleteRange(cnt.value(), valueType, server->getParams())) {
-      LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
-                << ",rcdType:" << rt2Char(valueType) << ",size:" << cnt.value();
-      Status s = Command::delKeyPessimisticInLock(
-        sg.getSession(), storeId, mk, valueType, eValue.value());
-      if (s.ok()) {
-        return {ErrorCodes::ERR_EXPIRED, ""};
-      } else {
-        return s;
-      }
-    } else {
-      Status s = Command::delKeyOptimismInLock(
-        sg.getSession(), storeId, mk, valueType, txn.get(), eValue.value());
-      if (!s.ok()) {
-        return s;
-      }
-      auto eCmt = txn.get()->commit();
-      if (!eCmt.ok()) {
-        return eCmt.status();
-      }
-      return {ErrorCodes::ERR_EXPIRED, ""};
-    }
+  // Read meta and check TTL
+  // Use the original sess. No LocalSessionGuard needed here.
+  auto ptxn = kvstore->createTransaction(sess);
+  if (!ptxn.ok()) {
+    return ptxn.status();
   }
-  // should never reach here
-  INVARIANT_D(0);
-  return {ErrorCodes::ERR_INTERNAL, "not reachable"};
+  std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+  Expected<RecordValue> eValue = kvstore->getKV(mk, txn.get());
+  if (!eValue.ok()) {
+    ++server->getServerStat().keyspaceMisses;
+    return eValue.status();
+  }
+
+  RecordType valueType = eValue.value().getRecordType();
+  uint64_t targetTtl = eValue.value().getTtl();
+
+  // key NOT expired
+  if (server->getParams()->noexpire || targetTtl == 0 ||
+      msSinceEpoch() < targetTtl) {
+    if (valueType != tp && tp != RecordType::RT_DATA_META) {
+      return {ErrorCodes::ERR_WRONG_TYPE,
+              "-WRONGTYPE Operation against a key holding the wrong kind of "
+              "value(" +
+                key + ")\r\n"};
+    }
+    // EP version check: only when client has extended protocol enabled
+    if (sess->getCtx()->isEp() &&
+        !sess->getCtx()->verifyVersion(eValue.value().getVersionEP())) {
+      ++server->getServerStat().keyspaceIncorrectEp;
+      return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
+    }
+    ++server->getServerStat().keyspaceHits;
+    return eValue.value();
+  }
+
+  // key IS expired
+  // slave: can't delete, just report expired
+  if (txn->isReplOnly()) {
+    return {ErrorCodes::ERR_EXPIRED, ""};
+  }
+
+  // LOCK_S: no deletion, just report expired.
+  // Actual cleanup is done by IndexManager's scanExpiredKeysJob.
+  if (mode != mgl::LockMode::LOCK_X) {
+    return {ErrorCodes::ERR_EXPIRED, ""};
+  }
+
+  // LOCK_X synchronous delete
+  // Create LocalSessionGuard here (deferred from function entry).
+  // Purpose: binlog records "del" instead of the original command.
+  // NOTE: setReplOnly is NOT needed — getDbWithKeyLock already set
+  // replOnly on sess, and slave path returned early above.
+  //
+  // txn=nullptr → delKeyInLock creates own txn with delSess,
+  // so txn._session points to delSess → commit writes "del" in binlog.
+  // This is safe because LOCK_X guarantees no concurrent modification
+  // to this key, so the eValue read above is still valid.
+  LocalSessionGuard sg(server, sess);
+  sg.getSession()->setArgs({"del", key});
+  Session* delSess = sg.getSession();
+
+  // nullptr delKeyInLock creates own txn + commits internally
+  Status s = Command::delKeyInLock(
+    delSess, storeId, kvstore, mk, eValue.value(), nullptr);
+  return s.ok() ? Expected<RecordValue>{ErrorCodes::ERR_EXPIRED, ""}
+                : Expected<RecordValue>{s};
 }
 
 std::string Command::fmtErr(const std::string& s) {

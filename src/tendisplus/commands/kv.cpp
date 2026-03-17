@@ -552,8 +552,8 @@ class StrlenCommand : public Command {
     SessionCtx* pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
     const std::string& key = sess->getArgs()[1];
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_KV, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
       return Command::fmtZero();
     } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -600,8 +600,8 @@ class BitPosCommand : public Command {
     } else {
       return {ErrorCodes::ERR_PARSEOPT, "The bit argument must be 1 or 0."};
     }
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_KV, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
         rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       /* If the key does not exist, from our point of view it is an
@@ -694,8 +694,8 @@ class BitCountCommand : public Command {
     SessionCtx* pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
     const std::string& key = sess->getArgs()[1];
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_KV, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
       return Command::fmtZero();
     } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -755,8 +755,8 @@ class GetGenericCmd : public Command {
     SessionCtx* pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
     const std::string& key = sess->getArgs()[1];
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_KV, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
         rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return rv.status();
@@ -792,8 +792,8 @@ class GetVsnCommand : public Command {
     SessionCtx* pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
     const std::string& key = sess->getArgs()[1];
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_KV, Command::RdLock());
 
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, 2);
@@ -1727,8 +1727,8 @@ class MGetCommand : public Command {
     Command::fmtMultiBulkLen(ss, sess->getArgs().size() - 1);
     for (size_t i = 1; i < sess->getArgs().size(); ++i) {
       const std::string& key = sess->getArgs()[i];
-      Expected<RecordValue> rv =
-        Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
+      Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+        sess, key, RecordType::RT_KV, Command::RdLock());
       if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
           rv.status().code() == ErrorCodes::ERR_NOTFOUND ||
           rv.status().code() == ErrorCodes::ERR_WRONG_TYPE) {
@@ -2600,10 +2600,10 @@ class BitFieldCommand : public Command {
     const std::string& key = args[1];
     auto server = sess->getServerEntry();
     auto pCtx = sess->getCtx();
-    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
-      sess, key, readonly ? RdLock() : mgl::LockMode::LOCK_X);
+    auto lockMode = readonly ? Command::RdLock() : mgl::LockMode::LOCK_X;
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, lockMode);
     Expected<RecordValue> eRv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
+      Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV, lockMode);
     if (eRv.status().code() == ErrorCodes::ERR_EXPIRED ||
         eRv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       // do nothing

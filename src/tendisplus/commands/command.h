@@ -66,6 +66,8 @@ class Command {
   bool isWriteable() const;
   bool isAdmin() const;
   static mgl::LockMode RdLock();
+  // controlled by config param "concurrentRead"
+  static mgl::LockMode _expRdLk;
   static void changeCommand(const std::string& renameCmdList, std::string mode);
   int getFlags() const;
   size_t getFlagsCount() const;
@@ -82,10 +84,12 @@ class Command {
   // return ERR_OK if not expired
   // return ERR_EXPIRED if expired
   // return errors on other unexpected conditions
-  static Expected<RecordValue> expireKeyIfNeeded(Session* sess,
-                                                 const std::string& key,
-                                                 RecordType tp,
-                                                 bool hasVersion = true);
+  // Unified version: LOCK_X → sync delete, LOCK_S → async or lazy expire
+  static Expected<RecordValue> expireKeyIfNeeded(
+    Session* sess,
+    const std::string& key,
+    RecordType tp,
+    mgl::LockMode mode = mgl::LockMode::LOCK_X);
 
   static Expected<std::pair<std::string, std::list<Record>>> scan(
     Session* sess,
@@ -107,6 +111,19 @@ class Command {
                              const RecordValue& val,
                              PStore kvstore,
                              Transaction* txn);
+
+  // Unified delete key under LOCK_X (already held by caller).
+  // txn == nullptr: creates own txn internally, commits before return.
+  // txn != nullptr: uses caller's txn, does NOT commit (caller commits).
+  static Status delKeyInLock(Session* sess,
+                             uint32_t storeId,
+                             PStore kvstore,
+                             const RecordKey& mk,
+                             const RecordValue& eValue,
+                             Transaction* txn = nullptr);
+
+  // Acquires LOCK_X, reads meta, delegates to delKeyInLock.
+  // Not committed, caller need commit itself.
   static Status delKey(Session* sess,
                        const std::string& key,
                        RecordType tp,
@@ -146,8 +163,6 @@ class Command {
   // protected by mutex
   static const uint32_t _maxUnseenCmdNum = 10000;
   static std::map<std::string, uint64_t> _unSeenCmds;
-
-  static mgl::LockMode _expRdLk;
 
  private:
   static Status delKeyPessimisticInLock(Session* sess,
