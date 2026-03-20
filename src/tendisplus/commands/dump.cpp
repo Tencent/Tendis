@@ -1169,7 +1169,14 @@ class ZsetDeserializer : public Deserializer {
                      rk.getPrimaryKey(),
                      std::to_string(ZSlMetaValue::HEAD_ID));
     ZSlEleValue headVal;
-    RecordValue headRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, -1);
+    // Head node starts with level=1, matching the initial meta level.
+    // It will grow as the skiplist level increases during insert.
+    headVal.setLevel(1);
+    RecordValue headRv(headVal.encode(ZSlEleValue::ENCODING_VERSION),
+                       RecordType::RT_ZSET_S_ELE,
+                       -1);  // versionEP
+    // Store encoding version in subkey's RecordValue.version field
+    headRv.setVersion(ZSlEleValue::ENCODING_VERSION);
     s = kvstore->setKV(headRk, headRv, txn);
     if (!s.ok()) {
       return s;

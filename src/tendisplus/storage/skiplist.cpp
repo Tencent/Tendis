@@ -164,7 +164,8 @@ Expected<ZSlEleValue*> SkipList::getNode(uint64_t pointer, Transaction* txn) {
     return rv.status();
   }
   const std::string& s = rv.value().getValue();
-  auto result = ZSlEleValue::decode(s);
+  // Version is stored in RecordValue's version field for RT_ZSET_S_ELE
+  auto result = ZSlEleValue::decode(s, rv.value().getVersion());
   if (!result.ok()) {
     return result.status();
   }
@@ -189,7 +190,11 @@ Status SkipList::saveNode(uint64_t pointer,
                           Transaction* txn) {
   RecordKey rk(
     _chunkId, _dbId, RecordType::RT_ZSET_S_ELE, _pk, std::to_string(pointer));
-  RecordValue rv(val.encode(), RecordType::RT_ZSET_S_ELE, -1);
+  // Always encode with current version; version stored in RecordValue
+  RecordValue rv(val.encode(ZSlEleValue::ENCODING_VERSION),
+                 RecordType::RT_ZSET_S_ELE,
+                 -1);  // versionEP
+  rv.setVersion(ZSlEleValue::ENCODING_VERSION);
 
   // NOTE(vinchen): after saveNode, reset the change flag in ZSLEleValue
   INVARIANT(cache.find(pointer) != cache.end());
@@ -246,8 +251,14 @@ Status SkipList::removeInternal(uint64_t pos,
   }
 
   --_count;
+  uint8_t oldLevel = _level;
   while (_level > 1 && cache[ZSlMetaValue::HEAD_ID]->getForward(_level) == 0) {
     --_level;
+  }
+  // Sync head node's level with skiplist level for V1 encoding
+  if (_level != oldLevel) {
+    cache[ZSlMetaValue::HEAD_ID]->setLevel(_level);
+    cache[ZSlMetaValue::HEAD_ID]->setChanged(true);
   }
   return delNode(pos, txn);
 }
@@ -1009,8 +1020,12 @@ Status SkipList::insert(double score,
       cache[update[i]]->setSpan(i, _count - 1);
     }
     _level = lvl;
+    // Sync head node's level with skiplist level for V1 encoding
+    cache[ZSlMetaValue::HEAD_ID]->setLevel(_level);
   }
   std::pair<uint64_t, SkipList::PSE> p = SkipList::makeNode(score, subkey);
+  // Set the level for the new node (used for V1 optimized encoding)
+  p.second->setLevel(lvl);
   cache[p.first] = std::move(p.second);
   for (size_t i = 1; i <= lvl; ++i) {
     INVARIANT(update[i] >= ZSlMetaValue::HEAD_ID);

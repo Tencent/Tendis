@@ -11,6 +11,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -26,7 +27,7 @@ const uint64_t SKIPLIST_INVALID_POS = static_cast<uint64_t>(-1);
 class SkipList {
  public:
   using PSE = std::unique_ptr<ZSlEleValue>;
-  using PSE_MAP = std::map<uint64_t, SkipList::PSE>;
+  using PSE_MAP = std::unordered_map<uint64_t, SkipList::PSE>;
   SkipList(uint32_t chunkId,
            uint32_t dbId,
            const std::string& pk,
