@@ -6,9 +6,7 @@
 #include <iostream>
 #include <set>
 #include <string>
-#include <vector>
 
-#include "tendisplus/commands/command.h"
 #include "tendisplus/commands/release.h"
 #include "tendisplus/commands/version.h"
 #include "tendisplus/storage/kvstore.h"
@@ -16,6 +14,7 @@
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/utils/base64.h"
 #include "tendisplus/utils/param_manager.h"
+#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
 
@@ -52,6 +51,8 @@ class BinlogScanner {
         _matchKeySet.insert(key);
       }
     }
+    _max_key_size = pm.getUint64("max-key-size", _max_key_size);
+    _max_value_size = pm.getUint64("max-value-size", _max_value_size);
     std::string detail = pm.getString("detail", "");
     if (detail == "true") {
       _detail = true;
@@ -90,12 +91,11 @@ class BinlogScanner {
 
     if (logValue.value().getChunkId() == Transaction::CHUNKID_FLUSH) {
       std::cout << binlogInfo.str();
-      std::cout << "  op:" << "FLUSH" << " cmd:" << logValue.value().getCmd()
-                << std::endl;
+      std::cout << "  op:FLUSH cmd:" << logValue.value().getCmd() << std::endl;
       return "";
     } else if (logValue.value().getChunkId() == Transaction::CHUNKID_MIGRATE) {
       std::cout << binlogInfo.str();
-      std::cout << "  op:" << "MIGRATE" << " cmd:" << logValue.value().getCmd()
+      std::cout << "  op:MIGRATE cmd:" << logValue.value().getCmd()
                 << std::endl;
       return "";
     }
@@ -231,6 +231,9 @@ class BinlogScanner {
       }
       buff[sizeof(uint32_t)] = '\0';
       keylen = int32Decode(buff);
+      if (keylen > _max_key_size)
+        return {ErrorCodes::ERR_INTERNAL,
+                "key size exceeds limit. key size: " + std::to_string(keylen)};
 
       // key
       std::string key;
@@ -250,6 +253,10 @@ class BinlogScanner {
       }
       buff[sizeof(uint32_t)] = '\0';
       valuelen = int32Decode(buff);
+      if (valuelen > _max_value_size)
+        return {ErrorCodes::ERR_INTERNAL,
+                "value size exceeds limit. value size: " +
+                  std::to_string(valuelen)};
 
       // value
       std::string value;
@@ -303,6 +310,9 @@ class BinlogScanner {
   uint64_t _lastbinlogid = UINT64_MAX;
   uint64_t _firstbinlogtime = UINT64_MAX;
   uint64_t _lastbinlogtime = UINT64_MAX;
+
+  uint64_t _max_key_size = 512 * 1024 * 1024;
+  uint64_t _max_value_size = 512 * 1024 * 1024;
 };
 
 }  // namespace tendisplus
@@ -313,6 +323,7 @@ void usage() {
             << " --start-position=333333 --end-position=55555"
             << " [--match-key=testKey --match-filed=testFiled]"
             << " [--match-key-list=testKey1,testKey2...]"
+            << " [--max-key-size=536870912 --max-value-size=536870912]"
             << " [--detail=true/false]" << std::endl;
 }
 
