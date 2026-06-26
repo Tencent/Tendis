@@ -12,70 +12,94 @@
 #include <climits>
 #include <cmath>
 #include <cstdarg>
+#include <cstdio>
 #include <cstring>
 #include <sstream>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
 
 namespace redis_port {
 
-int stringmatchlen(const char* pattern,
-                   int patternLen,
-                   const char* string,
-                   int stringLen,
-                   int nocase) {
-  while (patternLen) {
+static int stringmatchlen_impl(const char* pattern,
+                               int patternLen,
+                               const char* string,
+                               int stringLen,
+                               int nocase,
+                               int* skipLongerMatches,
+                               int nesting) {
+  /* Protection against abusive patterns. */
+  if (nesting > 1000)
+    return 0;
+
+  while (patternLen && stringLen) {
     switch (pattern[0]) {
       case '*':
-        while (pattern[1] == '*') {
+        while (patternLen && pattern[1] == '*') {
           pattern++;
           patternLen--;
         }
         if (patternLen == 1)
           return 1; /* match */
         while (stringLen) {
-          if (stringmatchlen(
-                pattern + 1, patternLen - 1, string, stringLen, nocase))
+          if (stringmatchlen_impl(pattern + 1,
+                                  patternLen - 1,
+                                  string,
+                                  stringLen,
+                                  nocase,
+                                  skipLongerMatches,
+                                  nesting + 1))
             return 1; /* match */
+          if (*skipLongerMatches)
+            return 0; /* no match */
           string++;
           stringLen--;
         }
+        /* There was no match for the rest of the pattern starting
+         * from anywhere in the rest of the string. If there were
+         * any '*' earlier in the pattern, we can terminate the
+         * search early without trying to match them to longer
+         * substrings. This is because a longer match for the
+         * earlier part of the pattern would require the rest of the
+         * pattern to match starting later in the string, and we
+         * have just determined that there is no match for the rest
+         * of the pattern starting from anywhere in the current
+         * string. */
+        *skipLongerMatches = 1;
         return 0; /* no match */
         break;
       case '?':
-        if (stringLen == 0)
-          return 0; /* no match */
         string++;
         stringLen--;
         break;
       case '[': {
-        int cnot, match;
+        int no, match;
 
         pattern++;
         patternLen--;
-        cnot = pattern[0] == '^';
-        if (cnot) {
+        no = patternLen && pattern[0] == '^';
+        if (no) {
           pattern++;
           patternLen--;
         }
         match = 0;
         while (1) {
-          if (pattern[0] == '\\') {
+          if (patternLen >= 2 && pattern[0] == '\\') {
             pattern++;
             patternLen--;
             if (pattern[0] == string[0])
               match = 1;
-          } else if (pattern[0] == ']') {
-            break;
           } else if (patternLen == 0) {
             pattern--;
             patternLen++;
             break;
-          } else if (pattern[1] == '-' && patternLen >= 3) {
+          } else if (pattern[0] == ']') {
+            break;
+          } else if (patternLen >= 3 && pattern[1] == '-') {
             int start = pattern[0];
             int end = pattern[2];
             int c = string[0];
@@ -106,7 +130,7 @@ int stringmatchlen(const char* pattern,
           pattern++;
           patternLen--;
         }
-        if (cnot)
+        if (no)
           match = !match;
         if (!match)
           return 0; /* no match */
@@ -136,7 +160,7 @@ int stringmatchlen(const char* pattern,
     pattern++;
     patternLen--;
     if (stringLen == 0) {
-      while (*pattern == '*') {
+      while (patternLen && *pattern == '*') {
         pattern++;
         patternLen--;
       }
@@ -146,6 +170,16 @@ int stringmatchlen(const char* pattern,
   if (patternLen == 0 && stringLen == 0)
     return 1;
   return 0;
+}
+
+int stringmatchlen(const char* pattern,
+                   int patternLen,
+                   const char* string,
+                   int stringLen,
+                   int nocase) {
+  int skipLongerMatches = 0;
+  return stringmatchlen_impl(
+    pattern, patternLen, string, stringLen, nocase, &skipLongerMatches, 0);
 }
 
 int64_t bitPos(const void* s, size_t count, uint32_t bit) {
@@ -438,7 +472,7 @@ int string2ll(const char* s,
     return 0;
 
   if (negative) {
-    if (v > ((uint64_t)(-(LLONG_MIN + 1)) + 1))
+    if (v > (static_cast<uint64_t>(-(LLONG_MIN + 1)) + 1))
       return 0;
     if (value != NULL)
       *value = -v;
@@ -1694,7 +1728,7 @@ void getRandomBytes(unsigned char* p, size_t len) {
         struct timeval tv;
         gettimeofday(&tv, NULL);
         pid_t pid = getpid();
-        seed[j] = tv.tv_sec ^ tv.tv_usec ^ pid ^ (int64_t)fp;
+        seed[j] = tv.tv_sec ^ tv.tv_usec ^ pid ^ reinterpret_cast<int64_t>(fp);
       }
     } else {
       seed_initialized = 1;
