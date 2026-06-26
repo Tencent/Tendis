@@ -9,7 +9,7 @@ on:
 jobs:
   cpplint-check:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
         with:
@@ -91,7 +91,7 @@ jobs:
   test-unittest-sh:
     needs: [cpplint-check]
     name: Test-unittest.sh
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
         TEST_DIR: build/bin
     steps:
@@ -116,7 +116,7 @@ jobs:
   test-redistest-sh:
     needs: [cpplint-check]
     name: Test-redistest.sh
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
         TEST_DIR: build/bin
     steps:
@@ -141,7 +141,7 @@ jobs:
   test-restore_test:
     needs: [cpplint-check]
     name: Test-restore_test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
         TEST_DIR: build/bin
     steps:
@@ -156,7 +156,7 @@ jobs:
   test-repl_test:
     needs: [cpplint-check]
     name: Test-repl_test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
         TEST_DIR: build/bin
     steps:
@@ -171,7 +171,7 @@ jobs:
   test-cluster_test-part1:
     needs: [cpplint-check]
     name: Test-cluster_test-part1
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
         TEST_DIR: build/bin
     steps:
@@ -186,7 +186,7 @@ jobs:
   test-cluster_test-part2:
     needs: [cpplint-check]
     name: Test-cluster_test-part2
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
         TEST_DIR: build/bin
     steps:
@@ -201,7 +201,7 @@ jobs:
   test-gotest-normaltest-part1:
     needs: [cpplint-check]
     name: Test-gotest-normaltest-part1
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
         TEST_DIR: build/bin
     steps:
@@ -218,7 +218,7 @@ jobs:
   test-gotest-normaltest-part2:
     needs: [cpplint-check]
     name: Test-gotest-normaltest-part2
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
         TEST_DIR: build/bin
     steps:
@@ -235,7 +235,7 @@ jobs:
   test-gotest-normaltest-part3:
     needs: [cpplint-check]
     name: Test-gotest-normaltest-part3
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
         TEST_DIR: build/bin
     steps:
@@ -252,7 +252,7 @@ jobs:
   test-gotest-versiontest:
     needs: [cpplint-check]
     name: Test-gotest-versiontest
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
         GH_TOKEN: ${{ github.token }}
         TEST_DIR: build/bin

@@ -82,6 +82,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
          git am -s ../../patch/0001-add-statistic-for-sst-file-info.patch\;
          git am -s ../../patch/0002-add-latency-statistic-log.patch\;
          git am -s ../../patch/0003-better-control-of-blobldb-space-amp.patch\;
+         git am -s ../../patch/0004-reclaim-blob-files-after-deleting-all-ssts.patch\;
          ")
     execute_process(COMMAND bash "-c" ${patchCommand})
 endif()

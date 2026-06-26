@@ -1,0 +1,42 @@
+From a7137cb8b9bdc53abd14943d467f1410078c9abd Mon Sep 17 00:00:00 2001
+From: takenliu <takenliu@tencent.com>
+Date: Thu, 28 May 2026 15:36:00 +0800
+Subject: [PATCH] Fix blob files not reclaimed after deleting all SSTs add
+ tendis_extension.cc in src.mk
+
+---
+ db/version_builder.cc | 6 ++++++
+ src.mk                | 1 +
+ 2 files changed, 7 insertions(+)
+
+diff --git a/db/version_builder.cc b/db/version_builder.cc
+index 210b0de86..9a72307d3 100644
+--- a/db/version_builder.cc
++++ b/db/version_builder.cc
+@@ -1073,6 +1073,12 @@ class VersionBuilder::Rep {
+     const uint64_t oldest_blob_file_with_linked_ssts =
+         GetMinOldestBlobFileNumber();
+ 
++    // If there are no blob files with linked SSTs, meaning that there are no
++    // valid blob files
++    if (oldest_blob_file_with_linked_ssts == kInvalidBlobFileNumber) {
++      return;
++    }
++
+     auto process_base =
+         [vstorage](const std::shared_ptr<BlobFileMetaData>& base_meta) {
+           assert(base_meta);
+diff --git a/src.mk b/src.mk
+index 7d2663b99..5b9890a49 100644
+--- a/src.mk
++++ b/src.mk
+@@ -1,5 +1,6 @@
+ # These are the sources from which librocksdb.a is built:
+ LIB_SOURCES =                                                   \
++  env/tendis_extension.cc                                       \
+   cache/cache.cc                                                \
+   cache/cache_entry_roles.cc                                    \
+   cache/cache_key.cc                                            \
+-- 
+2.41.3
+
