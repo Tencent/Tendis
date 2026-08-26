@@ -6,6 +6,7 @@
 #include <cctype>
 #include <clocale>
 #include <list>
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -963,7 +964,7 @@ Status hmcas(Session* sess,
 
   auto server = sess->getServerEntry();
   auto expdb =
-    server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
+    server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
   if (!expdb.ok()) {
     return expdb.status();
   }
@@ -1001,7 +1002,7 @@ Status hmcas(Session* sess,
 
   if (cmp) {
     // kv should exist for comparison
-    if (eValue.ok() && (int64_t)vsn != cas && cas != -1) {
+    if (eValue.ok() && static_cast<int64_t>(vsn) != cas && cas != -1) {
       return {ErrorCodes::ERR_CAS, ""};
     }
   }

@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <list>
 #include <string>
+#include <tuple>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -296,6 +298,15 @@ bool SessionCtx::isLockedByMe(const std::string& key, mgl::LockMode mode) {
     return true;
   }
   return false;
+}
+
+mgl::LockMode SessionCtx::getKeyLockMode(const std::string& key) const {
+  std::lock_guard<std::mutex> lk(_mutex);
+  auto it = _keylockmap.find(key);
+  if (it == _keylockmap.end()) {
+    return mgl::LockMode::LOCK_NONE;
+  }
+  return it->second;
 }
 
 bool SessionCtx::verifyVersion(uint64_t keyVersion) {

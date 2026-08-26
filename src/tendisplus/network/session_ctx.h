@@ -110,6 +110,7 @@ class SessionCtx {
   void unsetKeylock(const std::string& key);
 
   bool isLockedByMe(const std::string& key, mgl::LockMode mode);
+  mgl::LockMode getKeyLockMode(const std::string& key) const;
 
   uint32_t getIsMonitor() const;
   void setIsMonitor(bool in);
