@@ -3034,8 +3034,14 @@ void testExpireKeyWhenCompaction(std::shared_ptr<ServerEntry> svr) {
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
-  sess.setArgs({"config", "set", "noexpire", "yes"});
+  // Isolate from leftover keys of testExpireKeyWhenGet (S-lock reads do not
+  // physically delete expired composite types).
+  sess.setArgs({"del", "key", "myhash", "myset", "myzset", "mylist"});
   auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"config", "set", "noexpire", "yes"});
+  expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
   EXPECT_EQ(expect.value(), Command::fmtOK());
 

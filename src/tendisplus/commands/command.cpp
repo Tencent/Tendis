@@ -25,7 +25,7 @@
 namespace tendisplus {
 
 std::mutex Command::_mutex;
-mgl::LockMode Command::_expRdLk = mgl::LockMode::LOCK_X;
+mgl::LockMode Command::_expRdLk = mgl::LockMode::LOCK_S;
 
 std::map<std::string, uint64_t> Command::_unSeenCmds = {};
 
@@ -946,18 +946,18 @@ Status Command::delKey(Session* sess,
   return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
-// NOTE(takenliu) txn is committed in this function.
-Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
-                                                 const std::string& key,
-                                                 RecordType tp,
-                                                 bool hasVersion) {
+// Key lock must already be held (or ignored). If allowDelete is false, an
+// expired key is reported as ERR_EXPIRED without removing it.
+Expected<RecordValue> Command::expireKeyIfNeededOnStore(Session* sess,
+                                                        uint32_t storeId,
+                                                        uint32_t chunkId,
+                                                        PStore kvstore,
+                                                        const std::string& key,
+                                                        RecordType tp,
+                                                        bool hasVersion,
+                                                        bool allowDelete) {
   auto server = sess->getServerEntry();
   INVARIANT(server != nullptr);
-  auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, RdLock());
-  if (!expdb.ok()) {
-    return expdb.status();
-  }
-  uint32_t storeId = expdb.value().dbId;
 
   // NOTE(wayenchen) change session args to store a del command in session
   LocalSessionGuard sg(server, sess);
@@ -965,14 +965,13 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
     sg.getSession()->setArgs({"del", key});
   }
 
-  RecordKey mk(expdb.value().chunkId, sess->getCtx()->getDbId(), tp, key, "");
-  PStore kvstore = expdb.value().store;
+  RecordKey mk(chunkId, sess->getCtx()->getDbId(), tp, key, "");
 
   // NOTE(takenliu) we need setReplOnly
   sg.getSession()->getCtx()->setReplOnly(kvstore->getMode() ==
                                          KVStore::StoreMode::REPLICATE_ONLY);
 
-  for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+  for (uint32_t i = 0; i < Command::RETRY_CNT; ++i) {
     // NOTE(takenliu) expireKeyIfNeeded don't use txn from params,
     //   because it need rewrite codes too much.
     //   so, we need new txn and commit txn in this function,
@@ -1013,9 +1012,11 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
       }
       ++sess->getServerEntry()->getServerStat().keyspaceHits;
       return eValue.value();
-    } else if (txn->isReplOnly()) {
+    } else if (txn->isReplOnly() || !allowDelete) {
       // NOTE(vinchen): if replOnly, it can't delete record, but return
       // ErrorCodes::ERR_EXPIRED
+      // Holding LOCK_S cannot upgrade to X; leave deletion to writers /
+      // IndexManager.
       return {ErrorCodes::ERR_EXPIRED, ""};
     }
     auto cnt = rcd_util::getSubKeyCount(mk, eValue.value());
@@ -1049,6 +1050,73 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
   // should never reach here
   INVARIANT_D(0);
   return {ErrorCodes::ERR_INTERNAL, "not reachable"};
+}
+
+// NOTE(takenliu) txn is committed in this function.
+Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
+                                                 const std::string& key,
+                                                 RecordType tp,
+                                                 bool hasVersion) {
+  auto server = sess->getServerEntry();
+  INVARIANT(server != nullptr);
+  auto held = sess->getCtx()->getKeyLockMode(key);
+
+  // Already locked by the caller: never upgrade. S/IS => check only; X =>
+  // delete if expired.
+  if (held != mgl::LockMode::LOCK_NONE) {
+    auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, key);
+    if (!expdb.ok()) {
+      return expdb.status();
+    }
+    bool allowDelete = (held == mgl::LockMode::LOCK_X);
+    return expireKeyIfNeededOnStore(sess,
+                                    expdb.value().dbId,
+                                    expdb.value().chunkId,
+                                    expdb.value().store,
+                                    key,
+                                    tp,
+                                    hasVersion,
+                                    allowDelete);
+  }
+
+  // No key lock yet: probe with S so unexpired reads can run concurrently.
+  {
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
+      sess, key, mgl::LockMode::LOCK_S);
+    if (!expdb.ok()) {
+      return expdb.status();
+    }
+    auto result = expireKeyIfNeededOnStore(sess,
+                                           expdb.value().dbId,
+                                           expdb.value().chunkId,
+                                           expdb.value().store,
+                                           key,
+                                           tp,
+                                           hasVersion,
+                                           false);
+    if (result.ok() || result.status().code() != ErrorCodes::ERR_EXPIRED) {
+      return result;
+    }
+    if (expdb.value().store->getMode() == KVStore::StoreMode::REPLICATE_ONLY ||
+        server->getParams()->noexpire) {
+      return result;
+    }
+  }
+
+  // Expired under S. Drop S (scope above), take X, re-check, then delete.
+  auto expdb =
+    server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+  if (!expdb.ok()) {
+    return expdb.status();
+  }
+  return expireKeyIfNeededOnStore(sess,
+                                  expdb.value().dbId,
+                                  expdb.value().chunkId,
+                                  expdb.value().store,
+                                  key,
+                                  tp,
+                                  hasVersion,
+                                  true);
 }
 
 std::string Command::fmtErr(const std::string& s) {

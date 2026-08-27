@@ -1,12 +1,11 @@
 name: Tendis-build-CI
-# Controls when the action will run.
+# Only run on PRs targeting Tencent/Tendis. Do not run on push to persnal forks
 on:
   pull_request:
     branches: [unstable, master, 2.8.tx]
-  push:
-    branches: []
 jobs:
   cpplint-check:
+    if: github.event.pull_request.base.repo.full_name == 'Tencent/Tendis'
     name: Lint
     runs-on: ubuntu-22.04
     steps:
@@ -16,13 +15,14 @@ jobs:
       - name: Prepare Env
         run: |
           python3 -m pip install --upgrade pip
-          pip3 install cpplint
-          export PATH=$PATH:~/.local/bin/
+          pip3 install cpplint==2.0.2
+          pip3 install clang-format==17.0.6
+          export PATH=~/.local/bin:$PATH
           cpplint --version
           clang-format --version
       - name: Lint
         run: |
-          export PATH=$PATH:~/.local/bin/
+          export PATH=~/.local/bin:$PATH
           files=`git diff --name-only HEAD HEAD~1`
           echo "$files" | while read file
           do
@@ -44,7 +44,8 @@ jobs:
           done
       - name: format
         run: |
-          export PATH=$PATH:~/.local/bin/
+          export PATH=~/.local/bin:$PATH
+          clang-format --version
           files=`git diff --name-only HEAD HEAD~1`
           echo "$files" | while read file
           do

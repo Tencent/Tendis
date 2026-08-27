@@ -65,6 +65,8 @@ class Command {
   bool isMultiKey() const;
   bool isWriteable() const;
   bool isAdmin() const;
+  // Shared lock for read commands. Expired keys are not deleted while S is
+  // held; writers / IndexManager take X and delete.
   static mgl::LockMode RdLock();
   static void changeCommand(const std::string& renameCmdList, std::string mode);
   int getFlags() const;
@@ -150,6 +152,15 @@ class Command {
   static mgl::LockMode _expRdLk;
 
  private:
+  static Expected<RecordValue> expireKeyIfNeededOnStore(Session* sess,
+                                                        uint32_t storeId,
+                                                        uint32_t chunkId,
+                                                        PStore kvstore,
+                                                        const std::string& key,
+                                                        RecordType tp,
+                                                        bool hasVersion,
+                                                        bool allowDelete);
+
   static Status delKeyPessimisticInLock(Session* sess,
                                         uint32_t storeId,
                                         const RecordKey& rk,
