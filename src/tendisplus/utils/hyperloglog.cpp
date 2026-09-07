@@ -368,14 +368,14 @@ uint64_t MurmurHash64A(const void* key, int len, unsigned int seed) {
 #endif
 #else
     static_assert(0, "not LITTLE_ENDIAN");
-    k = (uint64_t)data[0];
-    k |= (uint64_t)data[1] << 8;
-    k |= (uint64_t)data[2] << 16;
-    k |= (uint64_t)data[3] << 24;
-    k |= (uint64_t)data[4] << 32;
-    k |= (uint64_t)data[5] << 40;
-    k |= (uint64_t)data[6] << 48;
-    k |= (uint64_t)data[7] << 56;
+    k = (uint64_t)data[0];         // NOLINT
+    k |= (uint64_t)data[1] << 8;   // NOLINT
+    k |= (uint64_t)data[2] << 16;  // NOLINT
+    k |= (uint64_t)data[3] << 24;  // NOLINT
+    k |= (uint64_t)data[4] << 32;  // NOLINT
+    k |= (uint64_t)data[5] << 40;  // NOLINT
+    k |= (uint64_t)data[6] << 48;  // NOLINT
+    k |= (uint64_t)data[7] << 56;  // NOLINT
 #endif
 
     k *= m;
@@ -388,19 +388,19 @@ uint64_t MurmurHash64A(const void* key, int len, unsigned int seed) {
 
   switch (len & 7) {
     case 7:
-      h ^= (uint64_t)data[6] << 48;
+      h ^= (uint64_t)data[6] << 48;  // NOLINT
     case 6:
-      h ^= (uint64_t)data[5] << 40;
+      h ^= (uint64_t)data[5] << 40;  // NOLINT
     case 5:
-      h ^= (uint64_t)data[4] << 32;
+      h ^= (uint64_t)data[4] << 32;  // NOLINT
     case 4:
-      h ^= (uint64_t)data[3] << 24;
+      h ^= (uint64_t)data[3] << 24;  // NOLINT
     case 3:
-      h ^= (uint64_t)data[2] << 16;
+      h ^= (uint64_t)data[2] << 16;  // NOLINT
     case 2:
-      h ^= (uint64_t)data[1] << 8;
+      h ^= (uint64_t)data[1] << 8;  // NOLINT
     case 1:
-      h ^= (uint64_t)data[0];
+      h ^= (uint64_t)data[0];  // NOLINT
       h *= m;
   }
 
@@ -429,9 +429,9 @@ int hllPatLen(unsigned char* ele, size_t elesize, int64_t* regp) {
    * This may sound like inefficient, but actually in the average case
    * there are high probabilities to find a 1 after a few iterations. */
   hash = MurmurHash64A(ele, elesize, 0xadc83b19ULL);
-  index = hash & HLL_P_MASK;   /* Register index. */
-  hash |= ((uint64_t)1 << 63); /* Make sure the loop terminates. */
-  bit = HLL_REGISTERS;         /* First bit not used to address the register. */
+  index = hash & HLL_P_MASK;    /* Register index. */
+  hash |= ((uint64_t)1 << 63);  // NOLINT /* Make sure the loop terminates. */
+  bit = HLL_REGISTERS; /* First bit not used to address the register. */
   count = 1; /* Initialized to 1 since we count the "00000...1" pattern. */
   while ((hash & bit) == 0) {
     count++;
@@ -587,6 +587,7 @@ int hllSparseToDense(struct hllhdr* oldhdr,
   // struct hllhdr *oldhdr = (struct hllhdr*)sparse;
   int idx = 0, runlen, regval;
   uint8_t *p = reinterpret_cast<uint8_t*>(sparse), *end = p + oldSize;
+  int valid = 1;
 
   /* If the representation is already the right one return ASAP. */
   // hdr = (struct hllhdr*) sparse;
@@ -609,15 +610,27 @@ int hllSparseToDense(struct hllhdr* oldhdr,
   while (p < end) {
     if (HLL_SPARSE_IS_ZERO(p)) {
       runlen = HLL_SPARSE_ZERO_LEN(p);
+      if (runlen + idx > HLL_REGISTERS) { /* Overflow. */
+        valid = 0;
+        break;
+      }
       idx += runlen;
       p++;
     } else if (HLL_SPARSE_IS_XZERO(p)) {
       runlen = HLL_SPARSE_XZERO_LEN(p);
+      if (runlen + idx > HLL_REGISTERS) { /* Overflow. */
+        valid = 0;
+        break;
+      }
       idx += runlen;
       p += 2;
     } else {
       runlen = HLL_SPARSE_VAL_LEN(p);
       regval = HLL_SPARSE_VAL_VALUE(p);
+      if (runlen + idx > HLL_REGISTERS) { /* Overflow. */
+        valid = 0;
+        break;
+      }
       while (runlen--) {
         HLL_DENSE_SET_REGISTER(hdr->registers, idx, regval);
         idx++;
@@ -628,7 +641,7 @@ int hllSparseToDense(struct hllhdr* oldhdr,
 
   /* If the sparse representation was valid, we expect to find idx
    * set to HLL_REGISTERS. */
-  if (idx != HLL_REGISTERS) {
+  if (!valid || idx != HLL_REGISTERS) {
     return C_ERR;
   }
   *hdrSize = HLL_DENSE_SIZE;
@@ -952,17 +965,26 @@ double hllSparseSum(
   uint8_t* sparse, int sparselen, double* PE, int* ezp, int* invalid) {
   double E = 0;
   int ez = 0, idx = 0, runlen, regval;
+  int valid = 1;
   uint8_t *end = sparse + sparselen, *p = sparse;
 
   while (p < end) {
     if (HLL_SPARSE_IS_ZERO(p)) {
       runlen = HLL_SPARSE_ZERO_LEN(p);
+      if (runlen + idx > HLL_REGISTERS) { /* Overflow. */
+        valid = 0;
+        break;
+      }
       idx += runlen;
       ez += runlen;
       /* Increment E at the end of the loop. */
       p++;
     } else if (HLL_SPARSE_IS_XZERO(p)) {
       runlen = HLL_SPARSE_XZERO_LEN(p);
+      if (runlen + idx > HLL_REGISTERS) { /* Overflow. */
+        valid = 0;
+        break;
+      }
       idx += runlen;
       ez += runlen;
       /* Increment E at the end of the loop. */
@@ -970,12 +992,16 @@ double hllSparseSum(
     } else {
       runlen = HLL_SPARSE_VAL_LEN(p);
       regval = HLL_SPARSE_VAL_VALUE(p);
+      if (runlen + idx > HLL_REGISTERS) { /* Overflow. */
+        valid = 0;
+        break;
+      }
       idx += runlen;
       E += PE[regval] * runlen;
       p++;
     }
   }
-  if (idx != HLL_REGISTERS && invalid)
+  if ((!valid || idx != HLL_REGISTERS) && invalid)
     *invalid = 1;
   E += ez; /* Add 2^0 'ez' times. */
   *ezp = ez;
@@ -1098,7 +1124,7 @@ uint64_t hllCount(struct hllhdr* hdr, size_t hdrSize, int* invalid) {
     0.00042419 * pow(zl, 7);
 
   E = llroundl(alpha * m * (m - ez) * (1 / (E + beta)));
-  return (uint64_t)E;
+  return (uint64_t)E;  // NOLINT
 }
 
 /* Call hllDenseAdd() or hllSparseAdd() according to the HLL encoding. */
@@ -1139,21 +1165,34 @@ int hllMerge(uint8_t* max, struct hllhdr* hdr, size_t hdrSize) {
   } else {
     uint8_t *p = reinterpret_cast<uint8_t*>(hdr), *end = p + hdrSize;
     int64_t runlen, regval;
+    int valid = 1;
 
     p += HLL_HDR_SIZE;
     i = 0;
     while (p < end) {
       if (HLL_SPARSE_IS_ZERO(p)) {
         runlen = HLL_SPARSE_ZERO_LEN(p);
+        if (runlen + i > HLL_REGISTERS) { /* Overflow. */
+          valid = 0;
+          break;
+        }
         i += runlen;
         p++;
       } else if (HLL_SPARSE_IS_XZERO(p)) {
         runlen = HLL_SPARSE_XZERO_LEN(p);
+        if (runlen + i > HLL_REGISTERS) { /* Overflow. */
+          valid = 0;
+          break;
+        }
         i += runlen;
         p += 2;
       } else {
         runlen = HLL_SPARSE_VAL_LEN(p);
         regval = HLL_SPARSE_VAL_VALUE(p);
+        if (runlen + i > HLL_REGISTERS) { /* Overflow. */
+          valid = 0;
+          break;
+        }
         while (runlen--) {
           if (regval > max[i])
             max[i] = regval;
@@ -1162,7 +1201,7 @@ int hllMerge(uint8_t* max, struct hllhdr* hdr, size_t hdrSize) {
         p++;
       }
     }
-    if (i != HLL_REGISTERS)
+    if (!valid || i != HLL_REGISTERS)
       return C_ERR;
   }
   return C_OK;
@@ -1245,14 +1284,14 @@ uint64_t hllCountFast(struct hllhdr* hdr, size_t hdrSize, int* invalid) {
   uint64_t card;
   if (HLL_VALID_CACHE(hdr)) {
     /* Just return the cached value. */
-    card = (uint64_t)hdr->card[0];
-    card |= (uint64_t)hdr->card[1] << 8;
-    card |= (uint64_t)hdr->card[2] << 16;
-    card |= (uint64_t)hdr->card[3] << 24;
-    card |= (uint64_t)hdr->card[4] << 32;
-    card |= (uint64_t)hdr->card[5] << 40;
-    card |= (uint64_t)hdr->card[6] << 48;
-    card |= (uint64_t)hdr->card[7] << 56;
+    card = (uint64_t)hdr->card[0];         // NOLINT
+    card |= (uint64_t)hdr->card[1] << 8;   // NOLINT
+    card |= (uint64_t)hdr->card[2] << 16;  // NOLINT
+    card |= (uint64_t)hdr->card[3] << 24;  // NOLINT
+    card |= (uint64_t)hdr->card[4] << 32;  // NOLINT
+    card |= (uint64_t)hdr->card[5] << 40;  // NOLINT
+    card |= (uint64_t)hdr->card[6] << 48;  // NOLINT
+    card |= (uint64_t)hdr->card[7] << 56;  // NOLINT
   } else {
     /* Recompute it and update the cached value. */
     card = hllCount(hdr, hdrSize, invalid);
