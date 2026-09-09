@@ -24,5 +24,13 @@ runs:
         mkdir build && cd build
         git config --global user.email "you@example.com"
         git config --global user.name "yourname"
-        cmake -DTENDIS_DEBUG=ON ..
+        SANITIZER="${SANITIZER:-none}"
+        CMAKE_EXTRA=""
+        if [ "$SANITIZER" = "asan" ]; then
+          CMAKE_EXTRA="-DWITH_ASAN=ON"
+        elif [ "$SANITIZER" = "tsan" ]; then
+          CMAKE_EXTRA="-DWITH_TSAN=ON"
+        fi
+        echo "cmake -DTENDIS_DEBUG=ON ${CMAKE_EXTRA} .."
+        cmake -DTENDIS_DEBUG=ON ${CMAKE_EXTRA} ..
         cmake --build . -j20
