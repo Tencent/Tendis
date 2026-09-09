@@ -29,8 +29,6 @@ echo testcontent: $testcontent
 logfile=${testcontent}.log
 tmplog=./${testcontent}_tmp.log
 
-rm -f $logfile
-
 export GO111MODULE=on
 export GOPATH=`pwd`/gopath
 
@@ -98,6 +96,7 @@ function checkPassed(){
 
 testNum=0
 if [[ $testcontent == "all" || "${testcontent}" == "versiontest" ]]; then
+    rm -f $logfile
     testNum=1
     rm -rf versiontest
     go build versiontest.go common.go common_cluster.go
@@ -113,6 +112,7 @@ if [[ $testcontent == "all" || "${testcontent}" == "normaltest" || "${testconten
     go build restore.go common.go
     go build restoretest.go common.go
     go build clustertest.go common.go common_cluster.go
+    rm -f $logfile
     testNum=6
 
     runOne ./adminHeartbeat
@@ -130,6 +130,7 @@ fi
 
 if [[ $testcontent == "all" || "${testcontent}" == "normaltest" || "${testcontent}" == "normaltest-part2" ]]; then
     rm -rf clustertestRestore clustertestFailover dts/dts
+    rm -f $logfile
     testNum=3
     go build clustertestRestore.go common.go common_cluster.go
     go build clustertestFailover.go common.go common_cluster.go
@@ -142,6 +143,7 @@ fi
 
 if [[ $testcontent == "all" || "${testcontent}" == "normaltest" || "${testcontent}" == "normaltest-part3" ]]; then
     rm -rf dts/dts_sync deletefilesinrange memorylimit pubsubtest
+    rm -f $logfile
     testNum=4
     go build -o dts/dts_sync dts/dts_sync.go dts/dts_common.go
     go build deletefilesinrange.go common.go common_cluster.go
