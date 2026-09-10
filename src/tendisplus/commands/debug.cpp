@@ -2996,8 +2996,8 @@ class ObjectCommand : public Command {
         {RecordType::RT_ZSET_META, "skiplist"},
       };
 
-      Expected<RecordValue> rv =
-        Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
+      Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+        sess, key, RecordType::RT_DATA_META, Command::RdLock());
       if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
           rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
         return Command::fmtNull();

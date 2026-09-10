@@ -14,12 +14,9 @@
 
 #include "tendisplus/commands/command.h"
 #include "tendisplus/network/network.h"
-#include "tendisplus/server/index_manager.h"
-#include "tendisplus/server/segment_manager.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/test_util.h"
 
 namespace tendisplus {
@@ -537,10 +534,17 @@ INSTANTIATE_TEST_CASE_P(BinlogDisabledTest,
                         MasterBinlogDisabledTest,
                         testing::Bool());
 
+// Original test: concurrentRead=false (LOCK_X path).
+// Master GET triggers synchronous delete → produces del binlog.
 void testSlaveDontDeleteExpiredKey(std::shared_ptr<NetSession> sessionMaster,
                                    std::shared_ptr<NetSession> sessionSlave) {
-  sessionMaster->setArgs({"setex", "a", "2", "3"});
+  // Disable concurrentRead so GET uses LOCK_X (original behavior)
+  sessionMaster->setArgs({"config", "set", "concurrentRead", "false"});
   auto expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_TRUE(expect.ok());
+
+  sessionMaster->setArgs({"setex", "a", "2", "3"});
+  expect = Command::runSessionCmd(sessionMaster.get());
   EXPECT_TRUE(expect.ok());
   sessionMaster->setArgs({"binlogpos", "5"});
   expect = Command::runSessionCmd(sessionMaster.get());
@@ -579,6 +583,173 @@ void testSlaveDontDeleteExpiredKey(std::shared_ptr<NetSession> sessionMaster,
   sessionSlave->setArgs({"binlogpos", "5"});
   expect = Command::runSessionCmd(sessionSlave.get());
   EXPECT_EQ(expect.value(), ":3\r\n");
+
+  // Restore concurrentRead to default
+  sessionMaster->setArgs({"config", "set", "concurrentRead", "true"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_TRUE(expect.ok());
+}
+
+// New test: concurrentRead=true (LOCK_S path).
+// Only complex types (Hash/Set/ZSet/List) create TTLIndex, so IndexManager can
+// only delete these types via TTLIndex scanning.
+void testSlaveDontDeleteExpiredKeyConcurrentRead(
+  std::shared_ptr<NetSession> sessionMaster,
+  std::shared_ptr<NetSession> sessionSlave) {
+  // Ensure concurrentRead is enabled
+  sessionMaster->setArgs({"config", "set", "concurrentRead", "true"});
+  auto expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_TRUE(expect.ok());
+
+  // Disable IndexManager's background scan to have deterministic control
+  sessionMaster->setArgs({"config", "set", "noexpire", "yes"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_TRUE(expect.ok());
+
+  // Verify GET does NOT produce del binlog (String key) --
+  sessionMaster->setArgs({"setex", "a", "2", "3"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_TRUE(expect.ok());
+
+  // Record binlogpos after setex (before any expire-related operations)
+  sessionMaster->setArgs({"binlogpos", "5"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_TRUE(expect.ok());
+  std::string binlogposAfterSetex = expect.value();
+
+  sleep(4);  // Wait for key to expire (logically)
+
+  // Temporarily enable expire check for GET test only
+  sessionMaster->setArgs({"config", "set", "noexpire", "no"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_TRUE(expect.ok());
+
+  // Master: GET expired key (LOCK_S path)
+  sessionMaster->setArgs({"get", "a"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  // LOCK_S path: expireKeyIfNeeded checks TTL -> expired -> returns ERR_EXPIRED
+  // -> nil
+  EXPECT_EQ(expect.value(), "$-1\r\n");
+
+  // CORE ASSERTION: binlogpos must NOT change — GET with LOCK_S does not delete
+  sessionMaster->setArgs({"binlogpos", "5"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_EQ(expect.value(), binlogposAfterSetex);
+
+  // Immediately disable expire again to prevent IndexManager background scan
+  sessionMaster->setArgs({"config", "set", "noexpire", "yes"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_TRUE(expect.ok());
+
+  // Slave: same verification (slave respects master's replication, not local
+  // noexpire)
+  sessionSlave->setArgs({"binlogpos", "5"});
+  expect = Command::runSessionCmd(sessionSlave.get());
+  EXPECT_TRUE(expect.ok());
+  std::string slaveBinlogBefore = expect.value();
+
+  // For slave GET test, we need to temporarily enable expire check
+  sessionSlave->setArgs({"config", "set", "noexpire", "no"});
+  expect = Command::runSessionCmd(sessionSlave.get());
+  EXPECT_TRUE(expect.ok());
+
+  sessionSlave->setArgs({"get", "a"});
+  expect = Command::runSessionCmd(sessionSlave.get());
+  EXPECT_TRUE(expect.ok());  // nil (expired)
+
+  sessionSlave->setArgs({"binlogpos", "5"});
+  expect = Command::runSessionCmd(sessionSlave.get());
+  EXPECT_EQ(expect.value(), slaveBinlogBefore);
+
+  // Re-enable noexpire on slave
+  sessionSlave->setArgs({"config", "set", "noexpire", "yes"});
+  expect = Command::runSessionCmd(sessionSlave.get());
+  EXPECT_TRUE(expect.ok());
+
+  // Clean up String key "a" (cannot be deleted by IndexManager since no
+  // TTLIndex)
+  sessionMaster->setArgs({"config", "set", "noexpire", "no"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_TRUE(expect.ok());
+  sessionMaster->setArgs({"del", "a"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  // DEL returns :0 for expired key (expireKeyIfNeeded already deleted it),
+  // or :1 if it was just a logical expiration
+  EXPECT_TRUE(expect.ok());
+
+  // Wait for slave to sync the del
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  // Only complex types (Hash/Set/ZSet/List) have TTLIndex, so IndexManager can
+  // only find and delete them. We use Hash key "myhash" which is also in
+  // store 5.
+  sessionMaster->setArgs({"config", "set", "noexpire", "yes"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_TRUE(expect.ok());
+
+  // Create a Hash key with 2-second TTL (myhash is also in store 5)
+  sessionMaster->setArgs({"hset", "myhash", "field1", "value1"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_TRUE(expect.ok());
+  sessionMaster->setArgs({"expire", "myhash", "2"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_TRUE(expect.ok());
+
+  // Record binlogpos after creating hash key
+  sessionMaster->setArgs({"binlogpos", "5"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_TRUE(expect.ok());
+  std::string binlogposAfterHash = expect.value();
+
+  sleep(4);  // Wait for key to expire (logically)
+
+  // Verify HGET returns nil (expired)
+  sessionMaster->setArgs({"config", "set", "noexpire", "no"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_TRUE(expect.ok());
+  sessionMaster->setArgs({"hget", "myhash", "field1"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_EQ(expect.value(), "$-1\r\n");  // nil (expired)
+
+  // Verify HGET doesn't produce del binlog (LOCK_S path)
+  sessionMaster->setArgs({"binlogpos", "5"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_EQ(expect.value(), binlogposAfterHash);
+
+  // Now let IndexManager's background thread handle the deletion.
+
+  // Poll until key is deleted by IndexManager's background thread
+  bool keyDeleted = false;
+  for (int retry = 0; retry < 50; ++retry) {
+    sessionMaster->setArgs({"dbsize", "containexpire"});
+    expect = Command::runSessionCmd(sessionMaster.get());
+    if (expect.value() == ":0\r\n") {
+      keyDeleted = true;
+      break;
+    }
+    // Background run() cycles every 1s. Poll every 200ms, up to 10s total.
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  }
+  EXPECT_TRUE(keyDeleted)
+    << "IndexManager failed to delete expired hash key within timeout";
+
+  sessionMaster->setArgs({"binlogpos", "5"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  // binlogpos should be incremented by del binlog from IndexManager
+  EXPECT_NE(expect.value(), binlogposAfterHash);  // Changed!
+
+  // Wait for slave to catch up
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  // Verify slave: del binlog replicated
+  sessionSlave->setArgs({"dbsize", "containexpire"});
+  expect = Command::runSessionCmd(sessionSlave.get());
+  EXPECT_EQ(expect.value(), ":0\r\n");  // Replicated
+
+  // Restore default config
+  sessionMaster->setArgs({"config", "set", "concurrentRead", "true"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_TRUE(expect.ok());
 }
 
 TEST(Repl, SlaveCantModify) {
@@ -650,6 +821,7 @@ TEST(Repl, SlaveCantModify) {
       EXPECT_EQ(expect.value(), "$1\r\n2\r\n");
 
       testSlaveDontDeleteExpiredKey(session1, session2);
+      testSlaveDontDeleteExpiredKeyConcurrentRead(session1, session2);
     }
 
 #ifndef _WIN32

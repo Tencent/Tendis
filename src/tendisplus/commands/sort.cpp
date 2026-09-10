@@ -82,8 +82,8 @@ class SortCommand : public Command {
       return expdb.status();
     }
 
-    auto byRv =
-      Command::expireKeyIfNeeded(sess, metaKey, RecordType::RT_DATA_META);
+    auto byRv = Command::expireKeyIfNeeded(
+      sess, metaKey, RecordType::RT_DATA_META, Command::RdLock());
     // should handle NOT_FOUND and EXPIRED outsie
     if (!byRv.ok()) {
       return byRv.status();
@@ -250,8 +250,11 @@ class SortCommand : public Command {
     PStore kvstore = expdb.value().store;
 
     /* 3. Get the sort key and length */
-    auto expRv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
+    auto expRv = Command::expireKeyIfNeeded(sess,
+                                            key,
+                                            RecordType::RT_DATA_META,
+                                            store ? mgl::LockMode::LOCK_X
+                                                  : Command::RdLock());
     if (expRv.status().code() == ErrorCodes::ERR_EXPIRED ||
         expRv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       exist = false;

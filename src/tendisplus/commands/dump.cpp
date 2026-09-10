@@ -704,8 +704,8 @@ class TBitmapSerializer : public Serializer {
 // outlier function
 Expected<std::unique_ptr<Serializer>> getSerializer(Session* sess,
                                                     const std::string& key) {
-  Expected<RecordValue> rv =
-    Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
+  Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+    sess, key, RecordType::RT_DATA_META, Command::RdLock());
   if (!rv.ok()) {
     return rv.status();
   }
@@ -1866,15 +1866,16 @@ class RestoreValueCommand : public Command {
   Expected<std::string> run(Session* sess) final {
     auto& key = (sess->getArgs()[1]);
     auto server = sess->getServerEntry();
-    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, RdLock());
+    auto expdb =
+      server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
     RET_IF_ERR_EXPECTED(expdb);
     auto slotId = expdb.value().chunkId;
 
     SessionCtx* pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_DATA_META, Command::RdLock());
     RET_IF_ERR_EXPECTED(rv);
 
     if (rv.value().getRecordType() == RecordType::RT_TBITMAP_META) {

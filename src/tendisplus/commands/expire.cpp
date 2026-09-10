@@ -215,7 +215,8 @@ class GenericTtlCommand : public Command {
     const std::string& key = sess->getArgs()[1];
 
     for (auto type : {RecordType::RT_DATA_META}) {
-      Expected<RecordValue> rv = Command::expireKeyIfNeeded(sess, key, type);
+      Expected<RecordValue> rv =
+        Command::expireKeyIfNeeded(sess, key, type, Command::RdLock());
       if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
         continue;
       } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -320,8 +321,8 @@ class ExistsCommand : public Command {
     for (size_t j = 1; j < args.size(); j++) {
       const std::string& key = args[j];
 
-      Expected<RecordValue> rv =
-        Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
+      Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+        sess, key, RecordType::RT_DATA_META, Command::RdLock());
       if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
         continue;
       } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -374,8 +375,8 @@ class TypeCommand : public Command {
       return expdb.status();
     }
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_DATA_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
         rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return Command::fmtStatus("none");

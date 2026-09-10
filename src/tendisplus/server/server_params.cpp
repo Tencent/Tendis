@@ -373,6 +373,7 @@ ServerParams::ServerParams() {
 
   REGISTER_VARS_ALLOW_DYNAMIC_SET(noexpire);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(noexpireBlob);
+  REGISTER_VARS_ALLOW_DYNAMIC_SET(concurrentRead);
   REGISTER_VARS_SAME_NAME(
     maxBinlogKeepNum, nullptr, nullptr, 1, INT64_MAX, true);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(minBinlogKeepSec);

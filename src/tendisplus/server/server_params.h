@@ -488,6 +488,7 @@ class ServerParams {
 
   bool noexpire = false;
   bool noexpireBlob = true;
+  bool concurrentRead = true;  // GET commands use LOCK_S instead of LOCK_X
   uint64_t maxBinlogKeepNum = 1;
   uint32_t minBinlogKeepSec = 3600;
   uint64_t slaveBinlogKeepNum = 1;

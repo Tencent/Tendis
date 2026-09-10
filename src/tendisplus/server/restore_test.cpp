@@ -139,6 +139,11 @@ void restoreBinlog(const std::string& src_binlog_dir,
 
     std::string subpath =
       "./" + src_binlog_dir + "/dump/" + std::to_string(i) + "/";
+    if (!std::filesystem::exists(subpath)) {
+      LOG(INFO) << "restoreBinlog skip store:" << i
+                << " dump dir not exists:" << subpath;
+      continue;
+    }
     std::vector<std::string> loglist;
     for (auto& p : std::filesystem::recursive_directory_iterator(subpath)) {
       const std::filesystem::path& path = p.path();
@@ -477,10 +482,26 @@ TEST(Restore, Common) {
     LOG(INFO) << ">>>>>> compareData 2st end;";
 
     testAll(master1);
+    // With concurrentRead=true, read commands use LOCK_S and don't
+    // synchronously delete expired keys. IndexManager must finish cleaning
+    // before flushBinlog, so the dump file contains the complete del binlogs
+    // for these keys.
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+
+    // Pause IndexManager on master2 to prevent it from producing extra
+    // del binlogs during restoreBinlog (which would advance highestBinlogId
+    // and cause "binlogId can't be smaller than highestBinlogId" errors).
+    runCommand(master2, {"config", "set", "noexpire", "yes"});
+
     addOneKeyEveryKvstore(master1, "restore_test_key1");
     waitBinlogDump(master1);
     flushBinlog(master1);
     restoreBinlog(master1_dir, master2, UINT64_MAX);
+
+    // Restore normal expire processing
+    runCommand(master2, {"config", "set", "noexpire", "no"});
+    // Wait for IndexManager to clean up any expired keys on master2
+    std::this_thread::sleep_for(std::chrono::seconds(3));
     addOneKeyEveryKvstore(master2, "restore_test_key1");
     waitBinlogDump(master2);
     LOG(INFO) << ">>>>>> compareData 3st end;";

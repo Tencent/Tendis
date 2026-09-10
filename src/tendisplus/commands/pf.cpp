@@ -472,7 +472,8 @@ class PfCountCommand : public Command {
 
       for (size_t j = 1; j < args.size(); j++) {
         auto& key = args[j];
-        auto rv = Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
+        auto rv = Command::expireKeyIfNeeded(
+          sess, key, RecordType::RT_KV, Command::RdLock());
         if (rv.status().code() != ErrorCodes::ERR_OK &&
             rv.status().code() != ErrorCodes::ERR_EXPIRED &&
             rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
@@ -506,7 +507,8 @@ class PfCountCommand : public Command {
      * The user specified a single key. Either return the cached value
      * or compute one and update the cache. */
     const std::string& key = args[1];
-    auto rv = Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
+    auto rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_KV, Command::RdLock());
     if (rv.status().code() != ErrorCodes::ERR_OK &&
         rv.status().code() != ErrorCodes::ERR_EXPIRED &&
         rv.status().code() != ErrorCodes::ERR_NOTFOUND) {

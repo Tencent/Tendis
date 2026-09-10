@@ -186,8 +186,8 @@ class HLenCommand : public Command {
     SessionCtx* pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_HASH_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_HASH_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
       return fmtZero();
     } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -245,7 +245,8 @@ class SizeGeneric : public Command {
     SessionCtx* pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
 
-    Expected<RecordValue> rv = Command::expireKeyIfNeeded(sess, key, metaType);
+    Expected<RecordValue> rv =
+      Command::expireKeyIfNeeded(sess, key, metaType, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
       return fmtZero();
     } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -363,8 +364,8 @@ class HExistsCommand : public Command {
       return expdb.status();
     }
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_HASH_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_HASH_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
       return Command::fmtZero();
     } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -430,8 +431,8 @@ class HAllCommand : public Command {
       return expdb.status();
     }
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_HASH_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_HASH_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
       return std::list<Record>();
     } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -584,8 +585,8 @@ class HGetRecordCommand : public Command {
       return expdb.status();
     }
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_HASH_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_HASH_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
       return rv.status();
     } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -876,8 +877,8 @@ class HMGetGeneric : public Command {
       return expdb.status();
     }
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_HASH_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_HASH_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_NOTFOUND ||
         rv.status().code() == ErrorCodes::ERR_EXPIRED) {
       std::stringstream ss;
@@ -964,7 +965,7 @@ Status hmcas(Session* sess,
 
   auto server = sess->getServerEntry();
   auto expdb =
-    server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
+    server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
   if (!expdb.ok()) {
     return expdb.status();
   }

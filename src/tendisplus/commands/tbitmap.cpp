@@ -422,15 +422,15 @@ class TGetBitCommand : public Command {
     auto pctx = sess->getCtx();
     INVARIANT(pctx != nullptr);
     auto edb = sess->getServerEntry()->getSegmentMgr()->getDbWithKeyLock(
-      sess, key, RdLock());
+      sess, key, Command::RdLock());
     RET_IF_ERR_EXPECTED(edb);
     auto kvstore = edb.value().store;
     auto eptxn = pctx->createTransaction(kvstore);
     RET_IF_ERR_EXPECTED(eptxn);
 
     // mainly for meta data
-    auto emetaRv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_TBITMAP_META);
+    auto emetaRv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_TBITMAP_META, Command::RdLock());
     if (emetaRv.status().code() == ErrorCodes::ERR_EXPIRED ||
         emetaRv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return Command::fmtZero();
@@ -520,8 +520,8 @@ class TBitCountCommand : public Command {
     RET_IF_ERR_EXPECTED(eptxn);
 
     // mainly for meta data
-    auto emetaRv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_TBITMAP_META);
+    auto emetaRv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_TBITMAP_META, Command::RdLock());
     if (emetaRv.status().code() == ErrorCodes::ERR_EXPIRED ||
         emetaRv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return Command::fmtZero();
@@ -661,8 +661,8 @@ class TBitPosCommand : public Command {
     RET_IF_ERR_EXPECTED(eptxn);
 
     // mainly for meta data
-    auto emetaRv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_TBITMAP_META);
+    auto emetaRv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_TBITMAP_META, Command::RdLock());
     if (emetaRv.status().code() == ErrorCodes::ERR_EXPIRED ||
         emetaRv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return bit ? Command::fmtLongLong(-1) : Command::fmtZero();
@@ -1162,8 +1162,9 @@ class TBitFieldCommand : public Command {
 
     auto pctx = sess->getCtx();
     INVARIANT(pctx != nullptr);
+    auto lockMode = readonly ? Command::RdLock() : mgl::LockMode::LOCK_X;
     auto edb = sess->getServerEntry()->getSegmentMgr()->getDbWithKeyLock(
-      sess, (key), readonly ? RdLock() : mgl::LockMode::LOCK_X);
+      sess, (key), lockMode);
     RET_IF_ERR_EXPECTED(edb);
     auto kvstore = edb.value().store;
     auto eptxn = pctx->createTransaction(kvstore);
@@ -1173,8 +1174,8 @@ class TBitFieldCommand : public Command {
 
     bool metaExists = true;
 
-    auto emetaRv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_TBITMAP_META);
+    auto emetaRv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_TBITMAP_META, lockMode);
     uint64_t fragmentLen =
       sess->getServerEntry()->getParams()->tbitmapFragmentSize;
     TBitMapMetaValue meta(fragmentLen);

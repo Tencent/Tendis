@@ -179,8 +179,8 @@ class LLenCommand : public Command {
     SessionCtx* pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_LIST_META, Command::RdLock());
 
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
       return fmtZero();
@@ -793,8 +793,8 @@ class LRangeCommand : public Command {
       return expdb.status();
     }
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_LIST_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
       return fmtZeroBulkLen();
     } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -905,8 +905,8 @@ class LIndexCommand : public Command {
       return expdb.status();
     }
 
-    Expected<RecordValue> rv =
-      Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
+    Expected<RecordValue> rv = Command::expireKeyIfNeeded(
+      sess, key, RecordType::RT_LIST_META, Command::RdLock());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
       return fmtNull();
     } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
