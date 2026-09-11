@@ -4,7 +4,6 @@
 
 #include "tendisplus/storage/record.h"
 
-#include <iostream>
 #include <limits>
 #include <memory>
 #include <string>
@@ -757,7 +756,7 @@ std::string RecordValue::encode() const {
 
     // version
     offset += varintEncodeBuf(ptr + offset, size - offset, _version);
-    INVARIANT_D(_version == (uint64_t)0);
+    INVARIANT_D(_version == 0);
 
     // versionEP
     offset += varintEncodeBuf(ptr + offset, size - offset, _versionEP + 1);
@@ -778,15 +777,22 @@ std::string RecordValue::encode() const {
     INVARIANT_D(_totalSize == (uint64_t)-1);
   } else {
     // NOTE(vinchen) : for none DATA META value, the below members is
-    // useless. They will take 6 bytes, and always be 0
+    // useless except _version. They will take 6 bytes.
+    // Layout: [type:1B][ttl:1B][version:1B][versionEP:1B][cas:1B][pieceSize:1B]
+    // (totalSize is not stored separately - minSize covers type + 6 bytes)
     INVARIANT_D(_ttl == 0);
-    INVARIANT_D(_version == 0);
     INVARIANT_D(_versionEP == (uint64_t)-1);
     INVARIANT_D(_cas == -1);
     INVARIANT_D(_pieceSize == (uint64_t)-1);
     INVARIANT_D(_totalSize == (uint64_t)-1);
 
+    // offset here is 1 (after type byte), so version is at byte 2
+    INVARIANT_D(offset == 1);
+    INVARIANT_D(_version <= 255);  // non-META version stored as single byte
+    // First zero-fill all 6 header bytes (after type byte)
     memset(ptr + offset, 0, minSize() - offset);
+    // Then write version at its fixed position (offset 2: after type and ttl)
+    ptr[offset + 1] = static_cast<uint8_t>(_version);
 
     offset = minSize();
   }
@@ -880,6 +886,8 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
       return {ErrorCodes::ERR_DECODE, ss.str()};
     }
   } else {
+    // Non-META: read version from fixed position (offset 2: after type and ttl)
+    version = valueCstr[2];  // single byte, same position as encode writes
     offset = minSize();
   }
   std::string rawValue;
@@ -1698,7 +1706,7 @@ ZSlEleValue::ZSlEleValue() : ZSlEleValue(0, "") {}
 ZSlEleValue::ZSlEleValue(double score,
                          const std::string& subkey,
                          uint32_t maxLevel)
-  : _score(score), _backward(0), _changed(false), _subKey(subkey) {
+  : _score(score), _backward(0), _changed(false), _level(1), _subKey(subkey) {
   INVARIANT_D(maxLevel == ZSlMetaValue::MAX_LAYER);
   _forward.resize(maxLevel + 1);
   _span.resize(maxLevel + 1);
@@ -1745,16 +1753,53 @@ const std::string& ZSlEleValue::getSubKey() const {
   return _subKey;
 }
 
+// Update level based on highest non-zero forward pointer
+void ZSlEleValue::updateLevel() {
+  _level = 1;  // minimum level is 1
+  for (uint8_t i = ZSlMetaValue::MAX_LAYER; i >= 1; --i) {
+    if (_forward[i] != 0) {
+      _level = i;
+      break;
+    }
+  }
+}
+
+// Default encode uses current version
 std::string ZSlEleValue::encode() const {
+  return encode(ENCODING_VERSION);
+}
+
+// Encode with specified version
+std::string ZSlEleValue::encode(uint8_t version) const {
   std::vector<uint8_t> value;
   value.reserve(128);
-  for (auto& v : _forward) {
-    auto bytes = varintEncode(v);
-    value.insert(value.end(), bytes.begin(), bytes.end());
-  }
-  for (auto& v : _span) {
-    auto bytes = varintEncode(v);
-    value.insert(value.end(), bytes.begin(), bytes.end());
+
+  if (version >= ENCODING_VERSION) {
+    // Optimized format: [level:1B] + [forward:level*varint] +
+    // [span:level*varint] + ... First byte is the level (1-32)
+    value.push_back(_level);
+
+    // Only encode forward[0..level] (level+1 elements, including forward[0])
+    for (uint8_t i = 0; i <= _level; ++i) {
+      auto bytes = varintEncode(_forward[i]);
+      value.insert(value.end(), bytes.begin(), bytes.end());
+    }
+
+    // Only encode span[0..level] (level+1 elements, including span[0])
+    for (uint8_t i = 0; i <= _level; ++i) {
+      auto bytes = varintEncode(_span[i]);
+      value.insert(value.end(), bytes.begin(), bytes.end());
+    }
+  } else {
+    // V0 format (legacy): full 33 forward/span arrays
+    for (auto& v : _forward) {
+      auto bytes = varintEncode(v);
+      value.insert(value.end(), bytes.begin(), bytes.end());
+    }
+    for (auto& v : _span) {
+      auto bytes = varintEncode(v);
+      value.insert(value.end(), bytes.begin(), bytes.end());
+    }
   }
 
   auto bytes = doubleEncode(_score);
@@ -1770,29 +1815,76 @@ std::string ZSlEleValue::encode() const {
   return std::string(reinterpret_cast<const char*>(value.data()), value.size());
 }
 
-Expected<ZSlEleValue> ZSlEleValue::decode(const std::string& val) {
+// Decode with explicit version from RecordValue's version field
+Expected<ZSlEleValue> ZSlEleValue::decode(const std::string& val,
+                                          uint64_t version) {
   const uint8_t* keyCstr = reinterpret_cast<const uint8_t*>(val.c_str());
   size_t offset = 0;
   ZSlEleValue result;
 
-  // forwardlist
-  for (uint32_t i = 0; i <= ZSlMetaValue::MAX_LAYER; ++i) {
-    auto expt = varintDecodeFwd(keyCstr + offset, val.size() - offset);
-    if (!expt.ok()) {
-      return expt.status();
+  if (version >= ENCODING_VERSION) {
+    // Optimized format: first byte is level
+    if (val.size() < 1) {
+      return {ErrorCodes::ERR_DECODE, "ZSlEleValue V1 too short"};
     }
-    offset += expt.value().second;
-    result._forward[i] = expt.value().first;
-  }
+    result._level = keyCstr[offset++];
 
-  // spanlist
-  for (uint32_t i = 0; i <= ZSlMetaValue::MAX_LAYER; ++i) {
-    auto expt = varintDecodeFwd(keyCstr + offset, val.size() - offset);
-    if (!expt.ok()) {
-      return expt.status();
+    // Validate level
+    if (result._level < 1 || result._level > ZSlMetaValue::MAX_LAYER) {
+      return {ErrorCodes::ERR_DECODE, "ZSlEleValue invalid level"};
     }
-    offset += expt.value().second;
-    result._span[i] = expt.value().first;
+
+    // Decode forward[0..level]
+    for (uint8_t i = 0; i <= result._level; ++i) {
+      auto expt = varintDecodeFwd(keyCstr + offset, val.size() - offset);
+      if (!expt.ok()) {
+        return expt.status();
+      }
+      offset += expt.value().second;
+      result._forward[i] = expt.value().first;
+    }
+    // Set remaining forward pointers to 0
+    for (uint8_t i = result._level + 1; i <= ZSlMetaValue::MAX_LAYER; ++i) {
+      result._forward[i] = 0;
+    }
+
+    // Decode span[0..level]
+    for (uint8_t i = 0; i <= result._level; ++i) {
+      auto expt = varintDecodeFwd(keyCstr + offset, val.size() - offset);
+      if (!expt.ok()) {
+        return expt.status();
+      }
+      offset += expt.value().second;
+      result._span[i] = expt.value().first;
+    }
+    // Set remaining spans to 0
+    for (uint8_t i = result._level + 1; i <= ZSlMetaValue::MAX_LAYER; ++i) {
+      result._span[i] = 0;
+    }
+  } else {
+    // V0 format (legacy): full 33 forward/span arrays
+    // forwardlist
+    for (uint32_t i = 0; i <= ZSlMetaValue::MAX_LAYER; ++i) {
+      auto expt = varintDecodeFwd(keyCstr + offset, val.size() - offset);
+      if (!expt.ok()) {
+        return expt.status();
+      }
+      offset += expt.value().second;
+      result._forward[i] = expt.value().first;
+    }
+
+    // spanlist
+    for (uint32_t i = 0; i <= ZSlMetaValue::MAX_LAYER; ++i) {
+      auto expt = varintDecodeFwd(keyCstr + offset, val.size() - offset);
+      if (!expt.ok()) {
+        return expt.status();
+      }
+      offset += expt.value().second;
+      result._span[i] = expt.value().first;
+    }
+
+    // Update level based on decoded data for V0 format
+    result.updateLevel();
   }
 
   // score

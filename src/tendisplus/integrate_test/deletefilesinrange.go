@@ -164,9 +164,11 @@ func testDeleteFilesInRange() {
 	afterStep3Store1L6FileNum := getDataCFLevel6FileNum(&m1, 1)
 	afterStep3AllL6FileNum := afterStep3Store0L6FileNum + afterStep3Store1L6FileNum
 
-	// after step1,2,3 it should remove at least 16-20 sst files.
+	// after step1,2,3 it should remove most of the sst files.
+	// Note: the exact number depends on data encoding size. ZSlEleValue V1
+	// optimized encoding produces smaller values, resulting in fewer SST files.
 	diff := beforeStep1AllL6FileNum - afterStep3AllL6FileNum
-	if diff < 165 || diff > 175 {
+	if diff < 140 || diff > 175 {
 		log.Fatalf("Wrong result! "+
 			"every step: (num on store0) (num on store1) (num on two stores) "+
 			"before step1(delete on store0): %v %v %v "+

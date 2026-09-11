@@ -167,7 +167,14 @@ Expected<std::string> genericZadd(Session* sess,
                    mk.getPrimaryKey(),
                    std::to_string(ZSlMetaValue::HEAD_ID));
     ZSlEleValue headVal;
-    RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, -1);
+    // Head node starts with level=1, matching the initial meta level.
+    // It will grow as the skiplist level increases during insert.
+    headVal.setLevel(1);
+    RecordValue subRv(headVal.encode(ZSlEleValue::ENCODING_VERSION),
+                      RecordType::RT_ZSET_S_ELE,
+                      -1);  // versionEP
+    // Store encoding version in subkey's RecordValue.version field
+    subRv.setVersion(ZSlEleValue::ENCODING_VERSION);
     s = kvstore->setKV(head, subRv, txn);
     if (!s.ok()) {
       return s;

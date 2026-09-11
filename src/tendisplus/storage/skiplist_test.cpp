@@ -67,7 +67,11 @@ TEST(SkipList, BackWardTail) {
                  "test",
                  std::to_string(ZSlMetaValue::HEAD_ID));
   ZSlEleValue headVal;
-  RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, -1);
+  headVal.setLevel(1);
+  RecordValue subRv(headVal.encode(ZSlEleValue::ENCODING_VERSION),
+                    RecordType::RT_ZSET_S_ELE,
+                    -1);
+  subRv.setVersion(ZSlEleValue::ENCODING_VERSION);
 
   s = store->setKV(head, subRv, eTxn1.value().get());
   EXPECT_TRUE(s.ok());
@@ -102,7 +106,7 @@ TEST(SkipList, BackWardTail) {
     EXPECT_TRUE(rv.ok()) << rv.status().toString();
 
     const std::string& ss = rv.value().getValue();
-    auto result = ZSlEleValue::decode(ss);
+    auto result = ZSlEleValue::decode(ss, rv.value().getVersion());
     EXPECT_TRUE(result.ok()) << result.status().toString();
     EXPECT_EQ(result.value().getScore(), currMax);
 
@@ -130,7 +134,7 @@ TEST(SkipList, BackWardTail) {
     EXPECT_TRUE(rv.ok()) << rv.status().toString();
 
     const std::string& ss = rv.value().getValue();
-    auto result = ZSlEleValue::decode(ss);
+    auto result = ZSlEleValue::decode(ss, rv.value().getVersion());
     EXPECT_TRUE(result.ok()) << result.status().toString();
     EXPECT_EQ(result.value().getScore(), currMax);
 
@@ -156,7 +160,7 @@ TEST(SkipList, BackWardTail) {
     EXPECT_TRUE(rv.ok()) << rv.status().toString();
 
     const std::string& ss = rv.value().getValue();
-    auto result = ZSlEleValue::decode(ss);
+    auto result = ZSlEleValue::decode(ss, rv.value().getVersion());
     EXPECT_TRUE(result.ok()) << result.status().toString();
     EXPECT_EQ(result.value().getScore(), keys[i - 1]);
     now = result.value().getBackward();
@@ -189,7 +193,11 @@ TEST(SkipList, Mix) {
                  "test",
                  std::to_string(ZSlMetaValue::HEAD_ID));
   ZSlEleValue headVal;
-  RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, -1);
+  headVal.setLevel(1);
+  RecordValue subRv(headVal.encode(ZSlEleValue::ENCODING_VERSION),
+                    RecordType::RT_ZSET_S_ELE,
+                    -1);
+  subRv.setVersion(ZSlEleValue::ENCODING_VERSION);
 
   s = store->setKV(head, subRv, eTxn1.value().get());
   EXPECT_TRUE(s.ok());
@@ -266,7 +274,12 @@ TEST(SkipList, InsertDelSameKeys) {
                  "skiplistkey",
                  std::to_string(ZSlMetaValue::HEAD_ID));
   ZSlEleValue headVal;
-  RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, -1);
+  // Head node starts with level=1, matching initial meta level
+  headVal.setLevel(1);
+  RecordValue subRv(headVal.encode(ZSlEleValue::ENCODING_VERSION),
+                    RecordType::RT_ZSET_S_ELE,
+                    -1);
+  subRv.setVersion(ZSlEleValue::ENCODING_VERSION);
 
   s = store->setKV(head, subRv, eTxn1.value().get());
   EXPECT_TRUE(s.ok());
@@ -353,7 +366,11 @@ TEST(SkipList, Common) {
                  "test",
                  std::to_string(ZSlMetaValue::HEAD_ID));
   ZSlEleValue headVal;
-  RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, -1);
+  headVal.setLevel(1);
+  RecordValue subRv(headVal.encode(ZSlEleValue::ENCODING_VERSION),
+                    RecordType::RT_ZSET_S_ELE,
+                    -1);
+  subRv.setVersion(ZSlEleValue::ENCODING_VERSION);
 
   s = store->setKV(head, subRv, eTxn1.value().get());
   EXPECT_TRUE(s.ok());

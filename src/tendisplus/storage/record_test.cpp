@@ -396,19 +396,42 @@ TEST(ZSl, Common) {
 
   for (size_t i = 0; i < num; i++) {
     ZSlEleValue v(genRand(), randomStr(256, false));
-    for (uint8_t i = 1; i <= ZSlMetaValue::MAX_LAYER; ++i) {
-      v.setForward(i, genRand());
-      v.setSpan(i, genRand());
+    // Set level for V1 encoding
+    uint8_t testLevel = (i % ZSlMetaValue::MAX_LAYER) + 1;
+    v.setLevel(testLevel);
+    for (uint8_t j = 1; j <= testLevel; ++j) {
+      v.setForward(j, genRand());
+      v.setSpan(j, genRand());
     }
-    std::string s = v.encode();
-    Expected<ZSlEleValue> expv = ZSlEleValue::decode(s);
-    EXPECT_TRUE(expv.ok());
-    for (uint8_t i = 1; i <= ZSlMetaValue::MAX_LAYER; ++i) {
-      EXPECT_EQ(expv.value().getForward(i), v.getForward(i));
-      EXPECT_EQ(expv.value().getSpan(i), v.getSpan(i));
+    // Test current encoding (optimized format)
+    std::string s = v.encode(ZSlEleValue::ENCODING_VERSION);
+    Expected<ZSlEleValue> expv =
+      ZSlEleValue::decode(s, ZSlEleValue::ENCODING_VERSION);
+    EXPECT_TRUE(expv.ok()) << expv.status().toString();
+    EXPECT_EQ(expv.value().getLevel(), testLevel);
+    for (uint8_t j = 1; j <= testLevel; ++j) {
+      EXPECT_EQ(expv.value().getForward(j), v.getForward(j));
+      EXPECT_EQ(expv.value().getSpan(j), v.getSpan(j));
     }
     EXPECT_EQ(expv.value().getScore(), v.getScore());
     EXPECT_EQ(expv.value().getSubKey(), v.getSubKey());
+
+    // Test legacy format (version 0) for backward compatibility
+    ZSlEleValue v0(genRand(), randomStr(256, false));
+    for (uint8_t j = 1; j <= ZSlMetaValue::MAX_LAYER; ++j) {
+      v0.setForward(j, genRand());
+      v0.setSpan(j, genRand());
+    }
+    v0.updateLevel();  // Calculate level from forward pointers
+    std::string s0 = v0.encode(0);
+    Expected<ZSlEleValue> expv0 = ZSlEleValue::decode(s0, 0);
+    EXPECT_TRUE(expv0.ok()) << expv0.status().toString();
+    for (uint8_t j = 1; j <= ZSlMetaValue::MAX_LAYER; ++j) {
+      EXPECT_EQ(expv0.value().getForward(j), v0.getForward(j));
+      EXPECT_EQ(expv0.value().getSpan(j), v0.getSpan(j));
+    }
+    EXPECT_EQ(expv0.value().getScore(), v0.getScore());
+    EXPECT_EQ(expv0.value().getSubKey(), v0.getSubKey());
   }
 }
 

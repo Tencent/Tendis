@@ -745,14 +745,23 @@ class ZSlMetaValue {
 
 class ZSlEleValue {
  public:
+  // Current encoding format version.
+  // 0: Legacy format - fixed 33 forward/span arrays (MAX_LAYER+1)
+  // 1: Optimized format - only encode actual level's forward/span
+  static constexpr uint8_t ENCODING_VERSION = 1;
+
   ZSlEleValue();
   // NOTE(vinchen): if we want to change maxLevel,
   // it can't use default value here
   ZSlEleValue(double score,
               const std::string& subkey,
               uint32_t maxLevel = ZSlMetaValue::MAX_LAYER);
-  static Expected<ZSlEleValue> decode(const std::string&);
+  // Decode with explicit version (from RecordValue's version field)
+  static Expected<ZSlEleValue> decode(const std::string& val, uint64_t version);
+  // Encode with current version (V1 - optimized)
   std::string encode() const;
+  // Encode with specified version for compatibility
+  std::string encode(uint8_t version) const;
   uint64_t getForward(uint8_t layer) const;
   uint64_t getBackward() const;
   void setForward(uint8_t layer, uint64_t pointer);
@@ -767,6 +776,17 @@ class ZSlEleValue {
   void setChanged(bool v) {
     _changed = v;
   }
+  // Get the actual level of this node
+  // (1-based, level means forward[1..level] are valid)
+  uint8_t getLevel() const {
+    return _level;
+  }
+  // Set the actual level of this node
+  void setLevel(uint8_t level) {
+    _level = level;
+  }
+  // Update level based on highest non-zero forward pointer
+  void updateLevel();
 
  private:
   // forward elements index in each level
@@ -778,6 +798,8 @@ class ZSlEleValue {
   uint64_t _backward;
   // whether _changed after skiplist::getnode()
   bool _changed;
+  // actual level of this node (1-based), used for V1 encoding optimization
+  uint8_t _level;
 
   std::string _subKey;
 };
