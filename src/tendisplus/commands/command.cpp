@@ -383,6 +383,7 @@ Expected<std::string> Command::runSessionCmd(Session* sess) {
   sess->getCtx()->setArgsBrief(sess->getArgs());
   it->second->incrCallTimes();
   auto now = nsSinceEpoch();
+  sess->resetLockWaitTime();
   auto guard = MakeGuard([it, now, sess, commandName] {
     sess->getCtx()->clearRequestCtx();
     auto end = nsSinceEpoch();

@@ -86,12 +86,29 @@ class Session : public std::enable_shared_from_this<Session> {
     return {};
   }
 
+  uint64_t getLockWaitTime() const {
+    return _lockWaitTime;
+  }
+
+  void setLockWaitTime(uint64_t time) {
+    _lockWaitTime = time;
+  }
+
+  void addLockWaitTime(uint64_t time) {
+    _lockWaitTime += time;
+  }
+
+  void resetLockWaitTime() {
+    _lockWaitTime = 0;
+  }
+
  protected:
   std::vector<std::string> _args;
   ServerEntry* _server;
   std::unique_ptr<SessionCtx> _ctx;
   Type _type;
   uint64_t _timestamp;
+  uint64_t _lockWaitTime;
 
  private:
   mutable std::mutex _baseMutex;
