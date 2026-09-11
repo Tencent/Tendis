@@ -1391,6 +1391,216 @@ TEST(Command, testObject) {
 #endif
 }
 
+void testBrpop(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+  sess.setArgs({"lpush", "list", "a"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  sess.setArgs({"brpop", "list", "10"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+}
+
+TEST(Command, brpop) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+
+  testBrpop(server);
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
+void testBlockCommand(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext), socket1(ioContext),
+    socket2(ioContext);
+  auto sess = std::make_shared<NetSession>(
+    svr, std::move(socket), 1, false, nullptr, nullptr);
+  auto sess1 = std::make_shared<NetSession>(
+    svr, std::move(socket1), 2, false, nullptr, nullptr);
+  auto sess2 = std::make_shared<NetSession>(
+    svr, std::move(socket2), 3, false, nullptr, nullptr);
+  svr->addSession(sess);
+  svr->addSession(sess1);
+  svr->addSession(sess2);
+  {
+    sess->setArgs({"blpop", "list1", "1"});
+    auto expect = Command::runSessionCmd(sess.get());
+    EXPECT_EQ(sess->isBlocked(), true);
+    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_BLOCKCMD);
+    std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    EXPECT_EQ(sess->isBlocked(), true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    EXPECT_EQ(sess->isBlocked(), true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    EXPECT_EQ(sess->isBlocked(), false);
+  }
+  {
+    sess->setArgs({"blpop", "list1", "0"});
+    auto expect = Command::runSessionCmd(sess.get());
+    EXPECT_EQ(sess->isBlocked(), true);
+    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_BLOCKCMD);
+    sess1->setArgs({"rpush", "list1", "a"});
+    expect = Command::runSessionCmd(sess1.get());
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    EXPECT_EQ(sess->isBlocked(), false);
+  }
+  {
+    sess2->setArgs({"brpop", "list1", "0"});
+    auto expect = Command::runSessionCmd(sess2.get());
+    EXPECT_EQ(sess2->isBlocked(), true);
+    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_BLOCKCMD);
+    sess->setArgs({"brpop", "list1", "0"});
+    expect = Command::runSessionCmd(sess.get());
+    EXPECT_EQ(sess->isBlocked(), true);
+    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_BLOCKCMD);
+
+    svr->endSession(sess2->id());
+    sess1->setArgs({"lpush", "list1", "a"});
+    expect = Command::runSessionCmd(sess1.get());
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    EXPECT_EQ(sess->isBlocked(), false);
+  }
+}
+
+TEST(Command, testBlockCommand) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+  testBlockCommand(server);
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
+TEST(Command, BlockCommand) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext), socket1(ioContext),
+    socket2(ioContext);
+  auto sess = std::make_shared<NetSession>(
+    server, std::move(socket), 1, false, nullptr, nullptr);
+  auto sess1 = std::make_shared<NetSession>(
+    server, std::move(socket1), 2, false, nullptr, nullptr);
+  auto sess2 = std::make_shared<NetSession>(
+    server, std::move(socket2), 3, false, nullptr, nullptr);
+  server->addSession(sess);
+  server->addSession(sess1);
+  server->addSession(sess2);
+  // test blpop case 1: block command nerver block permanently due to lost
+  // wakeup
+  for (int i = 0; i < 20; i++) {
+    sess1->setArgs({"brpop", "list1", "list2", "0"});
+    auto expect = Command::runSessionCmd(sess1.get());
+    EXPECT_EQ(sess1->isBlocked(), true);
+    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_BLOCKCMD);
+    sess2->setArgs({"brpop", "list1", "0"});
+    expect = Command::runSessionCmd(sess2.get());
+    EXPECT_EQ(sess2->isBlocked(), true);
+    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_BLOCKCMD);
+    sess->setArgs({"lpush", "list2", "b"});
+    expect = Command::runSessionCmd(sess.get());
+    sess->setArgs({"lpush", "list1", "a"});
+    expect = Command::runSessionCmd(sess.get());
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    EXPECT_EQ(sess1->isBlocked(), false);
+    EXPECT_EQ(sess2->isBlocked(), false);
+  }
+  // test blpop case 2: block command nerver block session on the same key twice
+  for (int i = 0; i < 20; i++) {
+    sess1->setArgs({"brpop", "list1", "list1", "0"});
+    auto expect = Command::runSessionCmd(sess1.get());
+    EXPECT_EQ(sess1->isBlocked(), true);
+    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_BLOCKCMD);
+    sess2->setArgs({"brpop", "list1", "0"});
+    expect = Command::runSessionCmd(sess2.get());
+    EXPECT_EQ(sess2->isBlocked(), true);
+    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_BLOCKCMD);
+    sess->setArgs({"lpush", "list1", "a", "b"});
+    expect = Command::runSessionCmd(sess.get());
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_EQ(sess1->isBlocked(), false);
+    EXPECT_EQ(sess2->isBlocked(), false);
+  }
+  // test blpop case 3: block command will be waked up by any key which is in
+  // the key list
+  for (int i = 0; i < 20; i++) {
+    sess1->setArgs({"brpop", "list1", "list2", "0"});
+    auto expect = Command::runSessionCmd(sess1.get());
+    EXPECT_EQ(sess1->isBlocked(), true);
+    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_BLOCKCMD);
+    auto key = genRand() % 2 ? "list1" : "list2";
+    sess->setArgs({"lpush", key, "a"});
+    expect = Command::runSessionCmd(sess.get());
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_EQ(sess1->isBlocked(), false);
+  }
+  // test blpop case 4: block command will not be waked up by any key when key
+  // is was poped
+  for (int i = 0; i < 20; i++) {
+    sess1->setArgs({"brpop", "list1", "list2", "0"});
+    auto expect = Command::runSessionCmd(sess1.get());
+    EXPECT_EQ(sess1->isBlocked(), true);
+    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_BLOCKCMD);
+    auto key = genRand() % 2 ? "list1" : "list2";
+    {
+      std::lock_guard<std::mutex> lock(sess1->_mtx);
+      sess->setArgs({"lpush", key, "a"});
+      expect = Command::runSessionCmd(sess.get());
+      sess->setArgs({"lpop", key});
+      expect = Command::runSessionCmd(sess.get());
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_EQ(sess1->isBlocked(), true);
+    sess->setArgs({"lpush", key, "a"});
+    expect = Command::runSessionCmd(sess.get());
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_EQ(sess1->isBlocked(), false);
+  }
+  // test blpop case 5: block command will be timeout or wakeup
+  for (int i = 0; i < 20; i++) {
+    sess1->setArgs({"brpop", "list1", "list2", "1"});
+    auto expect = Command::runSessionCmd(sess1.get());
+    EXPECT_EQ(sess1->isBlocked(), true);
+    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_BLOCKCMD);
+    auto key = genRand() % 2 ? "list1" : "list2";
+    {
+      std::lock_guard<std::mutex> lock(sess1->_mtx);
+      sess->setArgs({"lpush", key, "a"});
+      expect = Command::runSessionCmd(sess.get());
+      std::this_thread::sleep_for(std::chrono::milliseconds(995));
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_EQ(sess1->isBlocked(), false);
+    sess->setArgs({"lpop", key});
+    expect = Command::runSessionCmd(sess.get());
+  }
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
+
 void testRenameCommand(std::shared_ptr<ServerEntry> svr) {
   asio::io_context ioContext;
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);

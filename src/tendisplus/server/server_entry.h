@@ -5,6 +5,7 @@
 #ifndef SRC_TENDISPLUS_SERVER_SERVER_ENTRY_H_
 #define SRC_TENDISPLUS_SERVER_SERVER_ENTRY_H_
 
+#include <algorithm>
 #include <deque>
 #include <list>
 #include <map>
@@ -41,6 +42,83 @@
 #define SLOWLOG_ENTRY_MAX_STRING 128;
 
 namespace tendisplus {
+
+template <typename T>
+class LinkedSet {
+ private:
+  std::list<T> orderList;
+  std::unordered_map<T, typename std::list<T>::iterator> indexMap;
+
+ public:
+  bool contains(const T& value) const {
+    return indexMap.find(value) != indexMap.end();
+  }
+
+  size_t size() const {
+    return indexMap.size();
+  }
+
+  bool empty() const {
+    return indexMap.empty();
+  }
+
+  void push_back(const T& value) {
+    if (contains(value)) {
+      orderList.erase(indexMap[value]);
+      indexMap.erase(value);
+    }
+
+    orderList.push_back(value);
+    indexMap[value] = std::prev(orderList.end());
+  }
+
+  void push_front(const T& value) {
+    if (contains(value))
+      return;
+    orderList.push_front(value);
+    indexMap[value] = orderList.begin();
+  }
+
+  T pop_front() {
+    if (orderList.empty()) {
+      throw std::out_of_range("LinkedSet is empty");
+    }
+    T value = orderList.front();
+    orderList.pop_front();
+    indexMap.erase(value);
+    return value;
+  }
+
+  void erase(const T& value) {
+    auto it = indexMap.find(value);
+    if (it != indexMap.end()) {
+      orderList.erase(it->second);
+      indexMap.erase(it);
+    }
+  }
+
+  const T& front() const {
+    if (orderList.empty()) {
+      throw std::out_of_range("LinkedSet is empty");
+    }
+    return orderList.front();
+  }
+
+  const T& back() const {
+    if (orderList.empty()) {
+      throw std::out_of_range("LinkedSet is empty");
+    }
+    return orderList.back();
+  }
+
+  auto begin() const {
+    return orderList.begin();
+  }
+
+  auto end() const {
+    return orderList.end();
+  }
+};
 class Session;
 class NetworkAsio;
 class NetworkMatrix;
@@ -188,6 +266,22 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
         _executorList.size();
     }
     _executorList[ctxId]->schedule(std::forward<fn>(task));
+  }
+  template <typename fn>
+  std::pair<uint32_t, uint64_t> schedule_at(fn&& task,
+                                            uint32_t ctxId,
+                                            std::chrono::microseconds us) {
+    std::shared_lock<std::shared_timed_mutex> lock(_exeThreadMutex);
+    if (ctxId == UINT32_MAX || ctxId >= _executorList.size()) {
+      ctxId = _scheduleNum.fetch_add(1, std::memory_order_relaxed) %
+        _executorList.size();
+    }
+    auto timerId = _executorList[ctxId]->timer_add(std::forward<fn>(task), us);
+    return {ctxId, timerId};
+  }
+  void cancelTimer(uint32_t ctxId, uint64_t timerId) {
+    std::shared_lock<std::shared_timed_mutex> lock(_exeThreadMutex);
+    _executorList[ctxId]->timer_cancel(timerId);
   }
   uint32_t getExeThreadNum() const {
     std::shared_lock<std::shared_timed_mutex> lock(_exeThreadMutex);
@@ -420,6 +514,113 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   void CloseChannelBySlot(SlotsBitmap slots);
   void CloseAllChannel();
 
+  void blockSessionOnKeys(Session* sess, const std::vector<std::string>& keys) {
+    std::lock_guard<std::mutex> lk(_mutex_block_sesslist);
+    for (auto& key : keys) {
+      _block_sesslist[key].push_back(sess->id());
+    }
+  }
+
+  void unblockSession(uint64_t sessId) {
+    std::lock_guard<std::mutex> lk(_mutex_block_sesslist);
+    for (auto it = _block_sesslist.begin(); it != _block_sesslist.end();) {
+      auto& sessionSet = it->second;
+      sessionSet.erase(sessId);
+
+      if (sessionSet.empty()) {
+        it = _block_sesslist.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
+  void unblockSessionOnKeys(Session* sess,
+                            const std::vector<std::string>& keys) {
+    std::lock_guard<std::mutex> lk(_mutex_block_sesslist);
+    for (auto& key : keys) {
+      auto& sessList = _block_sesslist[key];
+      sessList.erase(sess->id());
+      if (sessList.empty()) {
+        _block_sesslist.erase(key);
+      }
+    }
+  }
+
+  bool hasBlockedSessions(const std::string& key) {
+    std::lock_guard<std::mutex> lk(_mutex_block_sesslist);
+    auto iter = _block_sesslist.find(key);
+    return iter != _block_sesslist.end() && !iter->second.empty();
+  }
+
+  std::vector<uint64_t> notifyKey(const std::string& key, size_t max_wakeups) {
+    std::lock_guard<std::mutex> lk(_mutex_block_sesslist);
+    std::vector<uint64_t> ready_list;
+    auto iter = _block_sesslist.find(key);
+    if (iter == _block_sesslist.end() || iter->second.empty()) {
+      return ready_list;
+    }
+    auto& blokedList = iter->second;
+    size_t count = 0;
+    for (auto id_iter = blokedList.begin();
+         id_iter != blokedList.end() && count < max_wakeups;
+         ++id_iter) {
+      auto sess = getSession(*id_iter);
+      if (sess && !sess->isBlocked()) {  // avoid notify twice
+        continue;
+      }
+      ready_list.push_back(*id_iter);
+      count++;
+    }
+
+    return ready_list;
+  }
+
+  void notifyKeyAvailable(const std::string& key, size_t max_wakeups) {
+    if (!hasBlockedSessions(key))
+      return;  // no blocked session, do nothing
+    std::vector<uint64_t> ready_list = notifyKey(key, max_wakeups);
+
+    auto executor = [this, ready_list = std::move(ready_list), key]() mutable {
+      size_t wakeupsMore = 0, idx = 0;
+      while (idx < ready_list.size()) {
+        while (idx < ready_list.size()) {
+          auto s_id = ready_list[idx++];
+          auto sess = getSession(s_id);
+          auto netSess = dynamic_cast<NetSession*>(sess.get());
+          if (netSess && !netSess->isBlocked()) {
+            wakeupsMore++;
+          } else if (netSess) {
+            auto status = netSess->resumeSession(key);
+            if (!status.ok()) {
+              if (!netSess->isBlocked()) {
+                // when a blocking command completes, causing subsequent command
+                // execution to fail, wake an extra session.​
+                wakeupsMore++;
+              } else {
+                break;
+              }
+            }
+          } else {
+            // remove session_id from blocked list
+            unblockSession(s_id);
+            wakeupsMore++;
+          }
+        }
+
+        if (idx == ready_list.size() && wakeupsMore > 0) {
+          ready_list = notifyKey(key, wakeupsMore);  // notify more
+          wakeupsMore = 0;
+          idx = 0;
+        } else if (idx < ready_list.size()) {
+          break;
+        }
+      }
+    };
+    uint32_t ctxId = UINT32_MAX;
+    schedule(std::move(executor), ctxId);
+  }
+
  private:
   ServerEntry();
   Status adaptSomeThreadNumByCpuNum(const std::shared_ptr<ServerParams>& cfg);
@@ -521,6 +722,10 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   SlowlogStat _slowlogStat;
   LatencyMonitorSet _latencyMonitorSet;
   uint32_t _lastJeprofDumpMemoryGB;
+
+  std::unordered_map<std::string, LinkedSet<uint64_t>>
+    _block_sesslist;  // using linkedset
+  mutable std::mutex _mutex_block_sesslist;
 };
 }  // namespace tendisplus
 

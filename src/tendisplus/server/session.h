@@ -66,6 +66,10 @@ class Session : public std::enable_shared_from_this<Session> {
     return {ErrorCodes::ERR_NETWORK, ""};
   }
 
+  virtual bool isBlocked() const {
+    return false;
+  }
+
   std::string getName() const;
   void setName(const std::string&);
   Type getType() const {

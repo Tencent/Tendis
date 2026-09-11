@@ -591,6 +591,74 @@ void NetSession::schedule() {
   _server->schedule([this, self]() { stepState(); }, _ioCtxId);
 }
 
+void NetSession::addBlockTimer(std::chrono::microseconds timeout) {
+  if (!timeout.count() || !_isBlocked.load(std::memory_order_acquire))
+    return;
+  auto self(shared_from_this());
+  auto timeout_task = [this, self]() {
+    std::lock_guard<std::mutex> lk(_mtx);
+    if (!_isBlocked.load(std::memory_order_relaxed))
+      return;
+    _isBlocked.store(false, std::memory_order_release);
+    _server->unblockSessionOnKeys(this, _blockedKeys);
+    clearBlockStatus();
+    setResponse(Command::fmtNull());
+    drainRsp();
+  };
+  _timerId = _server->schedule_at(std::move(timeout_task), _ioCtxId, timeout);
+}
+
+void NetSession::cancelTimer() {
+  if (_timerId.first == UINT32_MAX) {
+    return;
+  }
+  _server->cancelTimer(_timerId.first, _timerId.second);
+  _timerId = {UINT32_MAX, 0};
+}
+
+void NetSession::clearBlockStatus() {
+  _server->unblockSessionOnKeys(this, _blockedKeys);
+  _blockedKeys.clear();
+  cancelTimer();
+}
+
+void NetSession::setBlockingCompletionCb(
+  std::function<Expected<std::string>(const std::string&)> cb) {
+  _blocking_completion_cb = std::move(cb);
+}
+
+bool NetSession::isBlocked() const {
+  return _isBlocked.load(std::memory_order_acquire);
+}
+
+void NetSession::pauseSession(
+  std::function<Expected<std::string>(const std::string&)> cb,
+  const std::vector<std::string>& keys,
+  std::chrono::microseconds timeout) {
+  _isBlocked.store(true, std::memory_order_release);
+  _server->blockSessionOnKeys(this, keys);
+  _blockedKeys = keys;
+  _blocking_completion_cb = std::move(cb);
+  addBlockTimer(timeout);
+}
+
+Expected<std::string> NetSession::resumeSession(const std::string& key) {
+  std::lock_guard<std::mutex> lk(_mtx);
+  if (!_isBlocked.load(std::memory_order_relaxed)) {
+    return {ErrorCodes::ERR_FINISHCMD, "session not blocked"};
+  }
+  auto status = _blocking_completion_cb(key);
+  if (!status.ok()) {
+    return status;
+  }
+  _isBlocked.store(false, std::memory_order_release);
+  setResponse(std::move(status.value()));
+  drainRsp();
+  clearBlockStatus();
+  return status;
+}
+
+
 asio::ip::tcp::socket NetSession::borrowConn() {
   return std::move(_sock);
 }

@@ -295,6 +295,131 @@ class RPopCommand : public ListPopWrapper {
   RPopCommand() : ListPopWrapper(ListPos::LP_TAIL, "wF") {}
 } rpopCommand;
 
+class BlockPopWrapper : public Command {
+ public:
+  explicit BlockPopWrapper(ListPos pos, const char* sflags)
+    : Command(pos == ListPos::LP_HEAD ? "blpop" : "brpop", sflags), _pos(pos) {}
+
+  ssize_t arity() const {
+    return -2;
+  }
+
+  int32_t firstkey() const {
+    return 1;
+  }
+
+  int32_t lastkey() const {
+    return 1;
+  }
+
+  int32_t keystep() const {
+    return 1;
+  }
+
+  Expected<std::string> tryPop(Session* sess, const std::string& key) {
+    SessionCtx* pCtx = sess->getCtx();
+    INVARIANT(pCtx != nullptr);
+
+    auto server = sess->getServerEntry();
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
+      sess, key, mgl::LockMode::LOCK_X);
+    if (!expdb.ok()) {
+      return expdb.status();
+    }
+    Expected<RecordValue> rv =
+      Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
+    if (!rv.ok()) {
+      return rv.status();
+    }
+
+    // record exists
+    RecordKey metaRk(expdb.value().chunkId,
+                     pCtx->getDbId(),
+                     RecordType::RT_LIST_META,
+                     key,
+                     "");
+    PStore kvstore = expdb.value().store;
+
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
+    if (!ptxn.ok()) {
+      return ptxn.status();
+    }
+    Expected<std::string> s1 =
+      genericPop(sess, kvstore, ptxn.value(), metaRk, rv, _pos);
+    if (!s1.ok()) {
+      return s1.status();
+    }
+    auto s = sess->getCtx()->commitTransaction(ptxn.value());
+    if (s.ok()) {
+      std::stringstream ss;
+      Command::fmtMultiBulkLen(ss, 2);
+      Command::fmtBulk(ss, key);
+      Command::fmtBulk(ss, s1.value());
+      return ss.str();
+    }
+    return s.status();
+  }
+
+  Expected<std::string> tryPop(Session* sess,
+                               const std::vector<std::string>& keys) {
+    for (const auto& key : keys) {
+      auto status = tryPop(sess, key);
+      if (status.ok()) {
+        return status;
+      }
+    }
+    return {ErrorCodes::ERR_NOTFOUND, "not found"};
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    const std::vector<std::string>& args = sess->getArgs();
+    std::vector<std::string> keys;
+    for (size_t i = 1; i + 1 < args.size(); i++) {
+      keys.push_back(args[i]);
+    }
+    Expected<double> timeout = tendisplus::stod(args.back());
+    if (!timeout.ok()) {
+      return {timeout.status().code(), "timeout is not a valid float"};
+    }
+    auto status = tryPop(sess, keys);
+    if (status.ok()) {
+      return status;
+    }
+    startBlocking(sess, keys, timeout.value());
+    return {ErrorCodes::ERR_BLOCKCMD, "block command"};
+  }
+
+  void startBlocking(Session* sess,
+                     const std::vector<std::string>& keys,
+                     double timeout) {
+    auto nSess = dynamic_cast<NetSession*>(sess);
+    if (!nSess) {
+      return;
+    }
+    auto executor = [this, nSess](const std::string& key) {
+      return tryPop(nSess, key);
+    };
+
+    auto duration_sec = std::chrono::duration<double>(timeout);
+    auto microsec =
+      std::chrono::duration_cast<std::chrono::microseconds>(duration_sec);
+    nSess->pauseSession(std::move(executor), keys, microsec);
+  }
+
+ private:
+  ListPos _pos;
+};
+
+class BLPopCommand : public BlockPopWrapper {
+ public:
+  BLPopCommand() : BlockPopWrapper(ListPos::LP_HEAD, "wF") {}
+} blpopCommand;
+
+class BRPopCommand : public BlockPopWrapper {
+ public:
+  BRPopCommand() : BlockPopWrapper(ListPos::LP_TAIL, "wF") {}
+} brpopCommand;
+
 class ListPushWrapper : public Command {
  public:
   explicit ListPushWrapper(const std::string& name,
@@ -368,6 +493,7 @@ class ListPushWrapper : public Command {
       }
       auto s = sess->getCtx()->commitTransaction(ptxn.value());
       if (s.ok()) {
+        server->notifyKeyAvailable(key, valargs.size());
         return s1.value();
       } else if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
         return s.status();

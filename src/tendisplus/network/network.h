@@ -191,6 +191,12 @@ class NetSession : public Session {
   const std::vector<std::string>& getArgs() const;
   void setArgs(const std::vector<std::string>&);
 
+  bool isBlocked() const override;
+  void pauseSession(std::function<Expected<std::string>(const std::string&)>,
+                    const std::vector<std::string>&,
+                    std::chrono::microseconds);
+  Expected<std::string> resumeSession(const std::string&);
+
   enum class State {
     Created,
     DrainReqNet,
@@ -233,6 +239,7 @@ class NetSession : public Session {
  private:
   FRIEND_TEST(NetSession, drainReqInvalid);
   FRIEND_TEST(NetSession, Completed);
+  FRIEND_TEST(Command, BlockCommand);
   FRIEND_TEST(Command, common);
   friend class NoSchedNetSession;
 
@@ -244,6 +251,12 @@ class NetSession : public Session {
 
   // utils to shift parsed partial params from _queryBuf
   void shiftQueryBuf(ssize_t start, ssize_t end);
+
+  void cancelTimer();
+  void clearBlockStatus();
+  void addBlockTimer(std::chrono::microseconds);
+  void setBlockingCompletionCb(
+    std::function<Expected<std::string>(const std::string&)>);
 
  protected:
   uint64_t _connId;
@@ -284,6 +297,13 @@ class NetSession : public Session {
   bool _haveExceedSoftLimit;
   const std::chrono::steady_clock::time_point _firstTimePoint;
   std::chrono::steady_clock::time_point _softLimitReachedTime;
+
+  std::vector<std::string> _blockedKeys;
+  std::pair<uint32_t, uint64_t> _timerId;
+  std::atomic<bool> _isBlocked{false};
+  std::function<Expected<std::string>(const std::string&)>
+    _blocking_completion_cb;
+  mutable std::mutex _mtx;
 };
 
 }  // namespace tendisplus

@@ -10,10 +10,12 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "asio.hpp"  // NOLINT(build/include_subdir)
+#include "asio/steady_timer.hpp"
 
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/atomic_utility.h"
@@ -88,6 +90,15 @@ class WorkerPool {
   std::string getName() const {
     return _name;
   }
+  // add a timer
+  uint64_t timer_add(std::function<void()> cb,
+                     const std::chrono::microseconds& timeout) {
+    return schedule_timer(std::move(cb), timeout);
+  }
+
+  void timer_cancel(uint64_t timer_id) {
+    asio::post(*_ioCtx, [this, timer_id] { cancel_timer(timer_id); });
+  }
 
  private:
   void consumeTasks(size_t idx);
@@ -100,6 +111,29 @@ class WorkerPool {
   std::shared_ptr<PoolMatrix> _matrix;
   std::atomic<uint64_t> _idGenerator;
   std::map<std::thread::id, std::thread> _threads;
+  uint64_t schedule_timer(std::function<void()> cb,
+                          std::chrono::microseconds timeout);
+  // cancel a timer
+  void cancel_timer(uint64_t timer_id) {
+    std::lock_guard<std::mutex> lock(_timersMutex);
+    auto it = _activeTimers.find(timer_id);
+    if (it != _activeTimers.end()) {
+      it->second->cancel();
+      _activeTimers.erase(it);
+    }
+  }
+
+  // clear all timers
+  void clear_all_timers() {
+    std::lock_guard<std::mutex> lock(_timersMutex);
+    for (auto& [id, timer] : _activeTimers) {
+      timer->cancel();
+    }
+    _activeTimers.clear();
+  }
+  mutable std::mutex _timersMutex;
+  using Timer = asio::steady_timer;
+  std::unordered_map<uint64_t, std::shared_ptr<Timer>> _activeTimers;
 };
 
 }  // namespace tendisplus
