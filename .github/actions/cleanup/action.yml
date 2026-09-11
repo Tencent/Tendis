@@ -1,0 +1,39 @@
+name: "cleanup"
+description: "Remove large pre-installed tools to free disk space"
+
+inputs:
+  show-before:
+    description: "Print disk usage before cleanup"
+    required: false
+    default: "false"
+  show-after:
+    description: "Print disk usage after cleanup"
+    required: false
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Show disk usage before cleanup
+      if: ${{ inputs.show-before == 'true' }}
+      shell: bash
+      run: |
+        echo "=== Disk usage before cleanup ==="
+        df -h
+        sudo du -sh /home/* /usr/* /var/* /opt/* 2>/dev/null | sort -h | tail -n 40
+
+    - name: Clean up pre-installed tools
+      shell: bash
+      run: |
+        set -e
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/hostedtoolcache
+        df -h
+
+    - name: Show disk usage after cleanup (detailed)
+      if: ${{ inputs.show-after == 'true' }}
+      shell: bash
+      run: |
+        echo "=== Largest dirs under /usr, /opt, /home ==="
+        sudo du -sh /usr/* /opt/* /home/* 2>/dev/null | sort -h | tail -n 30

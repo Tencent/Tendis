@@ -113,6 +113,8 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 2
+      - name: cleanup
+        uses: ./.github/actions/cleanup/
       - name: compile
         uses: ./.github/actions/compile/
       - name: Unit Test
@@ -138,6 +140,8 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 2
+      - name: cleanup
+        uses: ./.github/actions/cleanup/
       - name: compile
         uses: ./.github/actions/compile/
       - name: Redis Test
@@ -163,6 +167,8 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 2
+      - name: cleanup
+        uses: ./.github/actions/cleanup/
       - name: compile
         uses: ./.github/actions/compile/
       - name: Restore Test
@@ -178,6 +184,8 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 2
+      - name: cleanup
+        uses: ./.github/actions/cleanup/
       - name: compile
         uses: ./.github/actions/compile/
       - name: Repl Test
@@ -193,6 +201,8 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 2
+      - name: cleanup
+        uses: ./.github/actions/cleanup/
       - name: compile
         uses: ./.github/actions/compile/
       - name: Cluster Test
@@ -208,6 +218,8 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 2
+      - name: cleanup
+        uses: ./.github/actions/cleanup/
       - name: compile
         uses: ./.github/actions/compile/
       - name: Cluster Test
@@ -219,10 +231,12 @@ jobs:
     runs-on: ubuntu-22.04
     env:
         TEST_DIR: build/bin
-    steps:
+    steps:   
       - uses: actions/checkout@v3
         with:
           fetch-depth: 2
+      - name: cleanup
+        uses: ./.github/actions/cleanup/
       - name: compile
         uses: ./.github/actions/compile/
       - name: GoTest
@@ -240,6 +254,8 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 2
+      - name: cleanup
+        uses: ./.github/actions/cleanup/
       - name: compile
         uses: ./.github/actions/compile/
       - name: GoTest
@@ -247,6 +263,8 @@ jobs:
           cd src/tendisplus/integrate_test
           chmod +x gotest.sh
           ./gotest.sh normaltest-part2
+          rm -rf tmp/ .cache/
+  
   test-gotest-normaltest-part3:
     needs: [cpplint-check]
     name: Test-gotest-normaltest-part3
@@ -257,6 +275,8 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 2
+      - name: cleanup
+        uses: ./.github/actions/cleanup/
       - name: compile
         uses: ./.github/actions/compile/
       - name: GoTest
@@ -277,6 +297,8 @@ jobs:
           fetch-depth: 2
       - name: Checkout code
         uses: actions/checkout@v3
+      - name: cleanup
+        uses: ./.github/actions/cleanup/
       - name: compile
         uses: ./.github/actions/compile/
       - name: GoTest
