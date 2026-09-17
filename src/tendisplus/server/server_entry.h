@@ -5,6 +5,7 @@
 #ifndef SRC_TENDISPLUS_SERVER_SERVER_ENTRY_H_
 #define SRC_TENDISPLUS_SERVER_SERVER_ENTRY_H_
 
+#include <atomic>
 #include <deque>
 #include <list>
 #include <map>
@@ -149,8 +150,8 @@ class SlowlogStat {
   std::atomic<uint64_t> _slowlogId;
   mutable std::mutex _dataMutex;
   mutable std::mutex _fileMutex;
-  bool _waitingFlush;
-  uint64_t _filesize;
+  std::atomic<bool> _waitingFlush;
+  std::atomic<uint64_t> _filesize;
 };
 
 #define THREAD_SLEEP(n_secs)                                \

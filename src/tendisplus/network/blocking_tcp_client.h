@@ -137,6 +137,11 @@ class BlockingTcpClient
 
  private:
   Expected<std::string> realRead(size_t bufSize, std::chrono::seconds timeout);
+  void beginWait();
+  void completeAsync(const asio::error_code& oec);
+  Status waitNotified(std::chrono::steady_clock::duration timeout,
+                      const std::string& timeoutMsg);
+  Status configureConnectedSocket();
   std::mutex _mutex;
   std::condition_variable _cv;
   bool _inited;

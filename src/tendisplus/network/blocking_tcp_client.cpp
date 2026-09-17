@@ -70,6 +70,46 @@ void BlockingTcpClient::closeSocket() {
   _socket.close(ignoredEc);
 }
 
+void BlockingTcpClient::beginWait() {
+  std::lock_guard<std::mutex> lk(_mutex);
+  _notified = false;
+}
+
+void BlockingTcpClient::completeAsync(const asio::error_code& oec) {
+  std::lock_guard<std::mutex> lk(_mutex);
+  _ec = oec;
+  _notified = true;
+  _cv.notify_one();
+}
+
+Status BlockingTcpClient::waitNotified(
+  std::chrono::steady_clock::duration timeout, const std::string& timeoutMsg) {
+  std::unique_lock<std::mutex> lk(_mutex);
+  if (_notified || _cv.wait_for(lk, timeout, [this] { return _notified; })) {
+    if (_ec) {
+      auto msg = _ec.message();
+      lk.unlock();
+      closeSocket();
+      return {ErrorCodes::ERR_NETWORK, msg};
+    }
+    return {ErrorCodes::ERR_OK, ""};
+  }
+  lk.unlock();
+  closeSocket();
+  return {ErrorCodes::ERR_TIMEOUT, timeoutMsg};
+}
+
+Status BlockingTcpClient::configureConnectedSocket() {
+  std::error_code ec;
+  _socket.non_blocking(true, ec);
+  if (ec) {
+    return {ErrorCodes::ERR_NETWORK, ec.message()};
+  }
+  _socket.set_option(asio::ip::tcp::no_delay(true));
+  _socket.set_option(asio::socket_base::keep_alive(true));
+  return {ErrorCodes::ERR_OK, ""};
+}
+
 Status BlockingTcpClient::connect(const std::string& host,
                                   uint16_t port,
                                   std::chrono::milliseconds timeout,
@@ -80,6 +120,7 @@ Status BlockingTcpClient::connect(const std::string& host,
       return {ErrorCodes::ERR_NETWORK, "already inited sock"};
     }
     _inited = true;
+    _timeout = timeout;
   }
   std::stringstream ss;
   ss << port;
@@ -92,45 +133,23 @@ Status BlockingTcpClient::connect(const std::string& host,
     return {ErrorCodes::ERR_NETWORK, "resolve domain name fail"};
   }
 
-  _notified = false;
+  beginWait();
   auto self(shared_from_this());
   asio::async_connect(
     _socket,
     endpoints,
-    [this, self](const std::error_code& oec, asio::ip::tcp::endpoint) {
-      std::unique_lock<std::mutex> lk(_mutex);
-      _ec = oec;
-      _notified = true;
-      _cv.notify_one();
+    [self](const std::error_code& oec, asio::ip::tcp::endpoint) {
+      self->completeAsync(oec);
     });
 
-  _timeout = timeout;
-
   if (isBlockingConnect) {
-    std::unique_lock<std::mutex> lk(_mutex);
-    /* *
-     * NOTE(vinchen): It's possible that _cv.notify_one() was
-       called before _cv.wait_for(). So it check _notified
-       first.
-     */
-    if (_notified || _cv.wait_for(lk, timeout, [this] { return _notified; })) {
-      if (_ec) {
-        closeSocket();
-        return {ErrorCodes::ERR_NETWORK, _ec.message()};
-      }
-      std::error_code ec;
-      _socket.non_blocking(true, ec);
-      INVARIANT(ec.value() == 0);
-      _socket.set_option(asio::ip::tcp::no_delay(true));
-      _socket.set_option(asio::socket_base::keep_alive(true));
-      return {ErrorCodes::ERR_OK, ""};
-    } else {
-      closeSocket();
-      return {ErrorCodes::ERR_TIMEOUT, "conn timeout"};
+    auto s = waitNotified(timeout, "conn timeout");
+    if (!s.ok()) {
+      return s;
     }
-  } else {
-    return {ErrorCodes::ERR_OK, ""};
+    return configureConnectedSocket();
   }
+  return {ErrorCodes::ERR_OK, ""};
 }
 
 Status BlockingTcpClient::tryWaitConnect() {
@@ -138,87 +157,61 @@ Status BlockingTcpClient::tryWaitConnect() {
   if (_cv.wait_for(
         lk, std::chrono::milliseconds(0), [this] { return _notified; })) {
     if (_ec) {
+      auto msg = _ec.message();
+      lk.unlock();
       closeSocket();
-      return {ErrorCodes::ERR_NETWORK, _ec.message()};
+      return {ErrorCodes::ERR_NETWORK, msg};
     }
-    std::error_code ec;
-    _socket.non_blocking(true, ec);
-    INVARIANT_D(ec.value() == 0);
-    _socket.set_option(asio::ip::tcp::no_delay(true));
-    _socket.set_option(asio::socket_base::keep_alive(true));
-    return {ErrorCodes::ERR_OK, ""};
-  } else {
-    if (msSinceEpoch() - _ctime > static_cast<uint64_t>(_timeout.count())) {
-      return {ErrorCodes::ERR_TIMEOUT, "conn timeout"};
-    }
-
-    return {ErrorCodes::ERR_CONNECT_TRY, "conn try again"};
+    lk.unlock();
+    return configureConnectedSocket();
   }
+  if (msSinceEpoch() - _ctime > static_cast<uint64_t>(_timeout.count())) {
+    return {ErrorCodes::ERR_TIMEOUT, "conn timeout"};
+  }
+  return {ErrorCodes::ERR_CONNECT_TRY, "conn try again"};
 }
 
 Expected<std::string> BlockingTcpClient::readLine(
   std::chrono::seconds timeout) {
-  _notified = false;
+  beginWait();
   auto self(shared_from_this());
   asio::async_read_until(
-    _socket,
-    _inputBuf,
-    "\n",
-    [this, self](const asio::error_code& oec, size_t size) {
-      std::unique_lock<std::mutex> lk(_mutex);
-      _ec = oec;
-      _notified = true;
-      _cv.notify_one();
+    _socket, _inputBuf, "\n", [self](const asio::error_code& oec, size_t) {
+      self->completeAsync(oec);
     });
 
-  std::unique_lock<std::mutex> lk(_mutex);
-  if (_cv.wait_for(lk, timeout, [this] { return _notified; })) {
-    if (_ec) {
-      closeSocket();
-      return {ErrorCodes::ERR_NETWORK, _ec.message()};
-    }
-
-    std::string line;
-    std::istream is(&_inputBuf);
-    std::getline(is, line);
-    if (line[line.size() - 1] != '\r') {
-      closeSocket();
-      return {ErrorCodes::ERR_NETWORK, "line not ended with \\r\\n"};
-    }
-    line.erase(line.size() - 1);
-    return line;
-  } else {
-    closeSocket();
-    return {ErrorCodes::ERR_TIMEOUT, "readLine timeout"};
+  auto s = waitNotified(timeout, "readLine timeout");
+  if (!s.ok()) {
+    return s;
   }
+
+  std::string line;
+  std::istream is(&_inputBuf);
+  std::getline(is, line);
+  if (line[line.size() - 1] != '\r') {
+    closeSocket();
+    return {ErrorCodes::ERR_NETWORK, "line not ended with \\r\\n"};
+  }
+  line.erase(line.size() - 1);
+  return line;
 }
 
 Expected<std::string> BlockingTcpClient::realRead(
   size_t remain, std::chrono::seconds timeout) {
   if (remain > 0) {
-    _notified = false;
+    beginWait();
     auto self(shared_from_this());
     asio::async_read(_socket,
                      _inputBuf,
                      asio::transfer_exactly(remain),
-                     [this, self](const asio::error_code& oec, size_t) {
-                       std::unique_lock<std::mutex> lk(_mutex);
-                       _ec = oec;
-                       _notified = true;
-                       _cv.notify_one();
+                     [self](const asio::error_code& oec, size_t) {
+                       self->completeAsync(oec);
                      });
 
-    // Block until the asynchronous operation has completed.
-    std::unique_lock<std::mutex> lk(_mutex);
-    if (!_cv.wait_for(lk, timeout, [this] { return _notified; })) {
-      closeSocket();
-      return {ErrorCodes::ERR_TIMEOUT,
-              "read timeout,remain:" + std::to_string(remain)};
-    } else if (_ec) {
-      closeSocket();
-      return {ErrorCodes::ERR_NETWORK, _ec.message()};
-    } else {
-      // everything is ok, stepout this scope and process buffer
+    auto s =
+      waitNotified(timeout, "read timeout,remain:" + std::to_string(remain));
+    if (!s.ok()) {
+      return s;
     }
   }
   return {ErrorCodes::ERR_OK, ""};
@@ -289,29 +282,14 @@ Status BlockingTcpClient::writeData(const std::string& data) {
 Status BlockingTcpClient::writeOneBatch(const char* data,
                                         uint32_t size,
                                         std::chrono::seconds timeout) {
-  _notified = false;
+  beginWait();
   auto self(shared_from_this());
-  asio::async_write(_socket,
-                    asio::buffer(data, size),
-                    [this, self](const asio::error_code& oec, size_t) {
-                      std::unique_lock<std::mutex> lk(_mutex);
-                      _ec = oec;
-                      _notified = true;
-                      _cv.notify_one();
-                    });
+  asio::async_write(
+    _socket,
+    asio::buffer(data, size),
+    [self](const asio::error_code& oec, size_t) { self->completeAsync(oec); });
 
-  std::unique_lock<std::mutex> lk(_mutex);
-  if (_cv.wait_for(lk, timeout, [this] { return _notified; })) {
-    if (_ec) {
-      closeSocket();
-      return {ErrorCodes::ERR_NETWORK, _ec.message()};
-    } else {
-      return {ErrorCodes::ERR_OK, ""};
-    }
-  } else {
-    closeSocket();
-    return {ErrorCodes::ERR_TIMEOUT, "writeData timeout"};
-  }
+  return waitNotified(timeout, "writeData timeout");
 }
 
 Status BlockingTcpClient::writeLine(const std::string& line) {

@@ -218,14 +218,14 @@ void SlowlogStat::closeSlowlogFile() {
 }
 
 void SlowlogStat::slowlogFlush() {
-  if (!_waitingFlush) {
+  std::lock_guard<std::mutex> lk(_fileMutex);
+  if (!_waitingFlush.load(std::memory_order_relaxed)) {
     return;
   }
-  std::lock_guard<std::mutex> lk(_fileMutex);
   if (_slowLog.is_open()) {
     _slowLog.flush();
   }
-  _waitingFlush = false;
+  _waitingFlush.store(false, std::memory_order_relaxed);
 }
 
 void SlowlogStat::slowlogDataPushEntryIfNeeded(
@@ -241,7 +241,8 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(
 
   if (cfgs->slowlogFileEnabled) {
     if (cfgs->slowlogFileSplitEnabled &&
-        (_filesize >> 20) >= cfgs->slowlogFileMaxSizeMb) {
+        (_filesize.load(std::memory_order_relaxed) >> 20) >=
+          cfgs->slowlogFileMaxSizeMb) {
       std::lock_guard<std::mutex> lk(_fileMutex);
       if (_slowLog.is_open())
         _slowLog.flush();
@@ -885,6 +886,11 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     return s;
   }
 
+  // Must init before _network->run() and before the cron thread starts:
+  // both record latency / flush slowlog as soon as they are up.
+  _latencyMonitorSet.init();
+  _slowlogStat.initSlowlogFile(cfg);
+
   // listener should be the lastone to run.
   s = _network->run();
   if (!s.ok()) {
@@ -908,11 +914,6 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     INVARIANT(!pthread_setname_np(pthread_self(), "tx-bgcom-cron"));
     bgCompactCron();
   });
-
-  _latencyMonitorSet.init();
-
-  // init slowlog
-  _slowlogStat.initSlowlogFile(cfg);
 
   _lastJeprofDumpMemoryGB = 0;
 
