@@ -1565,11 +1565,17 @@ Status ClusterState::genNodeReplyForClusterSlot(CNodePtr node,
   for (uint16_t i = 0; i < slaveNum; i++) {
     /* This loop is copy/pasted from clusterGenNodeDescription()
      * with modifications for per-slot node aggregation. */
+    CNodePtr slave = slaveList[i];
+    /* Skip replicas whose address is unknown (CLUSTER_NODE_NOADDR).
+     * Exposing them as an empty ip + port 0 makes clients resolve the
+     * node address to ":0" and fail dialing with connection refused. */
+    if (slave->nodeWithoutAddr()) {
+      continue;
+    }
     if (node->nodeFailed()) {
       continue;
     }
     Command::fmtMultiBulkLen(replyDeferred, 3);
-    CNodePtr slave = slaveList[i];
     Command::fmtBulk(replyDeferred, slave->getNodeIp());
     Command::fmtLongLong(replyDeferred, slave->getPort());
     Command::fmtBulk(replyDeferred, slave->getNodeName());
