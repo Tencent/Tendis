@@ -5896,6 +5896,40 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
       }
     }
 
+    /* Safeguard against sub-replicas: our master may have just been demoted
+     * above, or by an earlier packet. We cannot leave this to
+     * clusterUpdateSlotsConfigWith(), which reconfigures us only when the
+     * sender takes slots we still attribute to our master. The demotion
+     * handling above clears those slots with clusterDelNodeSlots(), so they
+     * are no longer ours and that path will not reconfigure this node.
+     *
+     * This runs on every packet rather than only on the demotion itself, so
+     * it also recovers a node that learned of the demotion before it knew
+     * the new master. Only follow a grandmaster we believe is a master, so
+     * that a chain that has not settled yet cannot make us resync from a
+     * node that owns no slots. */
+    CNodePtr grandmaster;
+    if (_myself->nodeIsSlave()) {
+      auto myMaster = _myself->getMaster();
+      if (myMaster) {
+        grandmaster = myMaster->getMaster();
+      }
+    }
+    if (grandmaster && grandmaster->nodeIsMaster() && grandmaster != _myself) {
+      serverLog(LL_NOTICE,
+                "I'm a sub-replica! Reconfiguring myself as a replica "
+                "of grandmaster %.40s",
+                grandmaster->getNodeName().c_str());
+      Status s = clusterSetMaster(grandmaster);
+      if (!s.ok()) {
+        LOG(ERROR) << "set grandmaster " << grandmaster->getNodeName()
+                   << " failed:" << s.toString();
+      } else {
+        setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
+        clusterUpdateState();
+      }
+    }
+
     /* Update our info about served slots.
      *
      * Note: this MUST happen after we update the master/slave state
