@@ -934,6 +934,9 @@ bool ClusterState::clusterStartHandshake(const std::string& host,
   return true;
 }
 
+#define CLUSTER_BROADCAST_ALL 0
+#define CLUSTER_BROADCAST_LOCAL_SLAVES 1
+
 Status ClusterState::clusterBumpConfigEpochWithoutConsensus() {
   std::lock_guard<myMutex> lk(_mutex);
   uint64_t maxEpoch = clusterGetOrUpdateMaxEpoch(false);
@@ -941,6 +944,8 @@ Status ClusterState::clusterBumpConfigEpochWithoutConsensus() {
   if (configEpoch == 0 || configEpoch != maxEpoch) {
     setCurrentEpoch(_currentEpoch + 1);
     _myself->setConfigEpoch(_currentEpoch);
+    uint64_t offset = _server->getReplManager()->replicationGetOffset();
+    clusterBroadcastPong(CLUSTER_BROADCAST_ALL, offset);
   }
   setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
 
@@ -961,8 +966,6 @@ Status ClusterState::clusterBumpConfigEpochWithoutConsensus() {
  * CLUSTER_BROADCAST_ALL -> All known instances.
  * CLUSTER_BROADCAST_LOCAL_SLAVES -> All slaves in my master-slaves ring.
  */
-#define CLUSTER_BROADCAST_ALL 0
-#define CLUSTER_BROADCAST_LOCAL_SLAVES 1
 void ClusterState::clusterBroadcastPong(int target, uint64_t offset) {
   std::lock_guard<myMutex> lk(_mutex);
   for (const auto& nodep : _nodes) {
@@ -1128,6 +1131,8 @@ void ClusterState::clusterHandleConfigEpochCollision(CNodePtr sender) {
             " configEpoch set to %lu",
             sender->getNodeName().c_str(),
             static_cast<uint64_t>(_currentEpoch));
+  uint64_t offset = _server->getReplManager()->replicationGetOffset();
+  clusterBroadcastPong(CLUSTER_BROADCAST_ALL, offset);
 }
 
 uint64_t ClusterState::getCurrentEpoch() const {
@@ -1925,6 +1930,9 @@ Status ClusterState::clusterSetMaster(CNodePtr node,
 
   resetManualFailover();
   _server->CloseAllChannel();
+
+  uint64_t offset = _server->getReplManager()->replicationGetOffset();
+  clusterBroadcastPong(CLUSTER_BROADCAST_ALL, offset);
 
   return {ErrorCodes::ERR_OK, ""};
 }
