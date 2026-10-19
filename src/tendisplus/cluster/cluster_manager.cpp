@@ -2669,9 +2669,9 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
        * to a master with the maximum number of slaves and with the
        * smallest node ID. */
       if (okslaves == max_slaves) {
-        auto exptSlaveList = node->getSlaves();
-        if (expSlaveList.ok()) {
-          for (auto& vs : expSlaveList.value()) {
+        auto expNodeSlaves = node->getSlaves();
+        if (expNodeSlaves.ok()) {
+          for (auto& vs : expNodeSlaves.value()) {
             if (vs->getNodeName() < candidate->getNodeName()) {
               candidate = vs;
             }
@@ -6043,9 +6043,9 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
       return {ErrorCodes::ERR_OK, ""};
     }
     if (sender->getMaster() != _myself) {
-      LOG(ERROR) << "sender master:" << sender->getMaster()
-        ? sender->getMaster()->getNodeName()
-        : "no master";
+      LOG(ERROR) << "sender master:"
+                 << (sender->getMaster() ? sender->getMaster()->getNodeName()
+                                         : "no master");
       return {ErrorCodes::ERR_OK, ""};
     }
     /* Manual failover requested from slaves. Initialize the state
