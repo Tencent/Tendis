@@ -266,33 +266,33 @@ func testClusterRestore(portStart int, num int, testFun int, commandType string)
 	cfgArgs["masterauth"] = "tendis+test"
 	cfgArgs["generalLog"] = "true"
 
-	portStart0 := util.FindAvailablePort(portStart)
+	portStart0 := util.FindAvailablePort(portStart, true)
 	src_master.Init(ip, portStart0, pwd, "src_master_", util.Cluster)
 	if err := src_master.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
-	portStart1 := util.FindAvailablePort(portStart + 1)
+	portStart1 := util.FindAvailablePort(portStart+1, true)
 	src_slave.Init(ip, portStart1, pwd, "src_slave_", util.Cluster)
 	if err := src_slave.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
-	portStart2 := util.FindAvailablePort(portStart + 2)
+	portStart2 := util.FindAvailablePort(portStart+2, true)
 	dst_master.Init(ip, portStart2, pwd, "dst_master_", util.Cluster)
 	if err := dst_master.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
-	portStart3 := util.FindAvailablePort(portStart + 3)
+	portStart3 := util.FindAvailablePort(portStart+3, true)
 	dst_slave.Init(ip, portStart3, pwd, "dst_slave_", util.Cluster)
 	if err := dst_slave.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
 
-	portStart4 := util.FindAvailablePort(portStart + 4)
+	portStart4 := util.FindAvailablePort(portStart+4, true)
 	src_restore.Init(ip, portStart4, pwd, "src_restore_", util.Cluster)
 	if err := src_restore.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
-	portStart5 := util.FindAvailablePort(portStart + 5)
+	portStart5 := util.FindAvailablePort(portStart+5, true)
 	dst_restore.Init(ip, portStart5, pwd, "dst_restore_", util.Cluster)
 	if err := dst_restore.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)

@@ -4,7 +4,7 @@ if [[ "$1" == "versiontest" ]]; then
     processNameList=(tendisplus predixy)
     baseCmd="${baseCmd} | grep _version_test_"
 else
-    rm -rf m*_* s*_* running slowlog benchmark_*.log predixy_* dst_* src_* redis-sync* sync* dts.log jeprof*
+    rm -rf m*_* s*_* running slowlog benchmark_*.log predixy_* dst_* src_* redis-sync* sync* dts.log jeprof* round*_* 
     cd dts; rm -rf ./m*_* ./s*_* ./t*_* ./running; cd ..
 
     processNameList=(tendisplus predixy redis-server redis-sync checkdts)

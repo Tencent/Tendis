@@ -171,7 +171,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
 	log.Infof("start servers clusterNodeNum:%d", clusterNodeNum)
 	for i := 0; i <= clusterNodeNum*2+1; i++ {
 		server := util.RedisServer{}
-		port := util.FindAvailablePort(clusterPortStart)
+		port := util.FindAvailablePort(clusterPortStart, true)
 		log.Infof("start server i:%d port:%d", i, port)
 		//port := clusterPortStart + i
 		server.Init(clusterIp, port, pwd, "m"+strconv.Itoa(i)+"_", util.Cluster)

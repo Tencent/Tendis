@@ -154,6 +154,8 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   uint16_t getFlags() const;
   uint32_t getSlotNum() const;
   uint64_t getSentTime() const;
+  uint64_t getConnectFailLogMs() const;
+  void setConnectFailLogMs(uint64_t t);
   uint64_t getReceivedTime() const;
   uint64_t getReplOffset() const;
   uint64_t getReplOffsetTime() const;
@@ -261,6 +263,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   std::atomic<uint64_t> _pongReceived;
   mstime_t _failTime;
   mstime_t _votedTime;
+  mstime_t _connectFailLogMs;
   std::atomic<uint64_t> _replOffsetTime;
   std::atomic<uint64_t> _orphanedTime;
   std::atomic<uint64_t> _replOffset;  // Last known repl offset for this node.

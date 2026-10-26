@@ -373,7 +373,7 @@ func testClusterFailoverSlaveChange(clusterIp string, clusterPortStart int, clus
 	server := util.RedisServer{}
 	pwd := util.GetCurrentDirectory()
 	for i := 0; i < clusterNodeNum*2; i++ {
-		port := util.FindAvailablePort(clusterPortStart + clusterNodeNum*2 + i)
+		port := util.FindAvailablePort(clusterPortStart+clusterNodeNum*2+i, true)
 		log.Infof("start server i:%d port:%d", i, port)
 		server.Init(clusterIp, port, pwd, "m"+strconv.Itoa(i)+"_", util.Cluster)
 		cfgArgs := make(map[string]string)
@@ -434,6 +434,158 @@ func testClusterFailoverSlaveChange(clusterIp string, clusterPortStart int, clus
 	}
 }
 
+// One master per shard, each with one slave. Each round adds two slaves per
+// shard and promotes the first. The old master, the previous slave and the
+// other new slave must follow it. When another round remains, the old master
+// and the previous slave are removed.
+func testFailoverSlavesFollow(clusterIp string, portStart int) {
+	const shardNum = 18
+	const roundNum = 3
+	const kvCount = 2
+	const keyNum = 1000
+	conf := map[string]string{
+		"slave-migrate-enabled": "yes",
+	}
+	conf["kvstorecount"] = strconv.Itoa(kvCount)
+
+	servers, predixy, _ := startCluster(
+		clusterIp, portStart, shardNum, conf, util.GetCurrentDirectory(), "")
+	defer shutdownPredixy(predixy, *shutdown, *clear)
+
+	masters := make([]*util.RedisServer, shardNum)
+	slaves := make([]*util.RedisServer, shardNum)
+	var alive []*util.RedisServer
+	for i := 0; i < shardNum; i++ {
+		masters[i] = &(*servers)[i]
+		slaves[i] = &(*servers)[shardNum+i]
+		alive = append(alive, masters[i], slaves[i])
+	}
+	defer func() {
+		for _, srv := range alive {
+			shutdownServer(srv, *shutdown, *clear)
+		}
+	}()
+
+	nextPort := portStart + shardNum*2
+	for round := 1; round <= roundNum; round++ {
+		tag := fmt.Sprintf("round%d", round)
+		first := make([]*util.RedisServer, shardNum)
+		second := make([]*util.RedisServer, shardNum)
+
+		// Add two new slaves for every shard.
+		for i := 0; i < shardNum; i++ {
+			first[i] = startClusterNode(clusterIp, &nextPort, util.GetCurrentDirectory(), fmt.Sprintf("%s_a%d_", tag, i), "", conf)
+			alive = append(alive, first[i])
+		}
+		for i := 0; i < shardNum; i++ {
+			second[i] = startClusterNode(clusterIp, &nextPort, util.GetCurrentDirectory(), fmt.Sprintf("%s_b%d_", tag, i), "", conf)
+			alive = append(alive, second[i])
+		}
+
+		// Join the new nodes to the cluster and wait for all views to converge.
+		for i := 0; i < shardNum; i++ {
+			cluster_meet(masters[0], first[i])
+			cluster_meet(masters[0], second[i])
+		}
+		servers := make([]util.RedisServer, len(alive))
+		for i, srv := range alive {
+			servers[i] = *srv
+		}
+		waitMeetEnd(&servers, len(servers))
+
+		// Make both new nodes replicate their shard master.
+		for i := 0; i < shardNum; i++ {
+			replicateof(masters[i], first[i])
+			replicateof(masters[i], second[i])
+		}
+
+		// Write data. Each master must have exactly these three slaves,
+		// then the first new slave of every shard must catch up.
+		ch := make(chan int)
+		go util.AddDataInCoroutine(&predixy.RedisServer, *auth, keyNum, tag, ch, "set")
+		<-ch
+		for i := 0; i < shardNum; i++ {
+			curSlaves := []*util.RedisServer{slaves[i], first[i], second[i]}
+			waitSlavesKnown(alive, masters[i], curSlaves, 60*time.Second)
+		}
+		for i := 0; i < shardNum; i++ {
+			waitCatchup(masters[i], first[i], kvCount)
+		}
+		// Fullsync clears lastBinlogTs. Wait for the first incremental heartbeat
+		// before failover, or the lag check rejects the slave.
+		time.Sleep(5 * time.Second)
+
+		// Promote the first new slave of every shard.
+		var lastPromoted time.Time
+		for i := 0; i < shardNum; i++ {
+			log.Infof("%s promote shard:%d port:%d", tag, i, first[i].Port)
+			begin := time.Now()
+			cluster_manual_failover(first[i])
+			deadline := time.Now().Add(10 * time.Second)
+			for !isMyselfMasterWithSlots(first[i]) {
+				if time.Now().After(deadline) {
+					log.Fatalf("%s promote shard:%d port:%d did not become master in %s",
+						tag, i, first[i].Port, time.Since(begin))
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+			lastPromoted = time.Now()
+			log.Infof("%s promote shard:%d port:%d became master in %s",
+				tag, i, first[i].Port, time.Since(begin))
+		}
+
+		// Migration starts only after a master stays orphaned for
+		// CLUSTER_SLAVE_MIGRATION_DELAY (5s), and the next cron does the move.
+		// Wait out 10s from the last promotion, then require exactly these slaves.
+		if wait := 10*time.Second - time.Since(lastPromoted); wait > 0 {
+			time.Sleep(wait)
+		}
+		for i := 0; i < shardNum; i++ {
+			curSlaves := []*util.RedisServer{masters[i], slaves[i], second[i]}
+			waitSlavesKnown(alive, first[i], curSlaves, 60*time.Second)
+		}
+		if round == roundNum {
+			// Each round adds keyNum keys and they stay after failover,
+			// so the final masters must hold every round.
+			total := 0
+			for i := 0; i < shardNum; i++ {
+				total += getDbsize(first[i])
+			}
+			if total != roundNum*keyNum {
+				log.Fatalf("dbsize %d != %d", total, roundNum*keyNum)
+			}
+			break
+		}
+
+		// Remove the previous generation before starting the next round.
+		gone := append([]*util.RedisServer{}, masters...)
+		gone = append(gone, slaves...)
+		goneNames := make([]string, len(gone))
+		for i, srv := range gone {
+			goneNames[i] = getNodeName(srv)
+		}
+		left := make([]*util.RedisServer, 0, len(alive))
+		goneSet := map[*util.RedisServer]bool{}
+		for _, srv := range gone {
+			goneSet[srv] = true
+			shutdownServer(srv, *shutdown, *clear)
+		}
+		for _, srv := range alive {
+			if !goneSet[srv] {
+				left = append(left, srv)
+			}
+		}
+		alive = left
+		for _, srv := range alive {
+			for _, name := range goneNames {
+				cluster_forget(srv, name)
+			}
+		}
+		masters = first
+		slaves = second
+	}
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
 	flag.Parse()
@@ -443,5 +595,6 @@ func main() {
 	testClusterFailoverSlaveChange(*clusterIp, 45260, 3)
 	testClusterManualFailoverIncrSync(45280)
 	testClusterShutdownFailoverIncrSync(45300)
+	testFailoverSlavesFollow(*clusterIp, 46000)
 	log.Infof("clustertestFailover.go passed.")
 }
