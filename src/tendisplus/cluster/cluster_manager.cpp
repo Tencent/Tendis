@@ -86,6 +86,7 @@ ClusterNode::ClusterNode(const std::string& nodeName,
     _pongReceived(0),
     _failTime(0),
     _votedTime(0),
+    _connectFailLogMs(0),
     _replOffsetTime(0),
     _orphanedTime(0),
     _replOffset(0) {}
@@ -508,6 +509,14 @@ uint32_t ClusterNode::getSlotNum() const {
 
 uint64_t ClusterNode::getSentTime() const {
   return _pingSent.load(std::memory_order_relaxed);
+}
+
+uint64_t ClusterNode::getConnectFailLogMs() const {
+  return _connectFailLogMs;
+}
+
+void ClusterNode::setConnectFailLogMs(uint64_t t) {
+  _connectFailLogMs = t;
 }
 
 uint64_t ClusterNode::getReceivedTime() const {
@@ -4601,11 +4610,14 @@ void ClusterState::cronRestoreSessionIfNeeded() {
           if (node->getSentTime() == 0)
             node->setSentTime(msSinceEpoch());
 
-          LOG(WARNING) << "Unable to connect to Cluster Node:"
-                       << node->getNodeName() << ", IP: " << node->getNodeIp()
-                       << ", Port: " << node->getCport()
-                       << ", my Port:" << _server->getParams()->port
-                       << ", Error:" << errmsg;
+          if (now - node->getConnectFailLogMs() >= 1000) {
+            node->setConnectFailLogMs(now);
+            LOG(WARNING) << "Unable to connect to Cluster Node:"
+                         << node->getNodeName() << ", IP: " << node->getNodeIp()
+                         << ", Port: " << node->getCport()
+                         << ", my Port:" << _server->getParams()->port
+                         << ", Error:" << errmsg;
+          }
           continue;
         }
         node->setSession(sess);

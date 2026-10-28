@@ -42,41 +42,37 @@ func RandStrAlpha(n int) string {
 	return string(b)
 }
 
-// NOTE(takenliu):net.Dial failed not mean port is usable.
-func FindAvailablePort(start int) int {
-	time.Sleep(2 * time.Second) // wait last process listen port finish
-	log.Infof("findAvailablePort begin start:%+v", start)
-	for i := start; i < start+1024; i++ {
-		// NOTE(takenliu):cluster port +10000
-		//   use netstat to check TCP TIME_WAIT and so on
-		//   use lsof to check listening port
-		log.Infof("check port:%d", i)
-		cmd1 := fmt.Sprintf("netstat -anpl 2>&1|grep %d", i)
-		output1, err1 := exec.Command("sh", "-c", cmd1).CombinedOutput()
-		// log.Infof("output1:%s", string(output1))
-		log.Infof("err1:%v", err1)
-
-		cmd2 := fmt.Sprintf("netstat -anpl 2>&1|grep %d", i+10000)
-		output2, err2 := exec.Command("sh", "-c", cmd2).CombinedOutput()
-		log.Infof("output2:%s", string(output2))
-		log.Infof("err2:%v", err2)
-
-		cmd3 := fmt.Sprintf("lsof -i:%d", i)
-		output3, err3 := exec.Command("sh", "-c", cmd3).CombinedOutput()
-		log.Infof("output3:%s", string(output3))
-		log.Infof("err3:%v", err3)
-
-		cmd4 := fmt.Sprintf("lsof -i:%d", i+10000)
-		output4, err4 := exec.Command("sh", "-c", cmd4).CombinedOutput()
-		log.Infof("output4:%s", string(output4))
-		log.Infof("err4:%v", err4)
-
-		if len(output1) == 0 && len(output2) == 0 && len(output3) == 0 && len(output4) == 0 {
-			log.Infof("findAvailablePort success port:%+v", i)
-			return i
-		}
+// Bind without SO_REUSEADDR, matching tendisplus listen. A dial would miss
+// TIME_WAIT, and that state still makes the server bind fail.
+func portBusy(port int) bool {
+	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
+	if err != nil {
+		return true
 	}
-	fmt.Println("Can't find a non busy port in the $start-[expr {$start+1023}] range.")
+	defer syscall.Close(fd)
+
+	addr := syscall.SockaddrInet4{Port: port, Addr: [4]byte{127, 0, 0, 1}}
+	return syscall.Bind(fd, &addr) != nil
+}
+
+// checkClusterPort defaults to false. Pass true when the process also listens on port+10000.
+func FindAvailablePort(start int, checkClusterPort ...bool) int {
+	checkBus := false
+	if len(checkClusterPort) > 0 {
+		checkBus = checkClusterPort[0]
+	}
+	log.Infof("findAvailablePort begin start:%+v checkClusterPort:%v", start, checkBus)
+	for i := start; i < start+1024 && i <= 65535; i++ {
+		if portBusy(i) {
+			continue
+		}
+		if checkBus && (i+10000 > 65535 || portBusy(i+10000)) {
+			continue
+		}
+		log.Infof("findAvailablePort success port:%+v", i)
+		return i
+	}
+	fmt.Printf("Can't find a non busy port in the %d-%d range.\n", start, start+1023)
 	return 0
 }
 
@@ -271,6 +267,7 @@ func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
 	cfg = cfg + "loglevel debug\n"
 	cfg = cfg + "minBinlogKeepSec 0\n"
 	cfg = cfg + fmt.Sprintf("logdir %s/log\n", s.Path)
+	cfg = cfg + fmt.Sprintf("slowlog %s/log/slowlog\n", s.Path)
 	cfg = cfg + fmt.Sprintf("storage rocks\n")
 	cfg = cfg + fmt.Sprintf("dir %s/db\n", s.Path)
 	cfg = cfg + fmt.Sprintf("dumpdir %s/dump\n", s.Path)
@@ -440,15 +437,14 @@ func StartSingleServer(dir string, port int, cfg *map[string]string) *RedisServe
 	m := new(RedisServer)
 	m.WithBinPath("tendisplus")
 	m.Ip = "127.0.0.1"
-	node_port := FindAvailablePort(port)
-	log.Infof("FindAvailablePort:%d", node_port)
-	pwd := GetCurrentDirectory()
-
 	clusterConfig := strings.ToLower((*cfg)["cluster-enabled"])
 	cliType := Standalone
 	if clusterConfig == "on" || clusterConfig == "1" || clusterConfig == "true" || clusterConfig == "yes" {
 		cliType = Cluster
 	}
+	node_port := FindAvailablePort(port, cliType == Cluster)
+	log.Infof("FindAvailablePort:%d", node_port)
+	pwd := GetCurrentDirectory()
 
 	m.Init("127.0.0.1", node_port, pwd, dir, cliType)
 

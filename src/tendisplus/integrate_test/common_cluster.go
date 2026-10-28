@@ -28,6 +28,20 @@ func cluster_meet(m *util.RedisServer, s *util.RedisServer) {
 	log.Infof("meet sucess,mport:%d sport:%d", m.Port, s.Port)
 }
 
+func cluster_forget(m *util.RedisServer, nodeID string) {
+	cli := createClient(m)
+	defer cli.Close()
+
+	if r, err := cli.Cmd("cluster", "forget", nodeID).Str(); err != nil {
+		log.Fatalf("do forget failed:%v", err)
+		return
+	} else if r != "OK" {
+		log.Fatalf("do forget error:%s", r)
+		return
+	}
+	log.Infof("forget sucess,mport:%d node:%s", m.Port, nodeID)
+}
+
 func cluster_set_node_arbiter(m *util.RedisServer) {
 	cli := createClient(m)
 	defer cli.Close()
@@ -252,6 +266,46 @@ type NodeInfo struct {
 	migrateEndSlot   int
 }
 
+func minResourceCfg() map[string]string {
+	return map[string]string{
+		"maxBinlogKeepNum":                     "100",
+		"kvstorecount":                         "2",
+		"cluster-enabled":                      "true",
+		"pauseTimeIndexMgr":                    "1",
+		"rocks.blockcachemb":                   "24",
+		"rocks.write_buffer_size":              "1048576",
+		"rocks.max_write_buffer_number":        "2",
+		"rocks.max_background_jobs":            "1",
+		"rocks.max_log_file_size":              "1048576",
+		"rocks.keep_log_file_num":              "2",
+		"rocks.target_file_size_base":          "1048576",
+		"rocks.max_bytes_for_level_base":       "4194304",
+		"requirepass":                          "tendis+test",
+		"masterauth":                           "tendis+test",
+		"generalLog":                           "true",
+		"cluster-migration-slots-num-per-task": "10000",
+	}
+}
+
+func startClusterNode(ip string, nextPort *int, pwd string, prefix string, binpath string, cfg map[string]string) *util.RedisServer {
+	port := util.FindAvailablePort(*nextPort, true)
+	*nextPort = port + 1
+	log.Infof("start server port:%d", port)
+	srv := &util.RedisServer{}
+	srv.Init(ip, port, pwd, prefix, util.Cluster)
+	if binpath != "" {
+		srv.WithBinPath(binpath)
+	}
+	nodeCfg := minResourceCfg()
+	for k, v := range cfg {
+		nodeCfg[k] = v
+	}
+	if err := srv.Setup(false, &nodeCfg); err != nil {
+		log.Fatalf("setup %d failed:%v", port, err)
+	}
+	return srv
+}
+
 func startCluster(
 	clusterIp string, clusterPortStart int,
 	clusterNodeNum int, externalArgs map[string]string, pwd string, binpath string,
@@ -268,38 +322,16 @@ func startCluster(
 	}
 
 	log.Infof("current pwd:" + pwd)
-	kvstorecount := 2
 
 	var servers []util.RedisServer
 
 	// start server
 	log.Infof("start servers clusterNodeNum:%d", clusterNodeNum)
+	nextPort := clusterPortStart
 	for i := 0; i < clusterNodeNum*2; i++ {
-		server := util.RedisServer{}
-		port := util.FindAvailablePort(clusterPortStart + i)
-		log.Infof("start server i:%d port:%d", i, port)
-		//port := clusterPortStart + i
-		server.Init(clusterIp, port, pwd, "m"+strconv.Itoa(i)+"_", util.Cluster)
-		if binpath != "" {
-			server.WithBinPath(binpath)
-		}
-		cfgArgs := make(map[string]string)
-		cfgArgs["maxBinlogKeepNum"] = "100"
-		cfgArgs["kvstorecount"] = strconv.Itoa(kvstorecount)
-		cfgArgs["cluster-enabled"] = "true"
-		cfgArgs["pauseTimeIndexMgr"] = "1"
-		cfgArgs["rocks.blockcachemb"] = "24"
-		cfgArgs["requirepass"] = "tendis+test"
-		cfgArgs["masterauth"] = "tendis+test"
-		cfgArgs["generalLog"] = "true"
-		cfgArgs["cluster-migration-slots-num-per-task"] = "10000"
-		for k, v := range externalArgs {
-			cfgArgs[k] = v
-		}
-		if err := server.Setup(false, &cfgArgs); err != nil {
-			log.Fatalf("setup failed,port:%s err:%v", port, err)
-		}
-		servers = append(servers, server)
+		log.Infof("start server i:%d", i)
+		srv := startClusterNode(clusterIp, &nextPort, pwd, "m"+strconv.Itoa(i)+"_", binpath, externalArgs)
+		servers = append(servers, *srv)
 	}
 	time.Sleep(15 * time.Second)
 
@@ -339,7 +371,7 @@ func startCluster(
 
 	// start predixy
 	//portPredixy := clusterPortStart + clusterNodeNum * 2 + 10
-	portPredixy := util.FindAvailablePort(clusterPortStart)
+	portPredixy := util.FindAvailablePort(nextPort)
 	log.Infof("start server Predixy port:%d", portPredixy)
 	predixy := util.Predixy{}
 	ip := "127.0.0.1"
@@ -388,10 +420,72 @@ func getClusterNodes(m *util.RedisServer) string {
 	return r
 }
 
+func clusterNodesByID(text string) map[string][]string {
+	nodes := map[string][]string{}
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 4 {
+			nodes[fields[0]] = fields
+		}
+	}
+	return nodes
+}
+
+// This view's slaves of masterID are exactly slaveIDs.
+func replicasAreExactly(view map[string][]string, masterID string, slaveIDs map[string]bool) bool {
+	count := 0
+	for id, fields := range view {
+		if len(fields) < 4 || !strings.Contains(fields[2], "slave") || fields[3] != masterID {
+			continue
+		}
+		if !slaveIDs[id] {
+			return false
+		}
+		count++
+	}
+	return count == len(slaveIDs)
+}
+
+// Every observer must see exactly these slaves replicating master.
+func waitSlavesKnown(observers []*util.RedisServer, master *util.RedisServer, slaves []*util.RedisServer, timeout time.Duration) {
+	masterID := getNodeName(master)
+	slaveIDs := map[string]bool{}
+	for _, slave := range slaves {
+		slaveIDs[getNodeName(slave)] = true
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		known := true
+		for _, ob := range observers {
+			if !replicasAreExactly(clusterNodesByID(getClusterNodes(ob)), masterID, slaveIDs) {
+				known = false
+				break
+			}
+		}
+		if known {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	log.Fatalf("replicas of %d not exactly %d slaves within %s, observers:%d",
+		master.Port, len(slaves), timeout, len(observers))
+}
+
 func isMaster(m *util.RedisServer) bool {
 	expectMaster := "myself,master"
 	nodeString := getClusterNodes(m)
 	return strings.Contains(nodeString, expectMaster)
+}
+
+// Slot fields start at column 9. A node can be myself,master before slots arrive.
+func isMyselfMasterWithSlots(s *util.RedisServer) bool {
+	for _, fields := range clusterNodesByID(getClusterNodes(s)) {
+		if len(fields) >= 9 && strings.Contains(fields[2], "myself") &&
+			strings.Contains(fields[2], "master") {
+			return true
+		}
+	}
+	return false
 }
 
 func checkisMaster(m *util.RedisServer, s *util.RedisServer) bool {
