@@ -847,7 +847,7 @@ ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
     _lastVoteEpoch(0),
     _server(server),
     _blockState(false),
-    _replicateState(false),
+    _replChanging(false),
     _blockTime(0),
     _mfEnd(0),
     _mfSlave(nullptr),
@@ -1094,26 +1094,23 @@ void ClusterState::clusterUpdateSlotsConfigWith(
   if (needReconfigure &&
       (_server->getParams()->clusterAllowReplicaMigration ||
        sender_slots == migrated_our_slots)) {
+    /* NOTE(wayenchen) slave should not full sync when set new master.
+     * needSet is false when only the old replication should be stopped. */
+    bool needSet = false;
+    if (!inMigrateTask &&
+        ((slaveFullSyncDone || !masterNotFail) || isMyselfMaster())) {
+      needSet = true;
+    }
+
     serverLog(LL_WARNING,
               "Configuration change detected "
               "Reconfiguring myself as a replica of %.40s",
               sender->getNodeName().c_str());
-    Status s;
-    if (masterNotFail) {
-      s = _server->getReplManager()->replicationUnSetMaster();
-      /* if error, fix it in cron*/
-      if (!s.ok()) {
-        LOG(ERROR) << "set myself master fail" << s.toString();
-      }
-    }
-    /* NOTE(wayenchen) slave should not full sync when set new master*/
-    if (!inMigrateTask &&
-        ((slaveFullSyncDone || !masterNotFail) || isMyselfMaster())) {
-      s = clusterSetMaster(newmaster, false, isReplGroup, senderOffset);
-      if (!s.ok()) {
-        LOG(ERROR) << "set newmaster :" << newmaster->getNodeName()
-                   << "fail:" << s.toString();
-      }
+    Status s =
+      clusterSetMaster(newmaster, false, isReplGroup, senderOffset, needSet);
+    if (needSet && !s.ok()) {
+      LOG(ERROR) << "set newmaster :" << newmaster->getNodeName()
+                 << "fail:" << s.toString();
     }
   }
 }
@@ -1761,19 +1758,28 @@ void ClusterState::setClientUnBlock() {
   }
 }
 
-bool ClusterState::isReplicateDone() const {
-  if (!getMyMaster()) {
+void ClusterState::waitReplChanging() {
+  std::unique_lock<std::mutex> lk(_replChangingMutex);
+  _replChangingCv.wait(
+    lk, [this] { return !_replChanging.load(std::memory_order_acquire); });
+  _replChanging.store(true, std::memory_order_release);
+}
+
+bool ClusterState::tryStartReplChanging() {
+  std::lock_guard<std::mutex> lk(_replChangingMutex);
+  if (_replChanging.load(std::memory_order_acquire)) {
     return false;
   }
-  return !_replicateState.load(std::memory_order_relaxed);
+  _replChanging.store(true, std::memory_order_release);
+  return true;
 }
 
-void ClusterState::setReplicateState() {
-  _replicateState.store(true, std::memory_order_relaxed);
-}
-
-void ClusterState::unsetReplicateState() {
-  _replicateState.store(false, std::memory_order_relaxed);
+void ClusterState::finishReplChanging() {
+  {
+    std::lock_guard<std::mutex> lk(_replChangingMutex);
+    _replChanging.store(false, std::memory_order_release);
+  }
+  _replChangingCv.notify_all();
 }
 
 bool ClusterState::isRightReplicate() const {
@@ -1880,11 +1886,33 @@ bool ClusterState::clusterSetNodeAsMasterNoLock(CNodePtr node) {
 Status ClusterState::clusterSetMaster(CNodePtr node,
                                       bool ignoreRepl,
                                       bool isReplGroup,
-                                      uint64_t senderOffset) {
-  const auto guard = MakeGuard([&] {
-    // set replicate state as false, let cron fix if exist replication error
-    unsetReplicateState();
-  });
+                                      uint64_t senderOffset,
+                                      bool needSet) {
+  waitReplChanging();
+  const auto guard = MakeGuard([this] { finishReplChanging(); });
+
+  /* A healthy old master must be detached before switching. ignoreRepl only
+   * updates cluster metadata and must not touch the replication source. */
+  if (!ignoreRepl && _myself->nodeIsSlave()) {
+    auto oldMaster = _myself->getMaster();
+    if (oldMaster && oldMaster != node && !oldMaster->nodeFailed()) {
+      Status s = _server->getReplManager()->replicationUnSetMaster();
+      if (!s.ok()) {
+        LOG(ERROR) << "unset old master fail:" << s.toString();
+      } else {
+        /* Source is empty and the cluster master is still the old one.
+         * The delay is 0 except in tests that need cronCheckReplicate to
+         * observe this window. */
+        uint32_t delayMs = _server->getParams()->clusterSetMasterDelayMs;
+        if (delayMs > 0) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
+        }
+      }
+    }
+  }
+  if (!needSet) {
+    return {ErrorCodes::ERR_OK, ""};
+  }
 
   Status s;
   {
@@ -1892,8 +1920,6 @@ Status ClusterState::clusterSetMaster(CNodePtr node,
     if (_myself->getMaster() == node) {
       return {ErrorCodes::ERR_CLUSTER, "already my master"};
     }
-    /* set replicate state on before set salve-maser metadata*/
-    setReplicateState();
     auto s = clusterSetMasterNoLock(node);
     if (!s.ok()) {
       LOG(ERROR) << "set master " << node->getNodeName()
@@ -2604,7 +2630,6 @@ void ClusterState::clusterHandleManualFailover() {
 void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
   CNodePtr target = nullptr, candidate = nullptr;
   bool readyMigrate = false;
-  bool isMasterFail;
   {
     std::lock_guard<myMutex> lk(_mutex);
 
@@ -2693,7 +2718,6 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
           CLUSTER_SLAVE_MIGRATION_DELAY) {
       readyMigrate = true;
     }
-    isMasterFail = _myself->getMaster()->nodeFailed() ? true : false;
   }
   /* Step 4: perform the migration if there is a target, and if I'm the
    * candidate, but only if the master is continuously orphaned for a
@@ -2705,16 +2729,8 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
     serverLog(LL_WARNING,
               "Migrating to orphaned master begin %.40s",
               target->getNodeName().c_str());
-    Status s;
-    if (!isMasterFail) {
-      s = _server->getReplManager()->replicationUnSetMaster();
-      if (!s.ok()) {
-        LOG(ERROR) << "set myself master fail in slave migration";
-      }
-    }
-
     LOG(INFO) << "lock OK, begin set new master" << target->getNodeName();
-    s = clusterSetMaster(target);
+    Status s = clusterSetMaster(target);
     if (!s.ok()) {
       LOG(ERROR) << "set my master fail in slave migration";
     }
@@ -3048,6 +3064,12 @@ Status ClusterState::clusterFailoverReplaceYourMasterMeta(void) {
 }
 
 Status ClusterState::clusterFailoverReplaceYourMaster(void) {
+  /* Source is cleared before this node is marked master. Hold the flag
+   * across both steps so cronCheckReplicate cannot write the old master
+   * back. */
+  waitReplChanging();
+  const auto replGuard = MakeGuard([this] { finishReplChanging(); });
+
   Status s;
   s = _server->getReplManager()->replicationUnSetMaster();
   if (!s.ok()) {
@@ -4164,7 +4186,13 @@ Status ClusterManager::clusterDelNodesMeta() {
 }
 
 Status ClusterManager::clusterReset(uint16_t hard) {
-  /* Turn into master. */
+  /* Turn into master. A slave's replication source is cleared after the
+   * role flip. Hold the flag from the flip through the unset so
+   * cronCheckReplicate cannot restore the old source. */
+  _clusterState->waitReplChanging();
+  const auto replGuard =
+    MakeGuard([this] { _clusterState->finishReplChanging(); });
+
   Status s;
   CNodePtr myself;
   std::shared_ptr<Catalog> catalog;
@@ -4928,9 +4956,13 @@ void ClusterState::cronCheckReplicate() {
   if (!needFix)
     return;
 
-  if (!isReplicateDone()) {
+  if (!getMyMaster()) {
     return;
   }
+  if (!tryStartReplChanging()) {
+    return;
+  }
+  const auto replChangingGuard = MakeGuard([this] { finishReplChanging(); });
 
   if (!getMyMaster()->nodeHasAddr()) {
     LOG(ERROR) << "my master has no addr:" << getMyMaster()->getNodeName();
@@ -5932,7 +5964,16 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
                 "I'm a sub-replica! Reconfiguring myself as a replica "
                 "of grandmaster %.40s",
                 grandmaster->getNodeName().c_str());
-      Status s = clusterSetMaster(grandmaster);
+      /* Use the offset the grandmaster last advertised about itself.
+       * This packet updates it when the sender is the grandmaster.
+       * replicationSetMaster keeps the full sync unless that offset
+       * covers ours. */
+      LOG(INFO) << "sub-replica set master, sender:"
+                << (sender ? sender->getNodeName() : "none")
+                << " senderOffset:" << hdr->_offset
+                << " grandmasterOffset:" << grandmaster->getReplOffset();
+      Status s = clusterSetMaster(
+        grandmaster, false, true, grandmaster->getReplOffset());
       if (!s.ok()) {
         LOG(ERROR) << "set grandmaster " << grandmaster->getNodeName()
                    << " failed:" << s.toString();

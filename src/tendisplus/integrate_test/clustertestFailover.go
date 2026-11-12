@@ -16,16 +16,19 @@ import (
 	"github.com/ngaut/log"
 )
 
-func checkBinlog(servers *[]util.RedisServer, index int, num int) {
-	var expectLog string = "clusterSetMaster incrSync:1"
-	logfile := (*servers)[index].Path + "/log/tendisplus.INFO"
-	cmd := exec.Command("grep", expectLog, logfile)
-	data, err := cmd.Output()
-	var strData string = string(data)
-	if strings.Count(strData, expectLog) != num || err != nil {
-		log.Fatalf("grep failed, logfile:%s num:%d data:%s err:%v", logfile, num, data, err)
-		return
-	}
+// Failover followers must switch with incremental replication. A later
+// cronCheckReplicate fix can still turn an individual store back to
+// incrSync:0 and fullsync. fullsync_succ_times is not used: it survives
+// promotion, but INFO hides it while the node is a master, so the old
+// count reappears after demotion. clusterSetMaster's incrSync flag is not
+// used either: replicationSetMaster may upgrade it afterwards.
+func checkFailoverIncrSync(srv *util.RedisServer, offset int64) {
+	checkLogContent(srv, offset, []string{"change store:", "incrSync:0"}, 0)
+	checkLogContent(srv, offset, []string{"fullsync start"}, 0)
+}
+
+func checkIncrsyncLog(servers *[]util.RedisServer, index int, num int) {
+	checkLogContent(&(*servers)[index], 0, []string{"clusterSetMaster incrSync:1"}, num)
 	log.Infof("check incrSync log end")
 }
 
@@ -344,8 +347,8 @@ func testClusterFailover(clusterIp string, clusterPortStart int, clusterNodeNum 
 	log.Infof("check role end")
 
 	// check incrSync LOG
-	checkBinlog(servers, 0, oldMasterIncrSyncTimes)
-	checkBinlog(servers, clusterNodeNum, oldSlaveIncrSyncTimes)
+	checkIncrsyncLog(servers, 0, oldMasterIncrSyncTimes)
+	checkIncrsyncLog(servers, clusterNodeNum, oldSlaveIncrSyncTimes)
 	log.Infof("check incrSync log end")
 
 	// check dbsize
@@ -441,10 +444,11 @@ func testClusterFailoverSlaveChange(clusterIp string, clusterPortStart int, clus
 func testFailoverSlavesFollow(clusterIp string, portStart int) {
 	const shardNum = 18
 	const roundNum = 3
-	const kvCount = 2
+	const kvCount = 10
 	const keyNum = 1000
 	conf := map[string]string{
-		"slave-migrate-enabled": "yes",
+		"slave-migrate-enabled":   "yes",
+		"clusterSetMasterDelayMs": "10",
 	}
 	conf["kvstorecount"] = strconv.Itoa(kvCount)
 
@@ -517,7 +521,14 @@ func testFailoverSlavesFollow(clusterIp string, portStart int) {
 
 		// Promote the first new slave of every shard.
 		var lastPromoted time.Time
+		promotedAt := make([]time.Time, shardNum)
+		followers := make([][3]*util.RedisServer, shardNum)
+		logOffset := make([][3]int64, shardNum)
 		for i := 0; i < shardNum; i++ {
+			followers[i] = [3]*util.RedisServer{masters[i], slaves[i], second[i]}
+			for j, srv := range followers[i] {
+				logOffset[i][j] = logSize(srv.Path + "/log/tendisplus.INFO")
+			}
 			log.Infof("%s promote shard:%d port:%d", tag, i, first[i].Port)
 			begin := time.Now()
 			cluster_manual_failover(first[i])
@@ -529,7 +540,8 @@ func testFailoverSlavesFollow(clusterIp string, portStart int) {
 				}
 				time.Sleep(50 * time.Millisecond)
 			}
-			lastPromoted = time.Now()
+			promotedAt[i] = time.Now()
+			lastPromoted = promotedAt[i]
 			log.Infof("%s promote shard:%d port:%d became master in %s",
 				tag, i, first[i].Port, time.Since(begin))
 		}
@@ -543,7 +555,14 @@ func testFailoverSlavesFollow(clusterIp string, portStart int) {
 		for i := 0; i < shardNum; i++ {
 			curSlaves := []*util.RedisServer{masters[i], slaves[i], second[i]}
 			waitSlavesKnown(alive, first[i], curSlaves, 60*time.Second)
+			for j, srv := range followers[i] {
+				checkFailoverIncrSync(srv, logOffset[i][j])
+			}
+			log.Infof("%s shard:%d port:%d slaves followed in %s since promote",
+				tag, i, first[i].Port, time.Since(promotedAt[i]))
 		}
+		log.Infof("%s failover done, current cluster nodes from port:%d\n%s",
+			tag, first[0].Port, getClusterNodes(first[0]))
 		if round == roundNum {
 			// Each round adds keyNum keys and they stay after failover,
 			// so the final masters must hold every round.

@@ -5,9 +5,11 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"integrate_test/util"
+	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -399,4 +401,64 @@ func compare(m1 *util.RedisServer, m2 *util.RedisServer) {
 		return
 	}
 	log.Infof("compare sucess,port1:%d port2:%d", m1.Port, m2.Port)
+}
+
+func logSize(path string) int64 {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return fi.Size()
+}
+
+// checkLogContent counts lines at or after offset that contain every piece
+// in content. expect is that count, so 0 means the lines must not appear.
+func checkLogContent(srv *util.RedisServer, offset int64, content []string, expect int) {
+	logfile := srv.Path + "/log/tendisplus.INFO"
+	f, err := os.Open(logfile)
+	if err != nil {
+		log.Fatalf("open logfile failed:%s err:%v", logfile, err)
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		log.Fatalf("stat logfile failed:%s err:%v", logfile, err)
+	}
+	if offset < 0 || offset > fi.Size() {
+		offset = 0
+	}
+	if _, err = f.Seek(offset, io.SeekStart); err != nil {
+		log.Fatalf("seek logfile failed:%s err:%v", logfile, err)
+	}
+
+	n := 0
+	var matched string
+	reader := bufio.NewReader(f)
+	for {
+		line, err := reader.ReadString('\n')
+		line = strings.TrimRight(line, "\r\n")
+		if line != "" {
+			ok := true
+			for _, piece := range content {
+				if !strings.Contains(line, piece) {
+					ok = false
+					break
+				}
+			}
+			if ok {
+				n++
+				matched = line
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Fatalf("read logfile failed:%s err:%v", logfile, err)
+		}
+	}
+	if n != expect {
+		log.Fatalf("log count mismatch, server:%s content:%v got:%d expect:%d line:%s",
+			srv.Addr(), content, n, expect, matched)
+	}
 }

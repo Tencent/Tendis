@@ -8,8 +8,10 @@
 #include <algorithm>
 #include <array>
 #include <bitset>
+#include <condition_variable>
 #include <list>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -586,7 +588,8 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   Status clusterSetMaster(CNodePtr node,
                           bool ignoreRepl = false,
                           bool isReplgroup = false,
-                          uint64_t senderOffset = 0);
+                          uint64_t senderOffset = 0,
+                          bool needSet = true);
   Status clusterSetMasterNoLock(CNodePtr node);
 
   Status clusterSetForMaster(CNodePtr node, CNodePtr node2);
@@ -721,9 +724,9 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   Expected<std::list<std::unique_ptr<ChunkLock>>> clusterLockMySlots();
 
   void setClientUnBlock();
-  bool isReplicateDone() const;
-  void setReplicateState();
-  void unsetReplicateState();
+  void waitReplChanging();
+  bool tryStartReplChanging();
+  void finishReplChanging();
 
   uint64_t getBlockTime() const {
     return _blockTime.load(std::memory_order_relaxed);
@@ -800,8 +803,10 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   uint64_t _lastVoteEpoch;  // Epoch of the last vote granted.
   std::shared_ptr<ServerEntry> _server;
   std::atomic<bool> _blockState;
-  // set true if slave is on replicating when slave SetMaster
-  std::atomic<bool> _replicateState;
+  // true while the replication source is being changed
+  std::atomic<bool> _replChanging;
+  std::mutex _replChangingMutex;
+  std::condition_variable _replChangingCv;
   std::atomic<uint64_t> _blockTime;
   // Manual failover state in common.
   // Manual failover time limit (ms unixtime).  It is zero if there is no MF in
