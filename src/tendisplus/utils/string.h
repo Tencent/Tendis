@@ -283,8 +283,7 @@ size_t easyCopy(T* dest, const std::string& buf, size_t* pos) {
     return 0;
   }
   byte* ptr = reinterpret_cast<byte*>(dest);
-  std::copy_n(reinterpret_cast<const byte*>(buf.data() + *pos),
-              sizeof(T), ptr);
+  std::copy_n(reinterpret_cast<const byte*>(buf.data() + *pos), sizeof(T), ptr);
   *pos += sizeof(T);
   return sizeof(T);
 }
