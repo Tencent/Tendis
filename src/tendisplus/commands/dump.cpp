@@ -1254,8 +1254,7 @@ class ListDeserializer : public Deserializer {
     // Validate each read locally so malformed RESTORE input cannot reach
     // easyCopy with a truncated field, even without changes to easyCopy itself.
     const auto readField = [&payload, pos](auto* dest) -> bool {
-      if (*pos > payload.size() ||
-          sizeof(*dest) > payload.size() - *pos) {
+      if (*pos > payload.size() || sizeof(*dest) > payload.size() - *pos) {
         return false;
       }
       return easyCopy(dest, payload, pos) == sizeof(*dest);
@@ -1268,8 +1267,7 @@ class ListDeserializer : public Deserializer {
     uint32_t prevlen(0);
     while (zllen--) {
       const size_t prevlenWidth = (prevlen >= 254) ? 5 : 1;
-      if (*pos > payload.size() ||
-          prevlenWidth >= payload.size() - *pos) {
+      if (*pos > payload.size() || prevlenWidth >= payload.size() - *pos) {
         return {ErrorCodes::ERR_PARSEPKT, "Truncated ziplist entry"};
       }
       *pos += prevlenWidth;
@@ -2217,8 +2215,8 @@ class IncrMetaCommand : public Command {
         easyCopy(&buf, &pos, key._type);
         easyCopy(&buf, &pos, key._op);
 #ifdef TENDIS_DEBUG
-        LOG(INFO) << "Add primary key:" << "key: " << key._key
-                  << " version:" << key._version
+        LOG(INFO) << "Add primary key:"
+                  << "key: " << key._key << " version:" << key._version
                   << "type:" << static_cast<int>((key._type >> 4) & 0x0f)
                   << " op:" << static_cast<int>(key._op);
 #endif
