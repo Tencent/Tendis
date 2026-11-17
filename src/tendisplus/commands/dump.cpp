@@ -1251,20 +1251,28 @@ class ListDeserializer : public Deserializer {
     uint32_t zlbytes(0), zltail(0);
     uint16_t zllen(0);
     std::vector<std::string> zl;
-    INVARIANT(easyCopy(&zlbytes, payload, pos) == 4 &&
-              easyCopy(&zltail, payload, pos) == 4 &&
-              easyCopy(&zllen, payload, pos) == 2);
+    // Validate each read locally so malformed RESTORE input cannot reach
+    // easyCopy with a truncated field, even without changes to easyCopy itself.
+    const auto readField = [&payload, pos](auto* dest) -> bool {
+      if (*pos > payload.size() || sizeof(*dest) > payload.size() - *pos) {
+        return false;
+      }
+      return easyCopy(dest, payload, pos) == sizeof(*dest);
+    };
+    if (!readField(&zlbytes) || !readField(&zltail) || !readField(&zllen)) {
+      return {ErrorCodes::ERR_PARSEPKT, "Truncated ziplist header"};
+    }
 
     zl.reserve(zllen);
     uint32_t prevlen(0);
     while (zllen--) {
-      if (prevlen >= 254) {
-        *pos += 5;
-      } else {
-        *pos += 1;
+      const size_t prevlenWidth = (prevlen >= 254) ? 5 : 1;
+      if (*pos > payload.size() || prevlenWidth >= payload.size() - *pos) {
+        return {ErrorCodes::ERR_PARSEPKT, "Truncated ziplist entry"};
       }
+      *pos += prevlenWidth;
       std::string val;
-      const unsigned char& encoding = payload.at(*(pos));
+      const unsigned char& encoding = payload[*pos];
       if (static_cast<uint8_t>(encoding) < ZIP_STR_MASK) {
         val = loadString(payload, pos);
       } else {
@@ -1272,13 +1280,17 @@ class ListDeserializer : public Deserializer {
         switch (encoding) {
           case ZIP_INT_8B: {
             int8_t intEntry = 0;
-            easyCopy(&intEntry, payload, pos);
+            if (!readField(&intEntry)) {
+              return {ErrorCodes::ERR_PARSEPKT, "Truncated ziplist integer"};
+            }
             val = std::to_string(intEntry);
             break;
           }
           case ZIP_INT_16B: {
             int16_t intEntry;
-            easyCopy(&intEntry, payload, pos);
+            if (!readField(&intEntry)) {
+              return {ErrorCodes::ERR_PARSEPKT, "Truncated ziplist integer"};
+            }
             val = std::to_string(intEntry);
             break;
           }
@@ -1286,7 +1298,9 @@ class ListDeserializer : public Deserializer {
             uint8_t data[3];
             int32_t intEntry;
             for (int i = 0; i < 3; i++) {
-              easyCopy(&data[i], payload, pos);
+              if (!readField(&data[i])) {
+                return {ErrorCodes::ERR_PARSEPKT, "Truncated ziplist integer"};
+              }
             }
             // Read sequence: low addr -> high addr, so data[2] gets
             // left shift
@@ -1296,13 +1310,17 @@ class ListDeserializer : public Deserializer {
           }
           case ZIP_INT_32B: {
             int32_t intEntry;
-            easyCopy(&intEntry, payload, pos);
+            if (!readField(&intEntry)) {
+              return {ErrorCodes::ERR_PARSEPKT, "Truncated ziplist integer"};
+            }
             val = std::to_string(intEntry);
             break;
           }
           case ZIP_INT_64B: {
             int64_t intEntry;
-            easyCopy(&intEntry, payload, pos);
+            if (!readField(&intEntry)) {
+              return {ErrorCodes::ERR_PARSEPKT, "Truncated ziplist integer"};
+            }
             val = std::to_string(intEntry);
             break;
           }
@@ -1324,8 +1342,9 @@ class ListDeserializer : public Deserializer {
       zl.push_back(std::move(val));
     }
     uint8_t zlend(0);
-    INVARIANT(easyCopy(&zlend, payload, pos) == 1);
-    INVARIANT(zlend == 0xff);
+    if (!readField(&zlend) || zlend != 0xff) {
+      return {ErrorCodes::ERR_PARSEPKT, "Invalid ziplist end marker"};
+    }
     return zl;
   }
 
@@ -2196,8 +2215,8 @@ class IncrMetaCommand : public Command {
         easyCopy(&buf, &pos, key._type);
         easyCopy(&buf, &pos, key._op);
 #ifdef TENDIS_DEBUG
-        LOG(INFO) << "Add primary key:" << "key: " << key._key
-                  << " version:" << key._version
+        LOG(INFO) << "Add primary key:"
+                  << "key: " << key._key << " version:" << key._version
                   << "type:" << static_cast<int>((key._type >> 4) & 0x0f)
                   << " op:" << static_cast<int>(key._op);
 #endif
