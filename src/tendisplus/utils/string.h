@@ -279,12 +279,12 @@ size_t easyCopy(std::vector<byte>* buf,
 
 template <typename T>
 size_t easyCopy(T* dest, const std::string& buf, size_t* pos) {
-  if (buf.size() < *pos) {
+  if (*pos > buf.size() || sizeof(T) > buf.size() - *pos) {
     return 0;
   }
   byte* ptr = reinterpret_cast<byte*>(dest);
-  size_t end = *pos + sizeof(T);
-  std::copy(&buf[*pos], &buf[end], ptr);
+  std::copy_n(reinterpret_cast<const byte*>(buf.data() + *pos),
+              sizeof(T), ptr);
   *pos += sizeof(T);
   return sizeof(T);
 }
